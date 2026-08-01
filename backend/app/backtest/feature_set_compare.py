@@ -272,22 +272,26 @@ def compare_feature_sets(
         log.warning("compare.no_predictions")
         return None
 
-    common = sorted(set(base_frame["game_id"]) & set(cand_frame["game_id"]))
-    if not common:
+    # Join rather than sort-and-zip. The pairing is what the whole comparison
+    # rests on, and an inner join on game_id cannot silently misalign the way
+    # two independently sorted frames can if either ever carries a game twice.
+    paired = base_frame[["game_id", "actual", "prob"]].merge(
+        cand_frame[["game_id", "prob"]], on="game_id", how="inner",
+        suffixes=("_base", "_cand"), validate="one_to_one",
+    )
+    if paired.empty:
         log.warning("compare.no_common_games")
         return None
-    base_common = base_frame[base_frame["game_id"].isin(common)].sort_values("game_id")
-    cand_common = cand_frame[cand_frame["game_id"].isin(common)].sort_values("game_id")
+    common = paired["game_id"].tolist()
+    base_common = paired.rename(columns={"prob_base": "prob"})
+    cand_common = paired.rename(columns={"prob_cand": "prob"})
 
     base_metrics, cand_metrics = _metrics(base_common), _metrics(cand_common)
     extra = [n for n in candidate.feature_names if n not in set(baseline.feature_names)]
 
-    # Sorting both by game_id above makes these row-aligned, which is what turns
-    # two independent evaluations into one paired comparison.
-    actual = base_common["actual"].to_numpy()
-    base_prob = base_common["prob"].to_numpy()
-    cand_prob = cand_common["prob"].to_numpy()
-    assert (cand_common["actual"].to_numpy() == actual).all()
+    actual = paired["actual"].to_numpy()
+    base_prob = paired["prob_base"].to_numpy()
+    cand_prob = paired["prob_cand"].to_numpy()
 
     ll_interval = _paired_bootstrap(
         _per_game_log_loss(actual, base_prob) - _per_game_log_loss(actual, cand_prob)
