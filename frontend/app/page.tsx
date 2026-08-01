@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { FreshnessStrip } from "@/components/FreshnessStrip";
+import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
@@ -15,6 +16,15 @@ const SORTS = [
   { key: "closest", label: "Closest game" },
   { key: "completeness", label: "Data completeness" },
 ] as const;
+
+// Offered but inert until a licensed odds provider is configured. Shown rather
+// than hidden so the capability and its prerequisite are both visible.
+const UNAVAILABLE_SORT = {
+  key: "model_edge",
+  label: "Largest model edge",
+  reason:
+    "Model edge is the gap between the model probability and the de-vigged market price. It needs a licensed odds provider — set ODDS_PROVIDER to enable it.",
+} as const;
 
 export default async function GameCenterPage({
   searchParams,
@@ -67,7 +77,7 @@ export default async function GameCenterPage({
                 <Link
                   href={`/?date=${date}&sort=${option.key}`}
                   aria-current={sort === option.key ? "true" : undefined}
-                  className={`rounded border px-2 py-1 transition-colors ${
+                  className={`block whitespace-nowrap rounded border px-2 py-1 transition-colors ${
                     sort === option.key
                       ? "font-medium"
                       : "muted hover:text-[var(--text)]"
@@ -82,6 +92,18 @@ export default async function GameCenterPage({
                 </Link>
               </li>
             ))}
+            <li>
+              <span
+                aria-disabled="true"
+                title={UNAVAILABLE_SORT.reason}
+                className="flex cursor-not-allowed items-center gap-1 whitespace-nowrap rounded border border-dashed px-2 py-1 subtle"
+              >
+                {UNAVAILABLE_SORT.label}
+                <Tooltip label={UNAVAILABLE_SORT.reason}>
+                  <InfoIcon />
+                </Tooltip>
+              </span>
+            </li>
           </ul>
         </div>
       </header>
