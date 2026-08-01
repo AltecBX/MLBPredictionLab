@@ -61,12 +61,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
             </Link>
             <nav aria-label="Primary" className="order-3 w-full sm:order-none sm:w-auto">
-              <ul className="scroll-x flex items-center gap-1 text-sm">
+              <ul className="scroll-x flex min-w-max items-center gap-1 text-sm">
                 {NAV.map((item) => (
                   <li key={item.href}>
                     <Link
                       href={item.href}
-                      className="rounded px-2 py-1 muted transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--text)]"
+                      className="block whitespace-nowrap rounded px-2 py-1 muted transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--text)]"
                     >
                       {item.label}
                     </Link>

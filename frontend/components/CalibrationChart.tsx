@@ -45,7 +45,8 @@ export function CalibrationChart({
 
   return (
     <figure className="m-0">
-      <div className="scroll-x">
+      {/* Capped so the SVG never scales its 10px labels up to headline size. */}
+      <div className="scroll-x max-w-[560px]">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="h-auto w-full min-w-[380px]"
