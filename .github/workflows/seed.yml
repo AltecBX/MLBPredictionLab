@@ -22,6 +22,10 @@ on:
         description: "Also run the walk-forward backtest (adds ~10 min, fills the Backtest screen)"
         type: boolean
         default: true
+      store_raw_payloads:
+        description: "Keep the verbatim provider responses. Roughly triples both the runtime and the database size over a network connection — see DEPLOYMENT.md § Sizing."
+        type: boolean
+        default: false
 
 concurrency:
   # Never let two seeds write the same tables at once.
@@ -40,6 +44,13 @@ jobs:
       ENVIRONMENT: production
       LOG_FORMAT: console
       REDIS_URL: ""
+      # Off by default for a backfill. Each boxscore payload averages 56 KB, so
+      # two seasons is ~260 MB of JSONB pushed from this runner to a hosted
+      # Postgres — which dominates the wall clock and burns a quarter of a 1 GB
+      # free tier. The normalized rows and their knowledge_time are written
+      # either way, so the model and every prediction are identical. The daily
+      # refresh keeps storing them, where the volume is trivial.
+      STORE_RAW_PAYLOADS: ${{ inputs.store_raw_payloads }}
     steps:
       - name: Check the database secret is set
         run: |

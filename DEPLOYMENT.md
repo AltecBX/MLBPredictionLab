@@ -23,11 +23,32 @@ two distinct stages, and they are separate on purpose:
 1. **Bring the services up.** Minutes. Every screen will say `UNAVAILABLE` at
    this point and nothing is wrong — the database is empty and the app is
    telling you so rather than inventing numbers to fill a screen.
-2. **Seed and train.** About 30 minutes for two seasons. One time only.
+2. **Seed and train.** **Budget 60–90 minutes** for two seasons on the hosted
+   path, then about 9 minutes to train. One time only.
 
-Both numbers are measured, not estimated. Ingesting four seasons pulls 10,544
-games and 333,501 player game lines and takes about 45 minutes; a full training
-pass takes 8m42s.
+### Where that number comes from, and why an earlier one was wrong
+
+An earlier version of this file said 30 minutes. That was measured with
+Postgres on **localhost**, and it does not transfer: on the hosted path the
+GitHub runner writes across the public internet to a Render instance, and the
+network becomes the whole story.
+
+Measured on the real dataset:
+
+| | |
+|---|---|
+| Games, two seasons (2025 + 2026 to date) | 4,104 |
+| Player game lines written | ~130,000 |
+| Verbatim provider payloads | ~4,600, averaging **56 KB each** |
+| Payload bytes over the wire, if kept | **~260 MB** |
+
+The payloads are three quarters of the write volume and a quarter of a 1 GB
+free tier. That is why the seed workflow **skips them by default** — see
+`STORE_RAW_PAYLOADS` below. With them on, expect the runtime and the database
+to roughly triple.
+
+Local timings still hold for the self-hosted path, where the database is on the
+same machine: four seasons in about 45 minutes, a training pass in 8m42s.
 
 ---
 
@@ -260,6 +281,7 @@ subset.
 | `LOG_FORMAT` | no | `json` in production, `console` locally |
 | `MODEL_ARTIFACT_DIR` | no | Defaults to `artifacts/models` |
 | `RAW_PAYLOAD_RETENTION_DAYS` | no | Default 90. Bounds the raw archive; the daily refresh enforces it |
+| `STORE_RAW_PAYLOADS` | no | Default true. Set false for a historical backfill over a network: ~56 KB per game dominates the write cost and a past game can be refetched from a stable public API. The normalized rows and their `knowledge_time` are written either way, so the model is identical |
 | `LINEUP_PROVIDER` · `WEATHER_PROVIDER` · `STATCAST_PROVIDER` · `INJURY_PROVIDER` · `PARK_FACTOR_PROVIDER` · `ODDS_PROVIDER` | no | Leave unset. Each one unset makes its category report `UNAVAILABLE` in the UI, naming itself as what would enable it. **Never set one to a fake value to make a screen look complete** |
 
 ---

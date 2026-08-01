@@ -86,6 +86,18 @@ class Settings(BaseSettings):
     schedule_window_days_back: int = Field(default=3, ge=0)
     schedule_window_days_forward: int = Field(default=10, ge=0)
     raw_payload_retention_days: int = Field(default=90, ge=1)
+    store_raw_payloads: bool = Field(
+        default=True,
+        description=(
+            "Persist the verbatim provider response alongside the normalized "
+            "rows. Worth ~56 KB per game and roughly three quarters of the "
+            "database. Turn off for a historical backfill over a network "
+            "connection, where it dominates the write cost and buys little: a "
+            "past game's payload can be refetched from a stable public API at "
+            "any time. Leave on for the daily refresh, where the volume is "
+            "trivial and the audit value is highest."
+        ),
+    )
 
     # --- Observability -----------------------------------------------------
     sentry_dsn: str | None = None

@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import DataSourceStatus, JobRun, RawSourcePayload
 from app.providers.base import DataCategory, ProviderResult, ProviderStatus
@@ -117,7 +118,16 @@ def seed_source_status(session: Session, configured: dict[str, str | None]) -> N
 
 
 def store_raw_payload(session: Session, result: ProviderResult[Any]) -> None:
-    """Persist the verbatim payload, deduplicated by content hash."""
+    """Persist the verbatim payload, deduplicated by content hash.
+
+    Skipped entirely when STORE_RAW_PAYLOADS is off. Nothing else changes: the
+    normalized rows and their knowledge_time are written either way, so the
+    model and every prediction are identical. What is given up is the ability
+    to replay a normalization bug without refetching — which for a historical
+    backfill means refetching from a stable public API, not losing anything.
+    """
+    if not settings.store_raw_payloads:
+        return
     if result.raw_payload is None or result.endpoint is None:
         return
     digest = result.content_hash

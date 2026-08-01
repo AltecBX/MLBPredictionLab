@@ -119,3 +119,51 @@ def test_default_retention_comes_from_settings(engine):
         prune_raw_payloads(session)
 
         assert session.scalar(select(func.count()).select_from(RawSourcePayload)) == 1
+
+
+def test_payload_storage_can_be_turned_off_without_touching_normalized_data(monkeypatch):
+    """A backfill over a network skips ~56 KB per game; nothing else changes.
+
+    The normalized rows and their knowledge_time are written either way, so the
+    model and every prediction are identical. What is given up is replaying a
+    normalization bug without refetching — and a past game can be refetched
+    from a stable public API at any time.
+    """
+    from datetime import UTC, datetime
+
+    from app.core import config as config_module
+    from app.ingestion import status as status_module
+    from app.providers.base import DataCategory, ProviderResult, ProviderStatus
+
+    now = datetime.now(UTC)
+    result = ProviderResult(
+        status=ProviderStatus.OK,
+        source_name="mlb_statsapi",
+        category=DataCategory.RESULTS,
+        retrieved_at=now,
+        knowledge_time=now,
+        raw_payload={"synthetic": True},
+        endpoint="/game/1/boxscore",
+    )
+
+    calls: list[object] = []
+
+    class _Session:
+        def execute(self, stmt):  # pragma: no cover - trivial spy
+            calls.append(stmt)
+
+    monkeypatch.setattr(config_module.settings, "store_raw_payloads", False, raising=False)
+    monkeypatch.setattr(status_module.settings, "store_raw_payloads", False, raising=False)
+    status_module.store_raw_payload(_Session(), result)
+    assert calls == [], "payload was written while storage was disabled"
+
+    monkeypatch.setattr(status_module.settings, "store_raw_payloads", True, raising=False)
+    status_module.store_raw_payload(_Session(), result)
+    assert len(calls) == 1, "payload was not written while storage was enabled"
+
+
+def test_payload_storage_defaults_to_on():
+    """Off is a deliberate choice for backfill, never a silent default."""
+    from app.core.config import Settings
+
+    assert Settings(_env_file=None).store_raw_payloads is True
