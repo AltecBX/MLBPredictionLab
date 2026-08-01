@@ -535,6 +535,90 @@ not the number of columns:
 
 ---
 
+## Simulating runs: measured, and it works
+
+The first thing in this repository to beat the served model. Three feature
+groups were measured against the binary win target and rejected, each with the
+same diagnosis — the signal is real but already inside team strength by the time
+it reaches one bit of outcome. This changed the target instead of the inputs, and
+that is what moved.
+
+Reproduce with `python -m app.cli simulate-check --seasons 2024,2025 --start 2025-04-01`.
+
+**2025 — 2,363 scored games**
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| Logistic (served), 42 features | 0.68682 | 0.24677 | 2.11% | 55.56% | 0.5562 |
+| Simulation alone, **0 fitted parameters** | 0.68321 | 0.24517 | 2.60% | 54.46% | 0.5636 |
+| **Blend at the pre-registered weight 0.5** | **0.68217** | **0.24460** | **0.91%** | **55.65%** | 0.5650 |
+| Blend at the searched weight 0.7 | 0.68190 | 0.24449 | 0.96% | 55.61% | 0.5656 |
+
+| Paired 95% interval, pre-registered blend vs logistic | Δ log loss | Δ Brier |
+|---|---|---|
+| | **+0.00465 [+0.00162, +0.00762]** | **+0.00218 [+0.00071, +0.00361]** |
+
+Both intervals exclude zero. For scale, the three rejected feature groups moved
+log loss by −0.0004, +0.0004 and −0.0004, every interval spanning zero. This is
+an order of magnitude larger and the first result with a sign the data is sure
+of.
+
+**The weight is pre-registered, not searched.** The grid picks whichever weight
+scores best on the games it is scored on, and reporting that number would be
+reporting the selection. The headline is an even split, chosen in advance because
+it is the obvious a priori answer. The searched weight of 0.7 is worth
+0.00027 more — which is to say the selection bought almost nothing, and the
+result is not a knife edge. Every weight from 0.1 to 1.0 improves on the
+logistic model alone.
+
+**What it does to the model's edge.** Against a coin flip at 0.69315, the served
+logistic model is worth 0.00633. The blend is worth 0.01098. That is not a
+refinement; it is close to doubling everything the model knows.
+
+**Calibration is where it shows most.** Expected calibration error falls from
+2.11% to 0.91%, a 57% reduction. BACKTEST_PLAN.md § Phase 2A says reliability
+wins when metrics disagree; here they do not disagree, which is rarer and
+better.
+
+### Why a parameter-free model beat a fitted one
+
+The simulation has nothing to fit. Each side's expected runs are the classic
+multiplicative combination of own scoring rate, opponent's rate of allowing and
+the league rate, all as-of and shrunk by existing rules. What it adds is not
+information — it is **structure**:
+
+* **Runs are overdispersed and the model now says so.** Measured over 16,314
+  nine-inning team-games: mean 4.463, variance 10.592, a ratio of 2.18–2.37
+  depending on window. A logistic regression on rate differences has no way to
+  express that the same run differential means different things at different
+  scoring levels. A negative binomial does.
+* **The scoring floor is a hard zero.** Nothing can score −1 runs, and the
+  asymmetry that creates near the tails is exactly where win probability is
+  decided. A linear model in log-odds space cannot represent it.
+* **The innings structure is real.** The home side bats in the ninth only when it
+  needs to. That is a genuine, mechanical piece of home advantage which the
+  simulation gets for free and a coefficient can only approximate.
+
+The two are complementary rather than competing, which is why the blend beats
+both: the logistic model knows about starters, bullpens, rest and travel, and the
+simulation knows the shape of a baseball game.
+
+### What is not yet established
+
+* **One season, at the blend level.** 2024 is the second measurement and belongs
+  beside this one before the blend is served.
+* **The run model is deliberately crude.** No park factor, no starter, no
+  bullpen, no weather. Every one of those is a run-scoring input the feature
+  layer already computes and the run model currently ignores, which is the
+  clearest remaining lead in this repository.
+* **Nothing is served yet.** The served probability is still the logistic
+  model's alone. Promoting the blend is a separate change with its own
+  before-and-after, and MODELING_PLAN.md §4 requires ensemble weights to be fit
+  on out-of-sample predictions only — which this measurement respects but a
+  production path has to institutionalise.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
