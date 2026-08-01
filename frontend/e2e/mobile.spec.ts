@@ -200,7 +200,12 @@ test.describe("iPhone layout", () => {
       .getByLabel("Data freshness")
       .getByRole("button", { name: "More information" })
       .first();
-    if (!(await trigger.isVisible().catch(() => false))) {
+    // waitFor, not isVisible: the page streams, and a bare visibility read can
+    // resolve before the strip has rendered — which skips a test that should
+    // have run.
+    try {
+      await trigger.waitFor({ state: "visible", timeout: 10_000 });
+    } catch {
       test.skip(true, "No backend; the freshness strip has no tooltips to tap.");
     }
     // tap(), not click(): click() dispatches mouse events even under touch

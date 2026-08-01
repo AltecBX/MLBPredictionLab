@@ -11,6 +11,46 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class RecordSplit(ApiModel):
+    """A win-loss record and its percentage. `win_pct` is None, never .000,
+    when nothing has been played — a zero there reads as a real bad record."""
+
+    wins: int
+    losses: int
+    win_pct: float | None = None
+
+
+class StreakGameRef(ApiModel):
+    game_id: int
+    date: str
+    opponent: str
+    opponent_id: int
+    is_home: bool
+    runs_for: int
+    runs_against: int
+
+
+class StreakSummary(ApiModel):
+    kind: str  # 'W' | 'L'
+    length: int
+    label: str
+    games: list[StreakGameRef] = []
+
+
+class StandingSummary(ApiModel):
+    division_name: str | None = None
+    division_rank: int | None = None
+    games_behind: float | None = None
+    league_name: str | None = None
+    league_rank: int | None = None
+    wildcard_rank: int | None = None
+    wildcard_games_behind: float | None = None
+    in_playoff_position: bool = False
+    elimination_number: int | None = None
+    clinched_division: bool = False
+    eliminated: bool = False
+
+
 class TeamRef(ApiModel):
     id: int
     name: str
@@ -20,6 +60,12 @@ class TeamRef(ApiModel):
     division_name: str | None = None
     wins: int | None = None
     losses: int | None = None
+    # Derived from ingested results under the same as-of cut the model uses;
+    # display context only, never a model input.
+    home_record: RecordSplit | None = None
+    away_record: RecordSplit | None = None
+    streak: StreakSummary | None = None
+    standing: StandingSummary | None = None
 
     @property
     def record(self) -> str | None:

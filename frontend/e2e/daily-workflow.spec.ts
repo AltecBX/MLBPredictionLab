@@ -124,6 +124,77 @@ test.describe("daily game workflow", () => {
     await expect(page.getByText("LINEUP_PROVIDER", { exact: true })).toBeVisible();
   });
 
+  test("cards carry the role-specific record and the current streak", async ({
+    page,
+  }) => {
+    await page.goto("/?date=2026-08-01");
+    const card = page.locator("article").first();
+    try {
+      await card.waitFor({ state: "visible", timeout: 15_000 });
+    } catch {
+      test.skip(true, "No slate on this date.");
+    }
+    // "27-30 home" / "26-24 away" — the record in the role actually being
+    // played, which is the point of showing it at all.
+    await expect(card.getByText(/\d+-\d+ (home|away)/).first()).toBeVisible();
+    // A streak chip is W<n> or L<n>.
+    await expect(card.getByTitle(/(Won|Lost) \d+ straight/).first()).toBeVisible();
+  });
+
+  test("the slate is separated by status", async ({ page }) => {
+    await page.goto("/?date=2026-08-01");
+    const headings = page.getByRole("heading", {
+      name: /^(Live|Upcoming|Final|Postponed)/,
+    });
+    try {
+      await headings.first().waitFor({ state: "visible", timeout: 15_000 });
+    } catch {
+      test.skip(true, "No slate on this date.");
+    }
+    // Every group that renders says why it exists, so an empty screen and a
+    // screen with no live games never look the same.
+    await expect(page.getByText(/Not yet started|In progress now|Completed\./).first())
+      .toBeVisible();
+  });
+
+  test("the five-second summary is nine fixed rows and marks what is missing", async ({
+    page,
+  }) => {
+    const base = await openFirstGame(page);
+    await page.goto(`${base}?tab=prediction`);
+
+    await expect(page.getByRole("heading", { name: "At a glance" })).toBeVisible();
+    for (const label of [
+      "Home vs away form",
+      "Starting pitcher",
+      "Expected lineup",
+      "Bullpen readiness",
+      "Recent form",
+      "Season strength",
+      "Division position",
+      "Win probability",
+      "Confidence and data",
+    ]) {
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+    }
+    // The lineup row has no provider, and says so rather than reading "level".
+    await expect(page.getByText("LINEUP_PROVIDER", { exact: true }).first()).toBeVisible();
+  });
+
+  test("standings and the streak's own games are shown on the detail page", async ({
+    page,
+  }) => {
+    const base = await openFirstGame(page);
+    await page.goto(`${base}?tab=prediction`);
+
+    await expect(
+      page.getByRole("heading", { name: "Standings, splits and streaks" }),
+    ).toBeVisible();
+    // A streak is only judgeable with its opponents attached.
+    await expect(page.getByText(/(Winning|Losing) streak —/).first()).toBeVisible();
+    await expect(page.getByText(/in the (American|National) League/).first()).toBeVisible();
+  });
+
   test("no page promises a guaranteed outcome", async ({ page }) => {
     await page.goto("/?date=2026-08-01");
     const body = (await page.textContent("body")) ?? "";

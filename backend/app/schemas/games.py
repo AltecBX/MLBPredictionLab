@@ -119,6 +119,27 @@ class MatchupBar(ApiModel):
     advantage: str  # 'HOME' | 'AWAY' | 'EVEN'
 
 
+class MatchupSummaryRow(ApiModel):
+    """One row of the fixed nine-row five-second read.
+
+    `advantage` is one of HOME / AWAY / EVEN / UNAVAILABLE. EVEN means measured
+    and level, which is a finding; UNAVAILABLE means not measured, which is not
+    the same thing and is never rendered as EVEN.
+    """
+
+    key: str
+    label: str
+    advantage: str
+    team: str | None = None
+    value: str | None = None
+    magnitude_pp: float | None = None
+    detail: str | None = None
+    available: bool = True
+    required_source: str | None = None
+    # True when the row describes rather than contributes probability.
+    is_context: bool = False
+
+
 class SideDetail(ApiModel):
     team: TeamRef
     starter: PitcherRef
@@ -166,6 +187,7 @@ class GameDetail(ApiModel):
     drivers_against: list[DriverSummary] = []
     all_drivers: list[DriverSummary] = []
     matchup_bars: list[MatchupBar] = []
+    matchup_summary: list[MatchupSummaryRow] = []
     home_detail: SideDetail
     away_detail: SideDetail
     matchup_history: dict[str, Any] = {}

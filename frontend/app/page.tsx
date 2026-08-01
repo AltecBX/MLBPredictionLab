@@ -6,7 +6,8 @@ import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
-import { isoDate, longDate, shiftIsoDate, timestamp } from "@/lib/format";
+import { isoDate, longDate, shiftIsoDate, timestamp, todayIsoDate } from "@/lib/format";
+import { GROUP_HINT, GROUP_LABEL, groupSlate } from "@/lib/status";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function GameCenterPage({
   searchParams: Promise<{ date?: string; sort?: string }>;
 }) {
   const params = await searchParams;
-  const date = params.date ?? isoDate(new Date());
+  const date = params.date ?? todayIsoDate();
   const sort = params.sort ?? "game_time";
   const result = await api.games(date, sort);
 
@@ -71,7 +72,7 @@ export default async function GameCenterPage({
           </Link>
 
           <Link
-            href={`/?date=${isoDate(new Date())}&sort=${sort}`}
+            href={`/?date=${todayIsoDate()}&sort=${sort}`}
             className="tap min-w-0 flex-col justify-center rounded-lg text-center"
             title="Jump to today"
           >
@@ -159,9 +160,34 @@ export default async function GameCenterPage({
           </section>
 
           {result.data.games.length ? (
-            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {result.data.games.map((game) => (
-                <GameCardView key={game.game_id} game={game} />
+            /* Live first, then upcoming, then what is already settled. Mixing
+               them means scanning every card to find the one in progress. */
+            <div className="flex flex-col gap-6">
+              {groupSlate(result.data.games).map(([group, games]) => (
+                <section key={group} aria-labelledby={`slate-${group}`}>
+                  <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <h2
+                      id={`slate-${group}`}
+                      className="flex items-center gap-1.5 text-sm font-semibold"
+                    >
+                      {group === "LIVE" ? (
+                        <span
+                          aria-hidden
+                          className="inline-block size-1.5 animate-pulse rounded-full"
+                          style={{ background: "var(--color-danger-500)" }}
+                        />
+                      ) : null}
+                      {GROUP_LABEL[group]}
+                      <span className="tnum font-normal subtle">{games.length}</span>
+                    </h2>
+                    <p className="text-[0.7rem] subtle">{GROUP_HINT[group]}</p>
+                  </div>
+                  <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {games.map((game) => (
+                      <GameCardView key={game.game_id} game={game} />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
