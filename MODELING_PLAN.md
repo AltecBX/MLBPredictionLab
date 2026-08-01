@@ -81,7 +81,7 @@ top-5 for / top-5 against display.
 * Explained with SHAP, then translated into the same probability-point language
   as Model 1 so the UI has one explanation vocabulary.
 
-### Model 3 — Elo with starting-pitcher and home-field adjustment *(Phase 1 partial → Phase 2 full)*
+### Model 3 — Elo with starting-pitcher and home-field adjustment *(Phase 1 reference → Phase 2 ensemble member)*
 
 ```
 elo_home_adj = elo_home + HFA + sp_adjust(home_starter) − sp_adjust(away_starter)
@@ -93,8 +93,12 @@ P(home) = 1 / (1 + 10^(−(elo_home_adj − elo_away)/400))
 * Between seasons the rating regresses toward 1500 by a fitted fraction.
 * `sp_adjust` maps a starter's stabilized quality to an Elo delta, bounded so a
   single starter cannot swing the rating implausibly.
-* Phase 1 ships the Elo *rating* as a feature into Model 1. Phase 2 promotes
-  Elo to a standalone ensemble member.
+* Phase 1 ships Elo in two roles: the pre-game *rating* is a feature inside
+  Model 1, and the Elo *win probability* is served alongside the calibrated
+  probability as a **reference model**. It carries no ensemble weight — the
+  served probability is Model 1's alone — but the spread between the two is a
+  genuine disagreement signal and feeds confidence (§6). Phase 2 promotes Elo
+  to a weighted ensemble member with the starting-pitcher adjustment fitted.
 
 ### Model 4 — Expected runs *(Phase 3)*
 
@@ -169,7 +173,7 @@ over five signals, each in `[0,1]`:
 
 | Signal | Weight | Definition |
 |---|---|---|
-| Model agreement | 0.25 | `1 − normalized_std(component_probs)`. With a single active model in Phase 1 this is `NULL` and its weight is redistributed. |
+| Model agreement | 0.25 | `1 − std(component_probs) / 0.10`, clamped to `[0,1]`. Phase 1 compares the calibrated model against the Elo reference. When fewer than two components are available the signal is `NULL` and its weight is redistributed over the remaining signals. |
 | Data completeness | 0.25 | The completeness score from [DATA_SOURCES](DATA_SOURCES.md) §6. |
 | Input confirmation | 0.20 | Starter confirmed (0.6) + lineup confirmed (0.4). |
 | Historical calibration for similar predictions | 0.20 | `1 − |observed − predicted|` in this prediction's probability band, from the most recent backtest. |

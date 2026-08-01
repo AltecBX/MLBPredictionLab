@@ -18,7 +18,7 @@ criteria so the next increment starts from a defined boundary.
 | Schedule ingestion | Done — real, from MLB Stats API |
 | Game results ingestion | Done — real, final scores + full boxscores |
 | Basic team and pitcher statistics | Done — rebuilt as-of from per-game boxscore lines |
-| Initial logistic regression model | Done — L2 logistic, walk-forward selected `C`, Platt calibration |
+| Initial logistic regression model | Done — L2 logistic, walk-forward selected `C`, Platt calibration, Elo reference model for the agreement signal |
 | Daily games page | Done |
 | Game detail page | Done |
 | Walk-forward backtest | Done — engine, metrics, slices, calibration chart, ablation |
@@ -44,6 +44,8 @@ These are schema-complete and API-complete, and report `UNAVAILABLE` with the
 name of the required source. They are **not** filled with placeholder numbers:
 
 * Statcast metrics (`sp_xwoba_allowed`, barrels, spin, movement, xERA, SIERA)
+* A weighted model ensemble — Elo ships as a reference probability only, and
+  carries no weight in the served number
 * Pregame lineup confirmation (lineups are ingested from final boxscores for
   historical features; pregame confirmation needs the Phase 2 poller)
 * Per-pitcher bullpen availability (usage and fatigue *are* computed — they are

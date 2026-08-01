@@ -97,6 +97,24 @@ class Settings(BaseSettings):
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 
+    @field_validator(
+        "redis_url", "admin_api_key", "sentry_dsn", "lineup_provider",
+        "statcast_provider", "weather_provider", "injury_provider",
+        "park_factor_provider", "odds_provider",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_unset(cls, v: object) -> object:
+        """An empty value means "not configured", not a malformed one.
+
+        Container orchestrators routinely pass VAR= for an unset variable; a
+        blank optional provider must disable that category rather than crash the
+        process on startup.
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @property
     def sqlalchemy_url(self) -> str:
         return str(self.database_url)

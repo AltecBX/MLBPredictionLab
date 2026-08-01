@@ -299,8 +299,20 @@ sp_bb_pct_season_diff
 ```
 
 Each is registered in `app/features/registry.py` with its display name,
-category, unit, direction, minimum sample and phase, which is what drives both
-the explanation narratives and the UI's sample-size annotations.
+category, unit, minimum sample, phase and narrative phrase, which is what drives
+both the explanation text and the UI's sample-size annotations.
+
+**Sign convention.** A positive value always favors the home team. Features
+where a lower raw value is better — ERA, WHIP, walk rate, travel distance,
+bullpen fatigue — are assembled as `away − home` so the convention holds
+throughout, and their explanation text reports the edge as a magnitude rather
+than a signed difference.
+
+**Absolute features.** `env_home_field`, `env_is_dome`,
+`env_venue_elevation_km`, `sp_identified_home` and `sp_identified_away` are not
+differences. They are marked `is_absolute` in the registry so the explanation
+layer describes them factually instead of phrasing a ballpark as though it were
+choosing a side.
 
 ---
 

@@ -371,3 +371,50 @@ def test_openapi_schema_is_generated(client):
     body = client.get("/openapi.json").json()
     assert "/api/v1/games" in body["paths"]
     assert "/api/v1/backtest/latest" in body["paths"]
+
+
+# --- configuration ----------------------------------------------------------
+
+def test_blank_optional_env_vars_disable_their_category_rather_than_crashing(monkeypatch):
+    """Orchestrators pass VAR= for an unset variable; that must not fail startup."""
+    from app.core.config import Settings
+
+    for name in ("REDIS_URL", "ADMIN_API_KEY", "SENTRY_DSN", "ODDS_PROVIDER",
+                 "WEATHER_PROVIDER", "LINEUP_PROVIDER", "STATCAST_PROVIDER"):
+        monkeypatch.setenv(name, "")
+
+    parsed = Settings(_env_file=None)
+    assert parsed.redis_url is None
+    assert parsed.caching_active is False
+    assert parsed.admin_api_key is None
+    assert parsed.odds_provider is None
+    assert parsed.weather_provider is None
+
+
+def test_required_provider_cannot_be_blank(monkeypatch):
+    """A required category refuses to resolve rather than degrading silently."""
+    from app.core.errors import ConfigurationError
+    from app.providers import registry
+
+    monkeypatch.setattr(registry.settings, "schedule_provider", None, raising=False)
+    with pytest.raises(ConfigurationError, match="required"):
+        registry.get_schedule_provider()
+
+
+def test_admin_routes_are_disabled_when_no_key_is_configured(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.api.deps import require_admin
+    from app.core.config import settings as live_settings
+
+    monkeypatch.setattr(live_settings, "admin_api_key", None, raising=False)
+    with pytest.raises(HTTPException) as exc:
+        require_admin(x_admin_key=None)
+    assert exc.value.status_code == 404
+    assert "disabled" in exc.value.detail
+
+    monkeypatch.setattr(live_settings, "admin_api_key", "secret", raising=False)
+    with pytest.raises(HTTPException) as exc:
+        require_admin(x_admin_key="wrong")
+    assert exc.value.status_code == 401
+    require_admin(x_admin_key="secret")  # correct key passes
