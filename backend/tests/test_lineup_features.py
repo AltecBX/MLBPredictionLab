@@ -352,6 +352,19 @@ def test_fs_v3_extends_fs_v1_and_not_the_rejected_fs_v2():
     assert not (set(v3) & (set(v2) - set(v1)))
 
 
+def test_the_rejected_group_carries_its_measurement():
+    """BACKTEST_PLAN.md, Reporting: the evidence travels with the registration."""
+    for spec in LINEUP:
+        assert not spec.available, spec.key
+        assert "log loss" in spec.measurement, spec.key
+        assert "Rejected" in spec.measurement, spec.key
+
+
+def test_the_active_set_still_contains_nothing_unavailable():
+    for key in feature_keys("fs_v1"):
+        assert REGISTRY[key].available, key
+
+
 def test_the_lineup_and_arsenal_groups_are_ablatable_separately():
     from app.backtest.ablation import group_members
 

@@ -194,12 +194,12 @@ Ordered so each step is usable on its own and the next one depends on it.
 |---|---|---|
 | 1 | Statcast ingestion and data validation | **Done — verified on 188 real games** |
 | 2 | Starting-pitcher Statcast features | **Built, measured, rejected** — MODELING_PLAN.md |
-| 3 | Expected lineup features | **Built** as `fs_v3` — the projected half. Confirmed half still blocked; see below |
-| 4 | Pitch arsenal matchup engine | **Built** as part of `fs_v3` |
+| 3 | Expected lineup features | Built, **measured and rejected** (MODELING_PLAN.md) |
+| 4 | Pitch arsenal matchup engine | Built, **measured and rejected** — best standalone signal per feature in the model, still redundant |
 | 5 | Individual bullpen availability | Not started |
 | 6 | Weather and empirical park factors | Not started |
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
-| 8 | Run scoring model and simulation | Not started |
+| 8 | Run scoring model and simulation | **Next.** Three rejections say the ceiling is the shape of the question, not the column count |
 | 9 | Stacked ensemble and calibration | Not started |
 | 10 | Prediction timeline and change explanations | Not started |
 | 11 | UI context features | Partly done — records, streaks, standings, nine-row summary shipped |
