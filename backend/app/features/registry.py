@@ -619,6 +619,11 @@ LINEUP: list[FeatureSpec] = [
 ]
 
 
+#: The two matchup features on their own, for the isolating comparison below.
+ARSENAL_ONLY: list[FeatureSpec] = [
+    s for s in LINEUP if s.key.startswith("arsenal_")
+]
+
 REGISTRY: dict[str, FeatureSpec] = {
     s.key: s for s in FS_V1 + SC_SP + LINEUP + DEFERRED
 }
@@ -630,6 +635,13 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # rejected, and stacking a new group on a rejected one would measure the
     # pair rather than the group.
     "fs_v3": [s.key for s in FS_V1 + LINEUP],
+    # The arsenal matchup alone. The fs_v3 ablation separated the two halves of
+    # that group and they behaved nothing alike: the two arsenal features beat a
+    # coin flip on their own by 0.0038 — more per feature than any other group in
+    # the model — while the five projected-lineup features came in 0.0061 WORSE
+    # than a coin flip. Measuring them together measured their average, which is
+    # not a quantity anyone wants. This isolates the half that showed something.
+    "fs_v4": [s.key for s in FS_V1 + ARSENAL_ONLY],
 }
 
 
