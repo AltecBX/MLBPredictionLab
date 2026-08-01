@@ -54,6 +54,11 @@ class FeatureSpec:
     narrative: str = ""
     # True when the feature is not a home-minus-away difference.
     is_absolute: bool = False
+    # What a walk-forward measurement found, for a group that was built and then
+    # rejected. BACKTEST_PLAN.md § Reporting requires the evidence to travel
+    # with the registration so the next person reads it rather than re-running
+    # the same experiment.
+    measurement: str = ""
 
 
 def _spec(*args: object, **kwargs: object) -> FeatureSpec:
@@ -408,15 +413,44 @@ DEFERRED: list[FeatureSpec] = [
 ]
 
 
-# --- Phase 2A: starting-pitcher Statcast (fs_v2) ---------------------------
+# --- Phase 2A: starting-pitcher Statcast (fs_v2) — BUILT, MEASURED, REJECTED
 #
-# Registered as a group so `run_ablation` can hold it out whole. Each is a
-# home-minus-away difference oriented so that a POSITIVE value favors the home
-# side, like every other feature here — for the four "allowed" measures that
-# means away-minus-home, since allowing weaker contact is the good outcome.
+# Each is a home-minus-away difference oriented so that a POSITIVE value favors
+# the home side; for the four "allowed" measures that means away-minus-home,
+# since allowing weaker contact is the good outcome.
 #
-# Nothing in this list is claimed to help. It enters the model only if the
-# walk-forward comparison in BACKTEST_PLAN.md says it does.
+# All nine are `available=False`. They were built, measured over a full
+# walk-forward season, and did not earn a place. Two independent views agreed:
+#
+#   * Head to head, fs_v1 against fs_v2 on the same 1,741 games — Δ log loss
+#     −0.0004 with a paired 95% interval of [−0.0032, +0.0026]. Accuracy rose
+#     0.5 points, which is exactly the trade this system does not make.
+#   * Leave-one-out inside fs_v2 — removing the group *improved* log loss by
+#     0.0041, the largest such improvement of any group. Group-alone, it beat a
+#     coin flip by 0.00001.
+#
+# The diagnosis is in the univariate numbers, not in the fit. Every one of the
+# nine correlates with the outcome more weakly than the box-score starting
+# pitcher features already in the model (best +0.069 against +0.082 for
+# sp_k_minus_bb_pct_diff), and the strongest of them are 0.52–0.74 correlated
+# with those same features. They are a noisier re-measurement of what the model
+# already knows. The genuinely new part — contact quality allowed and the
+# velocity trend — correlates most weakly of all (+0.017, +0.015, +0.005).
+#
+# This is not an over-shrinkage artifact: the spreads are healthy, 5 percentage
+# points of hard-hit rate and 1.7 mph of velocity between the two starters.
+#
+# They stay registered, with the measurement attached, because the code that
+# computes them is correct and the next attempt should start from a different
+# hypothesis rather than from this one again. MODELING_PLAN.md has the full
+# result beside the GBDT one.
+REJECTION = (
+    "Walk-forward over 2024 (1,741 scored games): Δ log loss −0.0004, paired "
+    "95% CI [−0.0032, +0.0026]; leave-one-out removal improved log loss by "
+    "0.0041; group-alone beat a coin flip by 0.00001. Rejected. See "
+    "MODELING_PLAN.md § Starting-pitcher Statcast."
+)
+
 SC_SP: list[FeatureSpec] = [
     FeatureSpec(
         "sc_sp_xwoba_allowed_diff", "Starter xwOBA allowed",
@@ -424,32 +458,36 @@ SC_SP: list[FeatureSpec] = [
         "Expected wOBA against, from Statcast contact quality on balls in play "
         "and the actual value of every other plate appearance. Regressed toward "
         "the pitcher's prior season, itself regressed toward the league.",
-        unit="xwOBA", window="season", min_sample=100, phase=2,
+        unit="xwOBA", window="season", min_sample=100, phase=2, available=False,
         higher_favors_home=False, source_category="statcast",
+        measurement=REJECTION,
         narrative="sends out the starter allowing weaker expected contact",
     ),
     FeatureSpec(
         "sc_sp_barrel_pct_allowed_diff", "Starter barrel rate allowed",
         FeatureCategory.STARTING_PITCHING,
         "Barrels per batted ball allowed, using Savant's own classification.",
-        unit="pct", window="season", min_sample=40, phase=2,
+        unit="pct", window="season", min_sample=40, phase=2, available=False,
         higher_favors_home=False, source_category="statcast",
+        measurement=REJECTION,
         narrative="has given up barrels less often",
     ),
     FeatureSpec(
         "sc_sp_hard_hit_pct_allowed_diff", "Starter hard-hit rate allowed",
         FeatureCategory.STARTING_PITCHING,
         "Share of batted balls allowed at 95 mph or more.",
-        unit="pct", window="season", min_sample=40, phase=2,
+        unit="pct", window="season", min_sample=40, phase=2, available=False,
         higher_favors_home=False, source_category="statcast",
+        measurement=REJECTION,
         narrative="has allowed hard contact less often",
     ),
     FeatureSpec(
         "sc_sp_avg_exit_velocity_allowed_diff", "Starter exit velocity allowed",
         FeatureCategory.STARTING_PITCHING,
         "Mean exit velocity of batted balls allowed.",
-        unit="mph", window="season", min_sample=40, phase=2,
+        unit="mph", window="season", min_sample=40, phase=2, available=False,
         higher_favors_home=False, source_category="statcast",
+        measurement=REJECTION,
         narrative="has been hit less hard on average",
     ),
     FeatureSpec(
@@ -457,16 +495,16 @@ SC_SP: list[FeatureSpec] = [
         FeatureCategory.STARTING_PITCHING,
         "Swings missed per swing. Measures stuff without the strikeout's "
         "dependence on the count getting there.",
-        unit="pct", window="season", min_sample=150, phase=2,
-        source_category="statcast",
+        unit="pct", window="season", min_sample=150, phase=2, available=False,
+        source_category="statcast", measurement=REJECTION,
         narrative="sends out the starter who misses more bats",
     ),
     FeatureSpec(
         "sc_sp_chase_pct_diff", "Starter chase rate",
         FeatureCategory.STARTING_PITCHING,
         "Swings induced on pitches outside the zone, per pitch outside the zone.",
-        unit="pct", window="season", min_sample=150, phase=2,
-        source_category="statcast",
+        unit="pct", window="season", min_sample=150, phase=2, available=False,
+        source_category="statcast", measurement=REJECTION,
         narrative="gets hitters to chase more often",
     ),
     FeatureSpec(
@@ -474,8 +512,8 @@ SC_SP: list[FeatureSpec] = [
         FeatureCategory.STARTING_PITCHING,
         "Called strikes plus whiffs per pitch — command and stuff in one rate, "
         "and the fastest-stabilizing of the three.",
-        unit="pct", window="season", min_sample=300, phase=2,
-        source_category="statcast",
+        unit="pct", window="season", min_sample=300, phase=2, available=False,
+        source_category="statcast", measurement=REJECTION,
         narrative="has the better combination of command and swing-and-miss",
     ),
     FeatureSpec(
@@ -483,8 +521,8 @@ SC_SP: list[FeatureSpec] = [
         FeatureCategory.STARTING_PITCHING,
         "Mean four-seam velocity. Four-seam only, so a change in pitch usage "
         "cannot be mistaken for a change in stuff.",
-        unit="mph", window="season", min_sample=100, phase=2,
-        source_category="statcast",
+        unit="mph", window="season", min_sample=100, phase=2, available=False,
+        source_category="statcast", measurement=REJECTION,
         narrative="throws harder",
     ),
     FeatureSpec(
@@ -493,8 +531,8 @@ SC_SP: list[FeatureSpec] = [
         "Last 30 days of fastball velocity minus the pitcher's own season "
         "average. A delta rather than a level, so recent form moves the "
         "prediction without erasing the season behind it.",
-        unit="mph", window="w30", min_sample=60, phase=2,
-        source_category="statcast",
+        unit="mph", window="w30", min_sample=60, phase=2, available=False,
+        source_category="statcast", measurement=REJECTION,
         narrative="is throwing harder lately than his own season baseline",
     ),
 ]

@@ -247,6 +247,25 @@ def test_the_allowed_measures_are_oriented_so_lower_is_better():
             assert not spec.higher_favors_home, spec.key
 
 
+def test_the_rejected_group_carries_its_measurement():
+    """BACKTEST_PLAN.md § Reporting: the evidence travels with the registration.
+
+    The group was built, measured over a full walk-forward season and did not
+    earn a place. It stays registered so the next person reads the numbers
+    instead of re-running the same experiment.
+    """
+    for spec in SC_SP:
+        assert not spec.available, spec.key
+        assert "log loss" in spec.measurement, spec.key
+        assert "Rejected" in spec.measurement, spec.key
+
+
+def test_the_active_set_contains_nothing_unavailable():
+    """A feature that reports UNAVAILABLE cannot be one the model depends on."""
+    for key in feature_keys("fs_v1"):
+        assert REGISTRY[key].available, key
+
+
 def test_the_statcast_group_is_ablatable_on_its_own():
     from app.backtest.ablation import group_members
 

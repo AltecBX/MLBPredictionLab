@@ -193,7 +193,7 @@ Ordered so each step is usable on its own and the next one depends on it.
 | # | Step | State |
 |---|---|---|
 | 1 | Statcast ingestion and data validation | **Done — verified on 188 real games** |
-| 2 | Starting-pitcher Statcast features | **This change** |
+| 2 | Starting-pitcher Statcast features | **Built, measured, rejected** — MODELING_PLAN.md |
 | 3 | Expected and confirmed lineup features | Blocked on the timeline — see below |
 | 4 | Pitch arsenal matchup engine | Not started |
 | 5 | Individual bullpen availability | Not started |
@@ -229,6 +229,36 @@ Derived rates on the ingested window, for the record: 88.1 mph average exit
 velocity, 8.3% barrel, 38.2% hard hit, 48.0% swing, 23.2% whiff per swing, 49.6%
 zone, 22.5% strikeout, 8.0% walk. Home runs agree exactly across three
 independent paths — batted-ball table, pitch table and box score, 485 each.
+
+## Result of step 2
+
+The nine `sc_sp_*` features were built as feature set `fs_v2` and evaluated
+against `fs_v1` walk-forward over the full 2024 season. **They do not improve
+out-of-sample performance and are not adopted.** The active set is unchanged at
+`fs_v1`.
+
+| | fs_v1 (served) | fs_v2 |
+|---|---|---|
+| Log loss | **0.68383** | 0.68423 |
+| Brier | **0.24545** | 0.24560 |
+| Calibration error | **0.50%** | 1.59% |
+| Accuracy | 56.17% | **56.69%** |
+
+1,741 scored games, regularisation selected per set by the same rule, paired
+95% intervals all spanning zero. Leave-one-out agrees: removing the group
+improves log loss by 0.0041, and the group alone beats a coin flip by 0.00001.
+MODELING_PLAN.md § Starting-pitcher Statcast has the full table and the
+univariate diagnosis of why.
+
+The features stay in the registry with `available=False` and the measurement
+attached, so the next attempt starts from a different hypothesis rather than
+from this one again.
+
+**What this changes about the order below.** Step 4, the pitch-arsenal matchup
+engine, was already next after 2 and 3; this result raises its priority relative
+to more pitcher-level aggregates, because the thing that was measured — a
+starter's stuff *in general* — is not the thing that decides a game. His stuff
+against tonight's nine hitters might be.
 
 ## Why step 3 is not simply "next"
 

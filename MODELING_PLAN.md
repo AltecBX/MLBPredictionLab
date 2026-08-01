@@ -323,6 +323,98 @@ overconfident. A test asserts the log-odds behaviour.
 
 ---
 
+## Starting-pitcher Statcast: measured, and rejected on the evidence
+
+The second negative result kept on purpose. Nine features — expected wOBA,
+barrel rate, hard-hit rate and exit velocity allowed; whiff, chase and
+called-strike-plus-whiff rates; four-seam velocity; and the 30-day velocity
+delta — were built as feature set `fs_v2` and evaluated against `fs_v1`. They do
+not earn their place, so the active feature set is unchanged.
+
+Reproduce with `python -m app.cli compare-feature-sets --seasons 2024`.
+
+**Head to head**, both sets refit walk-forward, regularisation selected for each
+by the same rule, scored on the same 1,741 games:
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| **fs_v1 (served), 42 features** | **0.68383** | **0.24545** | **0.50%** | 56.17% | **0.5658** |
+| fs_v2, 51 features | 0.68423 | 0.24560 | 1.59% | **56.69%** | 0.5657 |
+
+| Paired 95% interval | Δ log loss | Δ Brier | Δ calibration error |
+|---|---|---|---|
+| | −0.0004 [−0.0032, +0.0026] | −0.0001 [−0.0015, +0.0013] | −0.0037 [−0.0220, +0.0129] |
+
+Every interval spans zero. Accuracy rose half a point, which is exactly the
+trade this system does not make: §2 ranks log loss and calibration above it, and
+a model that is right slightly more often while stating worse probabilities is
+worse.
+
+**Leave-one-out and group-alone**, inside `fs_v2`:
+
+| Group | Δ log loss on removal | Group alone, vs a coin flip |
+|---|---|---|
+| team_strength | −0.0029 | +0.0063 |
+| offense | −0.0024 | +0.0047 |
+| **starting_pitcher_statcast** | **−0.0041** | **+0.00001** |
+| starting_pitcher (box score) | +0.0011 | +0.0026 |
+
+Removing the group *improves* log loss more than removing any other group, and
+on its own it beats a coin flip by one hundred-thousandth of a nat. Both views
+agree, which is the point of running both.
+
+**Why, in the univariate numbers rather than in the fit.** Every one of the nine
+correlates with the outcome more weakly than the box-score starter features
+already in the model, and the strongest of them are largely the same variable:
+
+| Feature | sd | r with home win | Largest \|r\| with an existing feature |
+|---|---|---|---|
+| `sc_sp_xwoba_allowed_diff` | 0.020 | +0.069 | 0.693 `sp_k_minus_bb_pct_diff` |
+| `sc_sp_csw_pct_diff` | 0.024 | +0.067 | 0.670 `sp_k_pct_season_diff` |
+| `sc_sp_whiff_pct_diff` | 0.042 | +0.056 | 0.738 `sp_k_pct_season_diff` |
+| `sc_sp_fastball_velocity_diff` | 1.69 | +0.050 | 0.463 `sp_k_pct_season_diff` |
+| `sc_sp_chase_pct_diff` | 0.030 | +0.046 | 0.436 `sp_k_minus_bb_pct_diff` |
+| `sc_sp_hard_hit_pct_allowed_diff` | 0.050 | +0.036 | 0.229 `sp_fip_season_diff` |
+| `sc_sp_barrel_pct_allowed_diff` | 0.020 | +0.017 | 0.521 `sp_hr_per_9_diff` |
+| `sc_sp_avg_exit_velocity_allowed_diff` | 1.74 | +0.015 | 0.232 `sp_fip_season_diff` |
+| `sc_sp_velocity_delta_30d_diff` | 0.52 | +0.005 | 0.075 `sp_bb_pct_season_diff` |
+| *for comparison:* `sp_k_minus_bb_pct_diff` | | **+0.082** | |
+| *for comparison:* `elo_diff` | | **+0.130** | |
+
+Read down that table and the result stops being surprising. The features that
+correlate most with winning are the ones that correlate most with the
+strikeout-rate feature the model already has — they are a second, noisier
+measurement of the same thing. And the part that is genuinely new, contact
+quality allowed and the velocity trend, is the weakest of all.
+
+**This is not over-shrinkage.** The spreads are healthy: five percentage points
+of hard-hit rate and 1.7 mph of fastball velocity between two starting pitchers.
+The features are well formed; they are measuring something real about the
+pitcher that turns out not to move a single game's outcome.
+
+**What it does not mean.** It does not mean Statcast is worthless here. It means
+*starter-level season aggregates* are worthless here, on top of box-score
+starter features that already exist. The three hypotheses it leaves open, in
+descending order of how much they would change:
+
+1. **The matchup, not the pitcher.** A starter's arsenal against *this* lineup's
+   weaknesses is a different quantity from his arsenal in general, and the
+   general version is what was measured. That is the pitch-arsenal matchup
+   engine, and it needs batter-side Statcast that is now ingested.
+2. **The batters, not the pitcher.** A starter is a minority of a team's run
+   prevention and none of its scoring. Nine lineup slots of contact quality is
+   a larger surface than one pitcher's.
+3. **Non-linearity.** The ensemble section above notes that trees had nothing to
+   find in 42 shrunk, correlated rate differences. That argument does not change
+   with nine more of the same shape — which is itself evidence that the next
+   feature group should not be more of this shape.
+
+One season is one sample. The comparison is one command, and re-running it over
+2025 as that season finishes ingesting is the cheapest available check on
+whether this result holds.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
