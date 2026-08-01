@@ -14,8 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    BacktestResult,
+    BacktestRun,
     Ballpark,
     Game,
+    ModelFeature,
     ModelVersion,
     Player,
     Prediction,
@@ -327,9 +330,6 @@ def _bullpen_warning(prediction: Prediction | None) -> str | None:
 
 
 def sort_cards(cards: list[GameCard], sort: str) -> list[GameCard]:
-    def prediction_of(card: GameCard) -> PredictionSummary | None:
-        return card.prediction
-
     if sort == "win_probability":
         return sorted(
             cards,
@@ -467,8 +467,6 @@ def _side_detail(
     )
     pitcher = session.get(Player, pitcher_id) if pitcher_id else None
 
-    from app.db.models import ModelFeature
-
     row = None
     if prediction is not None:
         row = session.scalar(
@@ -565,8 +563,6 @@ def _backtest_evidence(session: Session, prediction: Prediction | None) -> Backt
     detail = (prediction.confidence_components or {}).get(
         "historical_calibration_detail", {}
     ) or {}
-    from app.db.models import BacktestResult, BacktestRun
-
     run = session.scalar(select(BacktestRun).order_by(BacktestRun.created_at.desc()))
     if run is None:
         return BacktestEvidence(

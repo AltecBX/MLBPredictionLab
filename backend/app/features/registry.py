@@ -315,8 +315,11 @@ FS_V1: list[FeatureSpec] = [
     # Environment
     FeatureSpec(
         "env_home_field", "Home field", FeatureCategory.ENVIRONMENT,
-        "Constant home indicator. The model learns the home-field coefficient from "
-        "data rather than assuming a fixed advantage.",
+        "Constant home indicator. Because every row is a home-team row, this column "
+        "has zero variance after standardization and therefore contributes exactly "
+        "zero to any individual prediction — the learned home-field effect lives in "
+        "the model intercept. It is retained as an explicit marker of the sign "
+        "convention and as the slot a future home/neutral-site distinction would use.",
         unit="flag", min_sample=0, is_absolute=True,
         narrative="is at home, where the league has historically won more often",
     ),

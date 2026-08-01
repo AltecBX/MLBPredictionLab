@@ -60,7 +60,7 @@ Written before any code, and kept current:
 * Walk-forward backtest with calibration reporting, eight slice dimensions,
   feature-group ablation and automatic leakage tripwires.
 * Daily Game Center, Game Detail (ten tabs), Backtest and Diagnostics screens.
-* 106 backend tests and 23 frontend component tests, plus an end-to-end suite.
+* 127 backend tests, 23 frontend component tests and 12 end-to-end tests.
 
 ### Deliberately not populated
 
@@ -155,12 +155,31 @@ games before each prediction date:
 
 | Metric | Value | Reference |
 |---|---|---|
-| Games evaluated | 8,339 | |
-| **Log loss** | **0.6840** | 0.6931 = always 50% · ~0.65 = market close |
-| **Brier score** | **0.2455** | |
-| **Calibration error** | **0.91%** | |
-| Accuracy | 55.7% | ~58–60% = market close |
-| ROC AUC | 0.572 | |
+| Games evaluated | 8,134 (26 steps; 14 early steps skipped for too little training data) | |
+| **Log loss** | **0.6845** | 0.6931 = always 50% · ~0.65 = market close |
+| **Brier score** | **0.2457** | |
+| **Calibration error** | **1.12%** (max 6.72%) | |
+| Accuracy | 55.6% | ~58–60% = market close |
+| ROC AUC | 0.570 | |
+
+Reliability by probability band — the honest answer to "how often does a 62%
+pick actually win?":
+
+| Band (favorite) | Games | Model said | Actually won | Gap |
+|---|---|---|---|---|
+| 50–55% | 3,634 | 52.5% | 52.9% | +0.4 |
+| 55–60% | 2,714 | 56.9% | 55.4% | −1.5 |
+| 60–65% | 1,081 | 62.1% | 58.5% | −3.7 |
+| 65–70% | 505 | 66.9% | 64.0% | −2.9 |
+| 70–75% | 153 | 71.9% | 67.3% | −4.6 |
+| 75%+ | 47 | 78.0% | 72.3% | −5.7 |
+
+The model is well calibrated where most of the volume sits and **mildly
+overconfident in its strongest picks**. That is a real, measured limitation, not
+a rounding artefact: the per-step Platt calibrator is fit on a 45-day validation
+window, which is thin in the tails. It is surfaced in the product rather than
+smoothed over — the backtest page shows this table with its gap column, and the
+game detail page links each prediction to the band it falls in.
 
 Read those numbers honestly: the edge over a coin flip is real but modest, and
 that is what an MLB model without Statcast, lineups or weather should look like.

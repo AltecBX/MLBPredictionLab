@@ -187,7 +187,7 @@ a distinct feed and stays `UNAVAILABLE` until Phase 2.
 
 | Key | Definition | Source | Phase |
 |---|---|---|---|
-| `env_home_field` | constant home indicator; the model learns the coefficient rather than assuming a fixed 54% | — | **P1** |
+| `env_home_field` | Constant home indicator. It has zero variance after standardization, so it contributes exactly zero to any individual prediction — the learned home-field effect is carried by the model **intercept**, which is fitted from data rather than assumed. Retained as an explicit marker of the sign convention. | — | **P1** |
 | `env_venue_elevation_ft` | ballpark elevation | Venue master | **P1** |
 | `env_park_dimensions` | LF/LC/CF/RC/RF fence distances | Venue master | **P1** |
 | `env_roof_type` | Open / Dome / Retractable | Venue master | **P1** |
