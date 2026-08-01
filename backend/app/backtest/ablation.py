@@ -40,12 +40,18 @@ FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     "defense": ("def_",),
     "environment": ("env_is_dome", "env_venue_elevation"),
     "offense": ("off_",),
+    "projected_lineup": ("lineup_",),
+    "arsenal_matchup": ("arsenal_",),
 }
 
 # Groups whose providers are not enabled in Phase 1. Reported as untestable
 # rather than silently omitted from the table.
 UNAVAILABLE_GROUPS = {
-    "expected_lineups": "Requires the Phase 2 pregame lineup poller.",
+    "confirmed_lineups": (
+        "Requires a pregame lineup poller. Box-score lineups are only knowable "
+        "after first pitch (LEAKAGE_PREVENTION.md §15), so the projected-lineup "
+        "group is what is testable today."
+    ),
     "weather": "Requires a configured weather provider (WEATHER_PROVIDER).",
     "park_factors": "Requires the Phase 2 park-factor regression.",
     "batter_vs_pitcher": "Requires Phase 3 play-by-play ingestion.",

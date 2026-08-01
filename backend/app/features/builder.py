@@ -20,6 +20,7 @@ import pandas as pd
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.features import aggregates as agg
+from app.features import lineup_features as lf
 from app.features import statcast_features as sc
 from app.features.asof import AsOfStore, season_start_utc
 from app.features.context import GameContext
@@ -126,6 +127,7 @@ class FeatureBuilder:
         self.elo = elo if elo is not None else AsOfElo(store.games)
         self._league_cache: dict[tuple[int, str], LeagueBaseline] = {}
         self._statcast_league_cache: dict[str, sc.StatcastBaseline] = {}
+        self._batting_league_cache: dict[str, lf.LeagueBatting] = {}
         self._team_rate_cache: dict[tuple[int, str], dict[int, tuple[float, float, int]]] = {}
 
     # -- league baselines --------------------------------------------------
@@ -214,6 +216,7 @@ class FeatureBuilder:
         ctx: GameContext,
         as_of: datetime,
         baseline: LeagueBaseline,
+        opponent_starter_id: int | None = None,
     ) -> SideFeatures:
         season_start = season_start_utc(ctx.season)
         values: dict[str, FeatureValue] = {}
@@ -241,6 +244,11 @@ class FeatureBuilder:
             self._pitching_values(team_id, starter_id, ctx, as_of, season_start, baseline)
         )
         values.update(self._statcast_starter_values(starter_id, ctx, as_of, season_start))
+        values.update(
+            self._lineup_values(
+                team_id, opponent_starter_id, opponent_starter_hand, ctx, as_of, season_start
+            )
+        )
         values.update(self._schedule_values(team_id, ctx, as_of))
         values.update(self._history_values(team_id, opponent_id, ctx, as_of, season_start))
 
@@ -557,6 +565,81 @@ class FeatureBuilder:
             self.statcast_league_baseline(as_of, season_start),
         )
 
+    def _lineup_values(
+        self,
+        team_id: int,
+        opponent_starter_id: int | None,
+        opponent_starter_hand: str | None,
+        ctx: GameContext,
+        as_of: datetime,
+        season_start: datetime,
+    ) -> dict[str, FeatureValue]:
+        """Projected-lineup quality, and the matchup against tonight's arsenal.
+
+        Every input is a completed game cut at ``as_of``. The lineup is projected
+        from the team's own recent starts rather than read from a posted one,
+        because no posted lineup is knowable at this snapshot
+        (LEAKAGE_PREVENTION.md §15).
+        """
+        if not self.store.has_batter_statcast:
+            return {
+                key: FeatureValue.missing("Statcast not ingested for this window")
+                for key in lf.FEATURE_KEYS
+            }
+
+        orders = self.store.batting_orders_asof(team_id, as_of)
+        self.store.assert_as_of(orders, as_of, f"team {team_id} batting orders")
+        lineup = lf.project_lineup(orders, as_of)
+        if lineup.is_empty:
+            return {
+                key: FeatureValue.missing("no recent starts to project a lineup from")
+                for key in lf.FEATURE_KEYS
+            }
+
+        league = self.batting_league_baseline(as_of, season_start)
+        profiles = {
+            slot.player_id: lf.batter_profile(
+                self.store.batter_statcast_asof(slot.player_id, as_of, season_start),
+                opponent_starter_hand,
+                league,
+            )
+            for slot in lineup.slots
+        }
+
+        usage = (
+            lf.arsenal_usage(
+                self.store.arsenal_asof(
+                    opponent_starter_id, as_of, season_start, starters_only=True
+                )
+            )
+            if opponent_starter_id is not None
+            else None
+        )
+        return lf.lineup_values(lineup, profiles, usage, league)
+
+    def batting_league_baseline(
+        self, as_of: datetime, season_start: datetime
+    ) -> lf.LeagueBatting:
+        """League batting rates as of the START of ``as_of``'s calendar day.
+
+        Same day boundary, same cache, same reason as the pitching baseline: an
+        afternoon result must not move the prior an evening game on the same
+        slate is measured against, and recomputing a league-wide sum once per
+        side per game is thousands of full scans a season.
+        """
+        day = as_of.astimezone(UTC).date()
+        key = day.isoformat()
+        cached = self._batting_league_cache.get(key)
+        if cached is not None:
+            return cached
+
+        cut = datetime(day.year, day.month, day.day, tzinfo=UTC)
+        baseline = lf.league_batting(
+            self.store.league_batter_statcast_asof(cut, season_start)
+        )
+        self._batting_league_cache[key] = baseline
+        return baseline
+
     def statcast_league_baseline(
         self, as_of: datetime, season_start: datetime
     ) -> sc.StatcastBaseline:
@@ -712,10 +795,12 @@ class FeatureBuilder:
         home = self.build_side(
             ctx.home_team_id, ctx.away_team_id, ctx.home_starter_id,
             ctx.home_starter_status, away_hand, ctx, as_of, baseline,
+            opponent_starter_id=ctx.away_starter_id,
         )
         away = self.build_side(
             ctx.away_team_id, ctx.home_team_id, ctx.away_starter_id,
             ctx.away_starter_status, home_hand, ctx, as_of, baseline,
+            opponent_starter_id=ctx.home_starter_id,
         )
 
         features: dict[str, float | None] = {}
@@ -758,6 +843,9 @@ class FeatureBuilder:
             ("sc_sp_csw_pct_diff", "sc_sp_csw_pct"),
             ("sc_sp_fastball_velocity_diff", "sc_sp_fastball_velocity"),
             ("sc_sp_velocity_delta_30d_diff", "sc_sp_velocity_delta_30d"),
+            ("lineup_xwoba_weighted_diff", "lineup_xwoba_weighted"),
+            ("lineup_xwoba_vs_hand_diff", "lineup_xwoba_vs_hand"),
+            ("arsenal_xwoba_edge_diff", "arsenal_xwoba_edge"),
         ):
             emit(key, _diff(home.get(source), away.get(source)))
 
@@ -783,10 +871,14 @@ class FeatureBuilder:
             ("sc_sp_barrel_pct_allowed_diff", "sc_sp_barrel_pct_allowed"),
             ("sc_sp_hard_hit_pct_allowed_diff", "sc_sp_hard_hit_pct_allowed"),
             ("sc_sp_avg_exit_velocity_allowed_diff", "sc_sp_avg_exit_velocity_allowed"),
+            ("lineup_whiff_pct_weighted_diff", "lineup_whiff_pct_weighted"),
+            ("arsenal_whiff_edge_diff", "arsenal_whiff_edge"),
         ):
             emit(key, _diff(away.get(source), home.get(source)))
 
         # Absolute (non-differenced) features.
+        emit("lineup_continuity_home", home.get("lineup_continuity"))
+        emit("lineup_continuity_away", away.get("lineup_continuity"))
         emit("sp_identified_home", home.get("sp_identified"))
         emit("sp_identified_away", away.get("sp_identified"))
         emit("env_home_field", FeatureValue(1.0, 0, False))

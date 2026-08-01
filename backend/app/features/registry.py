@@ -543,11 +543,93 @@ SC_SP: list[FeatureSpec] = [
 ]
 
 
-REGISTRY: dict[str, FeatureSpec] = {s.key: s for s in FS_V1 + SC_SP + DEFERRED}
+# --- Phase 2B: projected lineup and arsenal matchup (fs_v3) ----------------
+#
+# The two hypotheses MODELING_PLAN.md left open when the starting-pitcher
+# Statcast group was rejected: that the matchup matters where the pitcher alone
+# did not, and that nine lineup slots are a larger surface than one arm.
+#
+# Every input is a completed game cut at as_of. The lineup is *projected* from a
+# team's own recent starts, never read from a posted one — LEAKAGE_PREVENTION.md
+# §15 measured that no posted lineup is knowable at this snapshot, and this group
+# does not pretend otherwise.
+#
+# Registered, not adopted. The comparison decides.
+LINEUP: list[FeatureSpec] = [
+    FeatureSpec(
+        "lineup_xwoba_weighted_diff", "Projected lineup quality",
+        FeatureCategory.OFFENSE,
+        "Expected wOBA of the nine most likely starters, weighted by the plate "
+        "appearances their batting-order slots actually receive, each shrunk "
+        "toward the league.",
+        unit="xwOBA", window="season", min_sample=80, phase=2,
+        source_category="statcast",
+        narrative="projects the stronger lineup by expected plate appearances",
+    ),
+    FeatureSpec(
+        "lineup_xwoba_vs_hand_diff", "Projected lineup vs. this hand",
+        FeatureCategory.OFFENSE,
+        "The same weighted lineup quality, but each hitter measured against the "
+        "handedness of the pitcher he will face tonight.",
+        unit="xwOBA", window="season", min_sample=80, phase=2,
+        source_category="statcast",
+        narrative="holds the platoon edge against tonight's starter",
+    ),
+    FeatureSpec(
+        "lineup_whiff_pct_weighted_diff", "Projected lineup swing-and-miss",
+        FeatureCategory.OFFENSE,
+        "Weighted rate at which the projected lineup misses when it swings.",
+        unit="pct", window="season", min_sample=80, phase=2,
+        higher_favors_home=False, source_category="statcast",
+        narrative="puts more bats on the ball",
+    ),
+    FeatureSpec(
+        "arsenal_xwoba_edge_diff", "Arsenal matchup, contact",
+        FeatureCategory.OFFENSE,
+        "How this lineup fares against the pitch mix tonight's starter actually "
+        "throws, NET of how it fares generally. A raw figure would restate "
+        "lineup quality, which is already the feature beside it; the edge is "
+        "what the mix is worth given the lineup.",
+        unit="xwOBA", window="season", min_sample=80, phase=2,
+        source_category="statcast",
+        narrative="matches up well against what this starter throws",
+    ),
+    FeatureSpec(
+        "arsenal_whiff_edge_diff", "Arsenal matchup, swing-and-miss",
+        FeatureCategory.OFFENSE,
+        "The same edge on whiff rate: how much more, or less, this lineup misses "
+        "against his particular mix than against pitching in general.",
+        unit="pct", window="season", min_sample=80, phase=2,
+        higher_favors_home=False, source_category="statcast",
+        narrative="misses less often against this starter's mix",
+    ),
+    FeatureSpec(
+        "lineup_continuity_home", "Home lineup stability", FeatureCategory.OFFENSE,
+        "Share of the projected nine who started the team's most recent game. A "
+        "projection is a guess; this is how good a guess it is.",
+        unit="pct", window="w21", min_sample=5, phase=2, is_absolute=True,
+        source_category="results",
+    ),
+    FeatureSpec(
+        "lineup_continuity_away", "Away lineup stability", FeatureCategory.OFFENSE,
+        "Same, for the away side.",
+        unit="pct", window="w21", min_sample=5, phase=2, is_absolute=True,
+        source_category="results",
+    ),
+]
+
+
+REGISTRY: dict[str, FeatureSpec] = {
+    s.key: s for s in FS_V1 + SC_SP + LINEUP + DEFERRED
+}
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     "fs_v1": [s.key for s in FS_V1],
     "fs_v2": [s.key for s in FS_V1 + SC_SP],
+    # Deliberately fs_v1 + LINEUP, not fs_v2 + LINEUP: fs_v2 was measured and
+    # rejected, and stacking a new group on a rejected one would measure the
+    # pair rather than the group.
+    "fs_v3": [s.key for s in FS_V1 + LINEUP],
 }
 
 
