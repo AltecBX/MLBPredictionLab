@@ -7,16 +7,17 @@ stored, auditable one (ARCHITECTURE.md §5).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
     BacktestResult,
     BacktestRun,
     Ballpark,
+    DataSourceStatus,
     Game,
     ModelFeature,
     ModelVersion,
@@ -26,6 +27,7 @@ from app.db.models import (
     Team,
 )
 from app.features.registry import CATEGORY_LABELS, deferred_by_source
+from app.providers.base import DataCategory
 from app.schemas.common import (
     BallparkRef,
     FreshnessEntry,
@@ -48,6 +50,9 @@ from app.schemas.games import (
 )
 from app.services.freshness import freshness_report
 from app.services.prediction import diff_predictions, prediction_history
+
+# A refresh within this window of the prediction is treated as concurrent.
+STALENESS_GRACE = timedelta(minutes=5)
 
 SORT_KEYS = {
     "game_time",
@@ -216,6 +221,54 @@ def load_games_for_date(session: Session, target: date) -> list[Game]:
     )
 
 
+# Categories whose refresh can materially change a prediction.
+MATERIAL_CATEGORIES = (
+    DataCategory.SCHEDULE,
+    DataCategory.PROBABLE_PITCHERS,
+    DataCategory.RESULTS,
+    DataCategory.PLAYER_STATS,
+    DataCategory.LINEUPS,
+    DataCategory.WEATHER,
+    DataCategory.INJURIES,
+)
+
+
+def _last_material_update(session: Session) -> datetime | None:
+    """Newest successful refresh across the categories a prediction depends on."""
+    return session.scalar(
+        select(func.max(DataSourceStatus.last_success_at)).where(
+            DataSourceStatus.category.in_([str(c) for c in MATERIAL_CATEGORIES])
+        )
+    )
+
+
+def _staleness_warning(
+    prediction: Prediction | None, last_update: datetime | None
+) -> WarningEntry | None:
+    """Flag a prediction that predates the most recent source refresh.
+
+    Required by the product spec: the user must be told when a prediction has
+    not been recalculated after a material update, rather than being shown a
+    number that silently reflects older inputs.
+    """
+    if prediction is None or last_update is None:
+        return None
+    created = prediction.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    if last_update <= created + STALENESS_GRACE:
+        return None
+    minutes = int((last_update - created).total_seconds() // 60)
+    return WarningEntry(
+        code="PREDICTION_PREDATES_SOURCE_REFRESH",
+        severity="medium",
+        message=(
+            f"Source data refreshed {minutes} minutes after this prediction was "
+            f"generated. It has not been recalculated since."
+        ),
+    )
+
+
 def build_game_cards(
     session: Session, games: list[Game], predictions: dict[int, Prediction]
 ) -> list[GameCard]:
@@ -255,6 +308,8 @@ def build_game_cards(
         v.id: v
         for v in session.scalars(select(ModelVersion).where(ModelVersion.id.in_(version_ids)))
     } if version_ids else {}
+
+    last_update = _last_material_update(session)
 
     cards: list[GameCard] = []
     for game in games:
@@ -310,6 +365,9 @@ def build_game_cards(
             ),
         )
         card.bullpen_warning = _bullpen_warning(prediction)
+        stale = _staleness_warning(prediction, last_update)
+        if stale is not None and card.prediction is not None:
+            card.prediction.warnings = [stale, *card.prediction.warnings]
         cards.append(card)
     return cards
 

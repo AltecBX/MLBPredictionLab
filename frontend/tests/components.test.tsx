@@ -1,6 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { CalibrationChart } from "@/components/CalibrationChart";
 import { DriverList } from "@/components/DriverList";
 import { GameCardView } from "@/components/GameCard";
@@ -174,5 +176,29 @@ describe("FreshnessStrip", () => {
     expect(screen.getByText("2m ago")).toBeInTheDocument();
     expect(screen.getByText("Weather")).toBeInTheDocument();
     expect(screen.getByText("unavailable")).toBeInTheDocument();
+  });
+});
+
+describe("AutoRefresh", () => {
+  it("only appears when a game is near first pitch", () => {
+    const soon = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+    const distant = new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString();
+
+    const { container, rerender } = render(<AutoRefresh firstPitches={[distant]} />);
+    expect(container).toBeEmptyDOMElement();
+
+    rerender(<AutoRefresh firstPitches={[distant, soon]} />);
+    expect(
+      screen.getByLabelText(/Auto-refresh near first pitch/),
+    ).toBeInTheDocument();
+  });
+
+  it("can be turned off by the reader", async () => {
+    const soon = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    render(<AutoRefresh firstPitches={[soon]} />);
+    const toggle = screen.getByLabelText(/Auto-refresh near first pitch/);
+    expect(toggle).toBeChecked();
+    await userEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
   });
 });

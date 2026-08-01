@@ -418,3 +418,31 @@ def test_admin_routes_are_disabled_when_no_key_is_configured(monkeypatch):
         require_admin(x_admin_key="wrong")
     assert exc.value.status_code == 401
     require_admin(x_admin_key="secret")  # correct key passes
+
+
+# --- staleness --------------------------------------------------------------
+
+def test_prediction_predating_a_source_refresh_is_flagged(seeded):
+    """The spec requires telling the user when a prediction is out of date."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.game_view import _staleness_warning
+
+    created = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+
+    class _Stub:
+        created_at = created
+
+    # A refresh well after the prediction is flagged.
+    warning = _staleness_warning(_Stub(), created + timedelta(minutes=45))
+    assert warning is not None
+    assert warning.code == "PREDICTION_PREDATES_SOURCE_REFRESH"
+    assert "45 minutes" in warning.message
+
+    # A near-concurrent refresh is not.
+    assert _staleness_warning(_Stub(), created + timedelta(minutes=2)) is None
+    # A refresh before the prediction is not.
+    assert _staleness_warning(_Stub(), created - timedelta(hours=1)) is None
+    # No prediction or no source data means nothing to compare.
+    assert _staleness_warning(None, created) is None
+    assert _staleness_warning(_Stub(), None) is None
