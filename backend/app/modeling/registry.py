@@ -1,0 +1,163 @@
+"""Model artifact registry.
+
+MLflow-compatible layout (one directory per version holding the artifact plus a
+metadata JSON) without requiring an MLflow server in Phase 1. Activation is an
+explicit step separate from registration (MODELING_PLAN.md §9).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import pickle
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.errors import ModelNotFoundError
+from app.core.logging import get_logger
+from app.db.models import ModelVersion
+from app.modeling.logistic import LogisticWinModel
+
+log = get_logger(__name__)
+
+
+def artifact_root() -> Path:
+    root = Path(settings.model_artifact_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _artifact_path(name: str, version: str) -> Path:
+    directory = artifact_root() / name / version
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / "model.pkl"
+
+
+def save_artifact(model: LogisticWinModel, name: str, version: str) -> tuple[str, str]:
+    path = _artifact_path(name, version)
+    payload = pickle.dumps(model, protocol=pickle.HIGHEST_PROTOCOL)
+    path.write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    (path.parent / "metadata.json").write_text(
+        json.dumps(
+            {
+                "name": name,
+                "version": version,
+                "sha256": digest,
+                "feature_names": model.feature_names,
+                **model.to_metadata(),
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    return str(path), digest
+
+
+def load_artifact(path: str) -> LogisticWinModel:
+    data = Path(path).read_bytes()
+    return pickle.loads(data)  # noqa: S301 - artifact written by this application
+
+
+def register_model(
+    session: Session,
+    model: LogisticWinModel,
+    *,
+    name: str,
+    version: str,
+    feature_set_version: str,
+    train_start: date | None,
+    train_end: date | None,
+    metrics: dict[str, Any],
+    hyperparameters: dict[str, Any],
+    notes: str | None = None,
+    activate: bool = False,
+) -> ModelVersion:
+    path, digest = save_artifact(model, name, version)
+
+    existing = session.scalar(
+        select(ModelVersion).where(
+            ModelVersion.name == name, ModelVersion.version == version
+        )
+    )
+    if existing is not None:
+        raise ValueError(f"Model version {name}:{version} already registered.")
+
+    row = ModelVersion(
+        name=name,
+        version=version,
+        algorithm=model.algorithm,
+        feature_set_version=feature_set_version,
+        train_start_date=train_start,
+        train_end_date=train_end,
+        train_rows=model.train_rows,
+        hyperparameters=hyperparameters,
+        calibration_method=model.calibrator.method if model.calibrator else None,
+        calibration_params=(model.calibrator.params if model.calibrator else {}),
+        metrics=metrics,
+        feature_names=list(model.feature_names),
+        artifact_path=path,
+        artifact_sha256=digest,
+        git_sha=settings.git_sha,
+        is_active=False,
+        notes=notes,
+    )
+    session.add(row)
+    session.flush()
+
+    if activate:
+        activate_version(session, row.id)
+    log.info("model.registered", name=name, version=version, rows=model.train_rows)
+    return row
+
+
+def activate_version(session: Session, model_version_id: int) -> None:
+    row = session.get(ModelVersion, model_version_id)
+    if row is None:
+        raise ModelNotFoundError(f"Model version {model_version_id} not found.")
+    session.execute(
+        update(ModelVersion)
+        .where(ModelVersion.name == row.name, ModelVersion.id != row.id)
+        .values(is_active=False)
+    )
+    session.flush()
+    row.is_active = True
+    session.flush()
+    log.info("model.activated", name=row.name, version=row.version)
+
+
+def get_active_version(session: Session, name: str | None = None) -> ModelVersion:
+    name = name or settings.active_model_name
+    row = session.scalar(
+        select(ModelVersion).where(
+            ModelVersion.name == name, ModelVersion.is_active.is_(True)
+        )
+    )
+    if row is None:
+        raise ModelNotFoundError(
+            f"No active model version registered under {name!r}. Run `make train`."
+        )
+    return row
+
+
+def load_active_model(session: Session, name: str | None = None) -> tuple[ModelVersion, LogisticWinModel]:
+    version = get_active_version(session, name)
+    if not version.artifact_path:
+        raise ModelNotFoundError(f"Model version {version.id} has no artifact path.")
+    model = load_artifact(version.artifact_path)
+    if list(model.feature_names) != list(version.feature_names):
+        raise ModelNotFoundError(
+            f"Artifact for {version.name}:{version.version} does not match its "
+            f"registered feature list."
+        )
+    return version, model
+
+
+def next_version(session: Session, name: str) -> str:
+    total = session.query(ModelVersion).filter(ModelVersion.name == name).count()
+    return f"v{total + 1}"

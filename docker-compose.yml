@@ -1,0 +1,103 @@
+name: jerry-mlb-prediction-lab
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jerry}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jerry}
+      POSTGRES_DB: ${POSTGRES_DB:-jerry_mlb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jerry} -d ${POSTGRES_DB:-jerry_mlb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    environment: &backend_env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-jerry}:${POSTGRES_PASSWORD:-jerry}@postgres:5432/${POSTGRES_DB:-jerry_mlb}
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      GIT_SHA: ${GIT_SHA:-unknown}
+      # Later-phase providers stay unset; their categories report UNAVAILABLE.
+      LINEUP_PROVIDER: ${LINEUP_PROVIDER:-}
+      WEATHER_PROVIDER: ${WEATHER_PROVIDER:-}
+      STATCAST_PROVIDER: ${STATCAST_PROVIDER:-}
+      INJURY_PROVIDER: ${INJURY_PROVIDER:-}
+      PARK_FACTOR_PROVIDER: ${PARK_FACTOR_PROVIDER:-}
+      ODDS_PROVIDER: ${ODDS_PROVIDER:-}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - artifacts:/srv/artifacts
+
+  # Same image as the API, different command: scheduled ingest -> predict.
+  scheduler:
+    build: ./backend
+    environment: *backend_env
+    depends_on:
+      api: {condition: service_started}
+    volumes:
+      - artifacts:/srv/artifacts
+    command: >
+      sh -c '
+        python -m app.cli bootstrap;
+        while true; do
+          python -m app.cli daily || echo "daily refresh failed";
+          sleep ${SCHEDULER_INTERVAL_S:-900};
+        done'
+
+  # Nightly retrain and backtest.
+  trainer:
+    build: ./backend
+    environment: *backend_env
+    depends_on:
+      api: {condition: service_started}
+    volumes:
+      - artifacts:/srv/artifacts
+    command: >
+      sh -c '
+        while true; do
+          python -m app.cli train || echo "training failed";
+          python -m app.cli backtest || echo "backtest failed";
+          sleep ${TRAINER_INTERVAL_S:-86400};
+        done'
+    profiles: ["training"]
+
+  web:
+    build: ./frontend
+    environment:
+      API_BASE_URL: http://api:8000/api/v1
+      NODE_ENV: production
+    depends_on:
+      api: {condition: service_started}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  pgdata:
+  artifacts:
