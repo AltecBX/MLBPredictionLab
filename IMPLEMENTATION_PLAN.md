@@ -194,8 +194,8 @@ Ordered so each step is usable on its own and the next one depends on it.
 |---|---|---|
 | 1 | Statcast ingestion and data validation | **Done — verified on 188 real games** |
 | 2 | Starting-pitcher Statcast features | **Built, measured, rejected** — MODELING_PLAN.md |
-| 3 | Expected and confirmed lineup features | Blocked on the timeline — see below |
-| 4 | Pitch arsenal matchup engine | Not started |
+| 3 | Expected lineup features | **Built** as `fs_v3` — the projected half. Confirmed half still blocked; see below |
+| 4 | Pitch arsenal matchup engine | **Built** as part of `fs_v3` |
 | 5 | Individual bullpen availability | Not started |
 | 6 | Weather and empirical park factors | Not started |
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
@@ -259,7 +259,25 @@ to more pitcher-level aggregates, because the thing that was measured — a
 starter's stuff *in general* — is not the thing that decides a game. His stuff
 against tonight's nine hitters might be.
 
-## Why step 3 is not simply "next"
+## Phase 2B — what steps 3 and 4 became
+
+The step-2 result said the thing that does not work is *starter-level season
+aggregates*, and left three hypotheses open. Steps 3 and 4 test the first two of
+them together, because they need the same substrate:
+
+* **The matchup, not the pitcher.** `arsenal_*` — how a lineup fares against the
+  pitch mix tonight's starter actually throws, net of how it fares generally.
+* **The batters, not the pitcher.** `lineup_*` — the projected nine, weighted by
+  the plate appearances their slots actually receive.
+
+Both are registered as `fs_v3` = `fs_v1` + the group. Not `fs_v2` + the group:
+stacking on a rejected set measures the pair rather than the group.
+
+Step 3's *confirmed* half remains blocked for the reason below, and nothing in
+`fs_v3` pretends otherwise — the lineup is projected from completed starts, never
+read from a posted one.
+
+## Why step 3's confirmed half is still not "next"
 
 The lineups already ingested come from completed-game box scores and carry
 `knowledge_time = first pitch + 3h30m`. Measured across all 188,604 rows:

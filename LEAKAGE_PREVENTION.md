@@ -310,3 +310,32 @@ does the rest.
 
 *Test*: asserts zero lineups are visible at `first_pitch − 1s` across the whole
 ingested history.
+
+
+---
+
+## 16. A projected lineup is not a posted one
+
+Phase 2B builds lineup features, which vector 15 says cannot be read from the
+`lineups` table before first pitch. It does not read them from there.
+
+The nine are **projected** from the team's own completed starts inside a 21-day
+window: who started, and in which slot. Every row behind that projection is a
+finished game carrying its own `knowledge_time`, so the as-of slice excludes the
+game being predicted by exactly the rule everything else obeys — its lineup rows
+are stamped first pitch + 3h30m, and `as_of` precedes first pitch.
+
+Two properties keep this honest rather than merely legal:
+
+* **A reader could do the same thing at the same moment.** The projection uses no
+  information a person watching the same slate lacks. That is the test for
+  whether a pregame feature is real.
+* **The projection says how confident it is.** `lineup_continuity` reports what
+  share of the projected nine started the most recent game. A feature that
+  guesses should be measured on how often the guess holds, and a model that
+  consumes it should be handed that number rather than left to assume.
+
+What is still not available is the *posted* lineup — the one a team releases two
+or three hours before first pitch. That needs a pregame poller writing rows with
+an honest observation time, and until one exists the confirmed-lineup half of
+step 3 stays unbuilt rather than approximated.
