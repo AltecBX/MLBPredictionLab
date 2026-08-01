@@ -193,6 +193,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
             end=args.end,
             step_days=args.step_days,
             ablation=not args.no_ablation,
+            feature_set_version=args.feature_set,
         )
     print(json.dumps(summary, default=str, indent=2))
     return 0
@@ -335,6 +336,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--end", type=_parse_date, default=None)
     p.add_argument("--step-days", type=int, default=30)
     p.add_argument("--no-ablation", action="store_true")
+    p.add_argument(
+        "--feature-set", default=None,
+        help="Feature set to evaluate. Default: the configured active set.",
+    )
     p.set_defaults(func=cmd_backtest)
 
     p = sub.add_parser(

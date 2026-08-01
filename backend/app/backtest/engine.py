@@ -43,10 +43,13 @@ def run_backtest(
     step_days: int = 30,
     seasons: list[int] | None = None,
     ablation: bool = True,
+    feature_set_version: str | None = None,
     C: float | None = None,
 ) -> dict[str, Any]:
     with job_run(session, "run_backtest", step_days=step_days) as job:
-        dataset = build_dataset(session, seasons=seasons)
+        dataset = build_dataset(
+            session, seasons=seasons, feature_set_version=feature_set_version
+        )
         if dataset.frame.empty:
             raise ValueError(
                 "No backtest rows available. Ingest schedule and boxscore history first."
