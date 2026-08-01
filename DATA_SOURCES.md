@@ -247,10 +247,13 @@ The spacing default is deliberately an order of magnitude slower than the MLB
 Stats API client's. Savant is a smaller service serving a much larger payload,
 and a backfill is not urgent.
 
-**Storage is the binding constraint, not time.** A season of pitches is roughly
-120 MB before indexes. Two seasons will not fit alongside everything else in a
-1 GB free Postgres — see DEPLOYMENT.md § Sizing. `ingest-statcast` therefore
-takes an explicit date range rather than defaulting to all history.
+**Storage is the binding constraint, not time.** Measured on the ingested
+tables: 403 bytes per pitch, including indexes and the batted-ball rows, or
+**~282 MB per season**. That is more than twice the 120 MB first estimated from
+the CSV width, and it is the difference between two seasons of Statcast fitting
+in a 1 GB free Postgres and one season being tight — see DEPLOYMENT.md § Sizing.
+`ingest-statcast` therefore takes an explicit date range rather than defaulting
+to all history.
 
 ### Resumability
 

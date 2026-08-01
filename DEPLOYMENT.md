@@ -230,6 +230,30 @@ Roughly **230 MB per season**, three quarters of it raw payloads.
 * **Paid Postgres → all four.** The measured performance numbers in the README
   come from the full history.
 
+### Statcast on top
+
+Statcast is sized separately because it is ingested separately, by the
+`statcast.yml` workflow rather than by the seed:
+
+| | |
+|---|---|
+| Per pitch, `pitches` + `batted_ball_events`, including indexes | **403 bytes** |
+| Per season (~712,000 pitches) | **~282 MB** |
+
+On a free 1 GB Postgres, two seasons of schedule and box scores (~460 MB) leave
+room for **one** season of Statcast and little else:
+
+| | Schedule + box scores | Statcast | Total |
+|---|---|---|---|
+| Two seasons, one of Statcast | 460 MB | 282 MB | ~742 MB |
+| Two seasons, two of Statcast | 460 MB | 564 MB | ~1,024 MB — **does not fit** |
+
+Turning off `STORE_RAW_PAYLOADS` for the seed reclaims most of the 687 MB of
+payloads and changes that arithmetic entirely; it is off by default in
+`seed.yml` for exactly this reason. The Statcast ingest stores only the shape of
+each response — row count, columns, the request — so it adds almost nothing to
+that archive either way.
+
 Raw payloads are kept on purpose: they are what makes a normalization bug
 replayable without refetching, and what makes the pipeline auditable. They are
 also the first thing to drop when you need space, and the reason to drop them

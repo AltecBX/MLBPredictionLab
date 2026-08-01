@@ -26,8 +26,10 @@ databases:
     plan: free
     databaseName: jerry_mlb
     user: jerry
-    # 1 GB. Four seasons of raw payloads measure 908 MB and do not leave room;
-    # two seasons are about 460 MB. DEPLOYMENT.md § Sizing has the breakdown.
+    # 1 GB. Four seasons measure 908 MB and do not leave room; two seasons are
+    # about 460 MB. Statcast is a further 282 MB per season on top of that, so
+    # two seasons of games leaves room for one of Statcast and no more.
+    # DEPLOYMENT.md § Sizing has the breakdown.
 
 services:
   # ------------------------------------------------------------------ api
