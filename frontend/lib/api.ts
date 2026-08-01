@@ -14,6 +14,13 @@ import type {
 } from "./types";
 
 /**
+ * A plain environment bag. Deliberately not `NodeJS.ProcessEnv`, which requires
+ * `NODE_ENV` and so cannot be satisfied by the small literals these functions
+ * are tested with; an index signature accepts both `process.env` and a literal.
+ */
+type EnvLike = Readonly<Record<string, string | undefined>>;
+
+/**
  * The public domain suffix this app is itself served from, if any.
  *
  * Render sets `RENDER_EXTERNAL_HOSTNAME` to a service's own public hostname —
@@ -21,7 +28,7 @@ import type {
  * suffix here is `.onrender.com`. That is what turns a sibling's bare service
  * name into an address that actually resolves.
  */
-function publicDomainSuffix(env: NodeJS.ProcessEnv = process.env): string | null {
+function publicDomainSuffix(env: EnvLike = process.env): string | null {
   const own = env.RENDER_EXTERNAL_HOSTNAME?.trim();
   if (own && own.includes(".")) return own.slice(own.indexOf("."));
   // Render sets RENDER=true everywhere; fall back to its default domain if the
@@ -50,10 +57,7 @@ function publicDomainSuffix(env: NodeJS.ProcessEnv = process.env): string | null
  * Anything genuinely wrong still surfaces as an explicit unavailable state
  * naming the URL that was tried.
  */
-export function normalizeApiBaseUrl(
-  raw: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function normalizeApiBaseUrl(raw: string, env: EnvLike = process.env): string {
   let url = raw.trim().replace(/\/+$/, "");
   if (!url) return "http://127.0.0.1:8000/api/v1";
 
