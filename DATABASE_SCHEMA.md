@@ -340,3 +340,101 @@ Index `(job_name, started_at DESC)`.
    externally-sourced table.
 5. **Time filtering uses `knowledge_time`.** `retrieved_at` exists for
    operational debugging only and must never appear in a feature query.
+
+---
+
+## Phase 2A: Statcast tables
+
+Two tables already existed as empty Phase-2 placeholders and are now widened to
+what Savant's export actually carries. Both keep `SourcedMixin`, so every row
+carries `source_name`, `retrieved_at` and `knowledge_time` like everything else.
+
+### `pitches` — one row per pitch
+
+Columns added in Phase 2A, all nullable because Savant itself leaves them null
+on older seasons or on pitches its tracking missed:
+
+| Column | Type | Savant source | Why |
+|---|---|---|---|
+| `effective_speed` | numeric(5,2) | `effective_speed` | Perceived velocity; extension makes two 95s different pitches |
+| `spin_axis` | integer | `spin_axis` | Degrees. Movement direction, independent of rate |
+| `batter_stands` | char(1) | `stand` | Platoon state without a roster lookup |
+| `pitcher_throws` | char(1) | `p_throws` | Same |
+| `is_pitch` | boolean | derived from `description` | **False when no ball was thrown** — see below |
+| `is_swing` | boolean | derived from `description` | |
+| `is_whiff` | boolean | derived from `description` | Swinging strike |
+| `is_called_strike` | boolean | derived from `description` | Separates command from stuff |
+| `is_in_zone` | boolean | `zone` in 1–9 | Chase and zone rate need the split |
+| `pitch_name` | text | `pitch_name` | Human label beside the code |
+| `times_through_order` | smallint | `n_thruorder_pitcher` | Third time through is a real penalty |
+| `pitcher_days_since_prev` | smallint | `pitcher_days_since_prev_game` | Rest, from the source rather than recomputed |
+| `bat_speed` | numeric(4,1) | `bat_speed` | 2023+ only; null before |
+| `swing_length` | numeric(4,2) | `swing_length` | Same |
+| `pa_event` | text | `events` | The plate appearance's outcome, on its final pitch only |
+| `woba_value` | numeric(5,4) | `woba_value` | On that same terminal pitch |
+| `woba_denom` | smallint | `woba_denom` | |
+
+`is_pitch`, `is_swing`, `is_whiff` and `is_called_strike` are **derived once at
+ingest** from `description` rather than at query time. The mapping is a
+documented constant (`SWING_DESCRIPTIONS`, `WHIFF_DESCRIPTIONS`,
+`CALLED_STRIKE_DESCRIPTIONS`, `NON_PITCH_DESCRIPTIONS`) with a test, so a change
+to Savant's vocabulary fails loudly instead of silently reclassifying history.
+
+**`is_pitch` is not a formality.** Savant emits a row for every ball or strike
+*awarded* without a pitch — the no-pitch intentional walk (`automatic_ball`) and
+the pitch-timer violation (`automatic_strike`). They are real events but they are
+not pitches. Counting them as pitches disagreed with the box score on **14 of the
+first 30 games reconciled**, by up to 20 pitches in one game; excluding them, all
+30 agreed exactly. Every count and rate denominator filters on `is_pitch`.
+
+**`pa_event` is what makes plate appearances countable.** It is Savant's own
+outcome field, so strikeouts, walks and hit-by-pitches come from the source
+rather than from a hand-written rules engine over `description` — two strikes
+plus a foul tip is a strikeout, plus a plain foul is not, and a rule like that
+drifts the first time the rulebook changes. It also carries the wOBA numerator
+and denominator for the terminal pitch, which is what lets a pitcher's wOBA
+against include strikeouts and walks rather than only balls in play.
+
+**Uniqueness**: `(game_id, at_bat_number, pitch_number)`. Re-ingesting a date is
+idempotent, and a duplicated pitch is a constraint violation rather than a
+silently doubled sample.
+
+### `batted_ball_events` — one row per ball in play
+
+| Column | Type | Savant source |
+|---|---|---|
+| `estimated_slg` | numeric(5,4) | `estimated_slg_using_speedangle` |
+| `woba_value` | numeric(5,4) | `woba_value` — the *actual* outcome value |
+| `woba_denom` | smallint | `woba_denom` |
+| `spray_angle` | numeric(5,2) | derived from `hc_x`, `hc_y` |
+| `field_direction` | char(4) | `PULL` / `CENT` / `OPPO`, from spray angle and `batter_stands` |
+| `launch_speed_angle` | smallint | Savant's own 1–6 classification; **6 is a barrel** |
+
+`is_barrel` is set from `launch_speed_angle == 6`, which is Savant's
+classification rather than a reimplementation of the launch-speed/angle table.
+Reimplementing it would drift from the published definition for no gain.
+
+**Membership is decided by `description`, not by the presence of launch data.**
+Statcast measures exit velocity and launch angle on *foul balls* too. Admitting
+every row with a launch measurement produced **98 batted balls per game against
+a true rate near 52** — an 85% inflation that would have diluted barrel rate,
+hard-hit rate, average exit velocity and xwOBA with a population no published
+version of those metrics includes. A row belongs here only when `description` is
+one of `IN_PLAY_DESCRIPTIONS`. Fouls stay in `pitches`, where they belong.
+
+A ball in play whose tracking failed *is* stored, with null launch columns and
+null `is_barrel` / `is_hard_hit`. Unknown is recorded as unknown; it is never
+folded into False. Measured coverage on 9,677 balls in play: 99.7% tracked.
+
+### Sizing
+
+Measured from a real export (2024-04-01: 4,189 pitches, 2.67 MB of CSV):
+
+| | Pitches | Row bytes | Table + index |
+|---|---|---|---|
+| One season | ~700,000 | ~150 | **~120 MB** |
+| Two seasons | ~1,400,000 | ~150 | **~240 MB** |
+
+This does not fit alongside the existing ~460 MB of two-season data in a 1 GB
+free Postgres. `ingest-statcast` therefore takes an explicit date range and
+never defaults to all history, and DEPLOYMENT.md states the ceiling.

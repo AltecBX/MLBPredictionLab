@@ -1,0 +1,146 @@
+name: Ingest Statcast
+
+# Backfill Baseball Savant pitch-by-pitch data for a date range.
+#
+# Start it from the Actions tab — including from a phone browser. Nothing is
+# installed on your machine and no terminal is involved.
+#
+# It is safe to re-run and safe to cancel. Ingestion is date-by-date and
+# resumable: a cancelled run picks up at the first date that is not complete,
+# and a date that finished is never refetched.
+#
+# STORAGE IS THE CONSTRAINT, NOT TIME. One season is roughly 120 MB before
+# indexes, and a free Render Postgres is 1 GB with about 460 MB already used by
+# two seasons of schedule and box-score data. Ingest the seasons you will
+# actually train on. DEPLOYMENT.md § Sizing has the arithmetic.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: "Seasons to ingest (comma separated). Leave blank to use the explicit dates below."
+        required: false
+        default: ""
+      start:
+        description: "Start date, YYYY-MM-DD (ignored when seasons is set)"
+        required: false
+        default: ""
+      end:
+        description: "End date, YYYY-MM-DD (ignored when seasons is set)"
+        required: false
+        default: ""
+      limit_dates:
+        description: "Stop after this many dates. 0 means no limit — use it to try a few days first."
+        required: false
+        default: "0"
+
+concurrency:
+  # Never let this and a seed or refresh write the same tables at once.
+  group: jerry-data
+  cancel-in-progress: false
+
+jobs:
+  statcast:
+    name: Backfill and reconcile
+    runs-on: ubuntu-latest
+    # One request per date at the default 2s spacing, plus download and write
+    # time: a full season is roughly an hour. Leave room for a slow day at the
+    # source without letting a hung run burn the whole budget.
+    timeout-minutes: 300
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ENVIRONMENT: production
+      LOG_FORMAT: console
+      REDIS_URL: ""
+      STATCAST_PROVIDER: baseball_savant
+      # The raw payload stored for Statcast is the response *shape* — row count,
+      # columns, the request — not megabytes of CSV re-encoded as JSON, so this
+      # costs almost nothing here and keeps the audit trail intact.
+      STORE_RAW_PAYLOADS: "true"
+    steps:
+      - name: Check the database secret is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set."
+            echo "Copy the *External* Database URL from your Render Postgres page, then add it"
+            echo "under Settings -> Secrets and variables -> Actions as DATABASE_URL."
+            exit 1
+          fi
+
+      - name: Check a range was given
+        run: |
+          if [ -z "${{ inputs.seasons }}" ] && \
+             { [ -z "${{ inputs.start }}" ] || [ -z "${{ inputs.end }}" ]; }; then
+            echo "::error::Set either seasons, or both start and end."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Apply migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Ingest
+        id: ingest
+        working-directory: backend
+        run: |
+          args=""
+          if [ -n "${{ inputs.seasons }}" ]; then
+            args="--seasons ${{ inputs.seasons }}"
+          else
+            args="--start ${{ inputs.start }} --end ${{ inputs.end }}"
+          fi
+          if [ "${{ inputs.limit_dates }}" != "0" ] && [ -n "${{ inputs.limit_dates }}" ]; then
+            args="$args --limit-dates ${{ inputs.limit_dates }}"
+          fi
+          # The command exits non-zero when it finds a discrepancy, which is a
+          # finding rather than a crash — the rows are stored either way. Capture
+          # the report before letting the step fail.
+          set +e
+          python -m app.cli ingest-statcast $args | tee /tmp/statcast.json
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Record source freshness
+        if: always()
+        working-directory: backend
+        run: python -m app.cli check-sources > /dev/null
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Statcast ingest"
+            echo ""
+            if [ -s /tmp/statcast.json ]; then
+              echo '```json'
+              tail -c 4000 /tmp/statcast.json
+              echo '```'
+            fi
+            echo ""
+            if [ "${{ steps.ingest.outputs.status }}" = "0" ]; then
+              echo "Statcast agreed with the box scores on every ingested game:"
+              echo "pitch counts, strikeouts, home runs and balls in play."
+            else
+              echo "**One or more games disagreed with the box score.** The rows are stored"
+              echo "and the affected games are named above, so a feature query can exclude"
+              echo "them. See DATA_SOURCES.md § Reconciliation."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if anything did not reconcile
+        if: ${{ steps.ingest.outputs.status != '0' }}
+        run: exit 1

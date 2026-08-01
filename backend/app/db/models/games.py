@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -231,13 +232,23 @@ class Lineup(Base, SourcedMixin):
 
 
 class Pitch(Base, SourcedMixin):
-    """Phase 2. Empty until a Statcast provider is enabled."""
+    """One row per pitch, from Baseball Savant's Statcast export.
+
+    Every column is nullable because Savant itself leaves them null on older
+    seasons and on pitches its tracking missed. A missing value is recorded as
+    missing; it is never filled with a default.
+    """
 
     __tablename__ = "pitches"
     __table_args__ = (
+        # Re-ingesting a date is idempotent, and a duplicated pitch is a
+        # constraint violation rather than a silently doubled sample.
+        UniqueConstraint("game_id", "at_bat_index", "pitch_number", name="uq_pitch"),
         Index("ix_pitches_game", "game_id"),
-        Index("ix_pitches_pitcher", "pitcher_id", "game_id"),
-        Index("ix_pitches_batter", "batter_id", "game_id"),
+        # (player, knowledge_time) is the shape every as-of rolling window
+        # queries with, so it is the shape the index takes.
+        Index("ix_pitches_pitcher_known", "pitcher_id", "knowledge_time"),
+        Index("ix_pitches_batter_known", "batter_id", "knowledge_time"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -263,29 +274,77 @@ class Pitch(Base, SourcedMixin):
     description: Mapped[str | None] = mapped_column(Text)
     call: Mapped[str | None] = mapped_column(Text)
 
+    # --- Phase 2A -----------------------------------------------------------
+    pitch_name: Mapped[str | None] = mapped_column(Text)
+    effective_speed: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    spin_axis: Mapped[int | None] = mapped_column(Integer)
+    batter_stands: Mapped[str | None] = mapped_column(String(1))
+    pitcher_throws: Mapped[str | None] = mapped_column(String(1))
+    # Derived once at ingest from `description`, so a change to Savant's
+    # vocabulary fails loudly instead of reclassifying history at query time.
+    #
+    # False on the rows Savant emits for a ball or strike awarded without a
+    # pitch — the no-pitch intentional walk and the pitch-timer violation. Those
+    # are not pitches, and every count and rate denominator has to say so: they
+    # inflated 14 of the first 30 games reconciled, by up to 20 pitches each.
+    is_pitch: Mapped[bool | None] = mapped_column(Boolean)
+    is_swing: Mapped[bool | None] = mapped_column(Boolean)
+    is_whiff: Mapped[bool | None] = mapped_column(Boolean)
+    is_called_strike: Mapped[bool | None] = mapped_column(Boolean)
+    is_in_zone: Mapped[bool | None] = mapped_column(Boolean)
+    times_through_order: Mapped[int | None] = mapped_column(SmallInteger)
+    pitcher_days_since_prev: Mapped[int | None] = mapped_column(SmallInteger)
+    bat_speed: Mapped[float | None] = mapped_column(Numeric(4, 1))
+    swing_length: Mapped[float | None] = mapped_column(Numeric(4, 2))
+    # The plate appearance's outcome, set by Savant on the PA's final pitch and
+    # null on every other. Carrying it here is what makes strikeouts, walks and
+    # hit-by-pitches countable exactly, from the source's own field, instead of
+    # reconstructing them from a hand-written rules engine over `description`
+    # (two strikes plus a foul tip is a strikeout, plus a plain foul is not,
+    # and so on) that would drift the first time a rule changed.
+    pa_event: Mapped[str | None] = mapped_column(Text)
+    # wOBA numerator and denominator for that same terminal pitch. Batted-ball
+    # rows carry these too, but only for balls in play; a pitcher's wOBA against
+    # has to include the strikeouts and walks, so it is computed from here.
+    woba_value: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    woba_denom: Mapped[int | None] = mapped_column(SmallInteger)
+
 
 class BattedBallEvent(Base, SourcedMixin):
-    """Phase 2. Empty until a Statcast provider is enabled."""
+    """One row per ball in play, from the same Statcast export."""
 
     __tablename__ = "batted_ball_events"
     __table_args__ = (
-        Index("ix_bbe_batter", "batter_id", "game_id"),
-        Index("ix_bbe_pitcher", "pitcher_id", "game_id"),
+        UniqueConstraint("game_id", "at_bat_index", "pitch_number", name="uq_bbe"),
+        Index("ix_bbe_batter_known", "batter_id", "knowledge_time"),
+        Index("ix_bbe_pitcher_known", "pitcher_id", "knowledge_time"),
+        Index("ix_bbe_game", "game_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
     pitch_id: Mapped[int | None] = mapped_column(ForeignKey("pitches.id"))
+    at_bat_index: Mapped[int | None] = mapped_column(Integer)
+    pitch_number: Mapped[int | None] = mapped_column(Integer)
     batter_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     pitcher_id: Mapped[int] = mapped_column(ForeignKey("players.id"), nullable=False)
     launch_speed: Mapped[float | None] = mapped_column(Numeric(5, 2))
     launch_angle: Mapped[float | None] = mapped_column(Numeric(5, 2))
     hit_distance: Mapped[float | None] = mapped_column(Numeric(6, 2))
+    # Savant's own 1-6 contact classification; 6 is a barrel. `is_barrel` is set
+    # from it rather than reimplementing the published launch-speed/angle table.
+    launch_speed_angle: Mapped[int | None] = mapped_column(SmallInteger)
     is_barrel: Mapped[bool | None] = mapped_column(Boolean)
     is_hard_hit: Mapped[bool | None] = mapped_column(Boolean)
     bb_type: Mapped[str | None] = mapped_column(Text)
     estimated_woba: Mapped[float | None] = mapped_column(Numeric(5, 4))
     estimated_ba: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    estimated_slg: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    # The *actual* outcome value, as distinct from the expected ones above.
+    woba_value: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    woba_denom: Mapped[int | None] = mapped_column(SmallInteger)
+    spray_angle: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    field_direction: Mapped[str | None] = mapped_column(String(4))
     outcome: Mapped[str | None] = mapped_column(Text)
 
 

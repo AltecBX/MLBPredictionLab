@@ -226,3 +226,35 @@ The game detail page's *Backtest evidence* tab shows only the probability band
 that the current prediction falls into, with its n and observed frequency, so
 the user gets the directly relevant historical reliability without reading the
 whole report.
+
+---
+
+## Phase 2A: the gate every new group passes
+
+A feature group is registered, then it must survive all seven of these before
+it enters `fs_v1`. Failing any one disables the group.
+
+| Gate | What it rules out |
+|---|---|
+| **Leakage test** | The feature vector is bit-identical with and without the target game's rows present |
+| **Walk-forward ablation** | Leave-one-out *and* group-alone. Marginal value and total value are different questions on correlated features |
+| **Permutation importance, out-of-sample only** | Importance measured on training data ranks whatever was memorised hardest |
+| **Season stability** | A group whose sign flips between seasons is fitting a season, not the game |
+| **Calibration comparison** | A group may improve log loss while degrading reliability in the tails. Reliability wins |
+| **Missing-data sensitivity** | Statcast is null on older seasons and on untracked pitches. A group that only works when complete is a liability on a live slate |
+| **Before/after confirmed lineup** | Lineup features must be scored at the snapshot where a lineup is genuinely knowable, never against a backfilled one |
+
+### Reporting
+
+Each run records, per group: Δ log loss, Δ Brier, Δ calibration error, log loss
+with the group alone, permutation importance, per-season sign, and the verdict
+string. A rejected group stays in the registry with `available=False` and its
+measurement attached, so the next person sees the evidence rather than
+re-litigating it.
+
+### Sizing note
+
+Walk-forward with Statcast features is bounded by how many seasons of pitches
+are stored, not by compute. With one season ingested the backtest has one
+season of Statcast-eligible steps; earlier steps fall back to the box-score
+feature set and are reported separately rather than silently mixed.
