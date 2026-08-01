@@ -279,6 +279,14 @@ tab. This state is correct behaviour, not a bug; the app will not invent data.
 **First load takes a minute, then everything is fast.**
 A sleeping free service waking up. Expected. Path B, or upgrade off free.
 
+**The `jerry-web` or `jerry-api` deploy fails during build or never goes live.**
+Both images are built and exercised by the `images` job in CI, so a failure
+here usually means something environmental rather than a code bug — check the
+Render build log first. Two failures were shipped and fixed once: `npm ci
+--omit=optional`, which strips the platform-specific SWC and oxide binaries the
+build needs, and a hard-coded port, which a host that assigns `PORT` will never
+reach. Both are now asserted in CI.
+
 **The seed or refresh workflow fails immediately.**
 Usually the `DATABASE_URL` secret: missing, or the *internal* URL rather than
 the external one. The workflow's first step says which.

@@ -95,7 +95,8 @@ Written before any code, and kept current:
   bottom navigation, 44pt touch targets everywhere, no horizontal scroll on any
   route at any iPhone width.
 * 139 backend tests, 30 frontend unit tests and 22 end-to-end tests, ten of
-  which are an explicit iPhone layout contract.
+  which are an explicit iPhone layout contract — plus a CI job that builds both
+  container images and asserts they serve on a host-assigned port.
 
 ### Deliberately not populated
 

@@ -116,3 +116,54 @@ jobs:
           name: playwright-traces
           path: frontend/test-results/
           retention-days: 7
+
+  images:
+    name: Container images build and serve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # These are what Render actually runs. Both previously shipped bugs that
+      # only appear in a container — an npm flag that stripped the build's
+      # native compilers, and a hard-coded port a host would never use — and
+      # neither was reachable from any other test.
+      - name: Build the API image
+        run: docker build -f ./backend/Dockerfile ./backend -t jerry-api:ci
+
+      - name: Build the web image
+        run: docker build -f ./frontend/Dockerfile ./frontend -t jerry-web:ci
+
+      # The port the host assigns, not the one the Dockerfile happens to EXPOSE.
+      - name: The web image serves on a host-assigned port
+        run: |
+          docker run -d --name web -p 10000:10000 -e PORT=10000 jerry-web:ci
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:10000/manifest.webmanifest; then
+              echo "serving on the assigned port"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::The web image never served on PORT=10000."
+          docker logs web
+          exit 1
+
+      # A build that quietly drops SWC or oxide still produces an image; it just
+      # produces one with no CSS and no compiled pages. Assert the output exists.
+      - name: The build actually produced compiled output
+        run: |
+          docker run --rm jerry-web:ci sh -c '
+            test -f server.js || { echo "::error::no standalone server.js"; exit 1; }
+            ls .next/static/css/*.css >/dev/null 2>&1 || { echo "::error::no compiled CSS — Tailwind oxide was likely missing"; exit 1; }
+            echo "server.js and compiled CSS present"
+          '
+
+      # Playwright and Vitest in a public-facing image is how a 1.8 GB container
+      # happens. Standalone output is what keeps them out; prove it stays that way.
+      - name: The runtime image carries no test toolchain
+        run: |
+          docker run --rm jerry-web:ci sh -c '
+            for p in @playwright vitest jsdom @testing-library; do
+              if [ -e "node_modules/$p" ]; then echo "::error::$p is in the runtime image"; exit 1; fi
+            done
+            echo "runtime image is clean"
+          '

@@ -21,9 +21,12 @@ COPY app ./app
 RUN useradd --create-home --uid 10001 jerry && chown -R jerry /srv
 USER jerry
 
+# The host assigns the port. Render sets PORT and fails the deploy when nothing
+# is listening on it, so a hard-coded 8000 would never come up.
+ENV PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
 
 # Migrations run at start so a deploy is a single step.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers"]
