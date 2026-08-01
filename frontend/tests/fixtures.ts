@@ -29,10 +29,40 @@ export const gameCard = (over: Partial<GameCard> = {}): GameCard => ({
   home: {
     id: 10, name: "Home Club", abbreviation: "HME", team_name: "Club",
     location_name: "Hometown", division_name: "Test East", wins: 55, losses: 45,
+    home_record: { wins: 32, losses: 18, win_pct: 0.64 },
+    away_record: { wins: 23, losses: 27, win_pct: 0.46 },
+    streak: {
+      kind: "W", length: 3, label: "W3",
+      games: [
+        { game_id: 1, date: "2026-07-29", opponent: "Visitors", opponent_id: 20,
+          is_home: true, runs_for: 5, runs_against: 2 },
+      ],
+    },
+    standing: {
+      division_name: "Test East", division_rank: 2, games_behind: 3.5,
+      league_name: "Test League", league_rank: 4,
+      wildcard_rank: 1, wildcard_games_behind: -2.0, in_playoff_position: true,
+      elimination_number: 58, clinched_division: false, eliminated: false,
+    },
   },
   away: {
     id: 20, name: "Away Club", abbreviation: "AWY", team_name: "Visitors",
     location_name: "Awaytown", division_name: "Test West", wins: 48, losses: 52,
+    home_record: { wins: 28, losses: 22, win_pct: 0.56 },
+    away_record: { wins: 20, losses: 30, win_pct: 0.4 },
+    streak: {
+      kind: "L", length: 2, label: "L2",
+      games: [
+        { game_id: 2, date: "2026-07-30", opponent: "Club", opponent_id: 10,
+          is_home: false, runs_for: 1, runs_against: 4 },
+      ],
+    },
+    standing: {
+      division_name: "Test West", division_rank: 4, games_behind: 9.0,
+      league_name: "Test League", league_rank: 11,
+      wildcard_rank: 7, wildcard_games_behind: 5.5, in_playoff_position: false,
+      elimination_number: 41, clinched_division: false, eliminated: false,
+    },
   },
   ballpark: {
     id: 1, name: "Test Park", city: "Testville", state: "TS", roof_type: "Open",

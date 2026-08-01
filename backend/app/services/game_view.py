@@ -32,6 +32,10 @@ from app.schemas.common import (
     BallparkRef,
     FreshnessEntry,
     PitcherRef,
+    RecordSplit,
+    StandingSummary,
+    StreakGameRef,
+    StreakSummary,
     TeamRef,
     Unavailable,
     WarningEntry,
@@ -49,7 +53,9 @@ from app.schemas.games import (
     SideDetail,
 )
 from app.services.freshness import freshness_report
+from app.services.matchup_summary import build_matchup_summary
 from app.services.prediction import diff_predictions, prediction_history
+from app.services.team_context import SeasonResults, TeamContext
 
 # A refresh within this window of the prediction is treated as concurrent.
 STALENESS_GRACE = timedelta(minutes=5)
@@ -81,8 +87,24 @@ MARKET_UNAVAILABLE_REASON = (
 )
 
 
-def _team_ref(team: Team, wins: int | None, losses: int | None) -> TeamRef:
-    return TeamRef(
+def _record_split(record) -> RecordSplit:
+    return RecordSplit(wins=record.wins, losses=record.losses, win_pct=record.win_pct)
+
+
+def _team_ref(
+    team: Team,
+    wins: int | None,
+    losses: int | None,
+    context: TeamContext | None = None,
+) -> TeamRef:
+    """The team, plus derived context when the season has any completed games.
+
+    `wins`/`losses` stay as the schedule feed reported them — that is the
+    record as of the game itself. The splits and standings come from our own
+    ingested results under the as-of cut, so they agree with the prediction
+    beside them rather than with whatever the feed last published.
+    """
+    ref = TeamRef(
         id=team.id,
         name=team.name,
         abbreviation=team.abbreviation,
@@ -92,6 +114,45 @@ def _team_ref(team: Team, wins: int | None, losses: int | None) -> TeamRef:
         wins=wins,
         losses=losses,
     )
+    if context is None:
+        return ref
+
+    ref.home_record = _record_split(context.home)
+    ref.away_record = _record_split(context.away)
+    if context.streak is not None:
+        ref.streak = StreakSummary(
+            kind=context.streak.kind,
+            length=context.streak.length,
+            label=context.streak.label,
+            games=[
+                StreakGameRef(
+                    game_id=g.game_id,
+                    date=g.date,
+                    opponent=g.opponent,
+                    opponent_id=g.opponent_id,
+                    is_home=g.is_home,
+                    runs_for=g.runs_for,
+                    runs_against=g.runs_against,
+                )
+                for g in context.streak.games
+            ],
+        )
+    if context.standing is not None:
+        st = context.standing
+        ref.standing = StandingSummary(
+            division_name=st.division_name,
+            division_rank=st.division_rank,
+            games_behind=st.games_behind,
+            league_name=st.league_name,
+            league_rank=st.league_rank,
+            wildcard_rank=st.wildcard_rank,
+            wildcard_games_behind=st.wildcard_games_behind,
+            in_playoff_position=st.in_playoff_position,
+            elimination_number=st.elimination_number,
+            clinched_division=st.clinched_division,
+            eliminated=st.eliminated,
+        )
+    return ref
 
 
 def _pitcher_ref(player: Player | None, confirmed: bool) -> PitcherRef:
@@ -311,9 +372,21 @@ def build_game_cards(
 
     last_update = _last_material_update(session)
 
+    # Standings, splits and streaks are cut at each game's own first pitch, so
+    # what a reader sees beside a prediction is what was true going into that
+    # game — and a final game can never contribute to its own context.
+    horizon = max(g.game_date_utc for g in games)
+    season_results = {
+        season: SeasonResults(session, season, horizon)
+        for season in {g.season for g in games}
+    }
+
     cards: list[GameCard] = []
     for game in games:
         prediction = predictions.get(game.id)
+        contexts = season_results[game.season].context_at(
+            game.game_date_utc, {game.home_team_id, game.away_team_id}
+        )
         weather_status, weather_summary = _weather_summary(game)
         card = GameCard(
             game_id=game.id,
@@ -326,9 +399,9 @@ def build_game_cards(
             day_night=game.day_night,
             doubleheader=game.doubleheader,
             home=_team_ref(teams[game.home_team_id], game.home_record_wins,
-                           game.home_record_losses),
+                           game.home_record_losses, contexts.get(game.home_team_id)),
             away=_team_ref(teams[game.away_team_id], game.away_record_wins,
-                           game.away_record_losses),
+                           game.away_record_losses, contexts.get(game.away_team_id)),
             ballpark=_ballpark_ref(parks.get(game.venue_id) if game.venue_id else None),
             home_pitcher=_pitcher_ref(
                 pitchers.get(game.home_probable_pitcher_id),
@@ -446,6 +519,7 @@ def build_game_detail(
         card=card,
         drivers_for=for_side,
         drivers_against=against,
+        matchup_summary=build_matchup_summary(card, drivers),
         all_drivers=[_driver(d) for d in drivers],
         matchup_bars=_matchup_bars(drivers),
         home_detail=_side_detail(session, game, prediction, side="H"),

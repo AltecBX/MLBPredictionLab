@@ -18,6 +18,44 @@ export interface FreshnessEntry {
   records_last_run?: number | null;
 }
 
+/** win_pct is null, never 0, when nothing has been played. */
+export interface RecordSplit {
+  wins: number;
+  losses: number;
+  win_pct: number | null;
+}
+
+export interface StreakGameRef {
+  game_id: number;
+  date: string;
+  opponent: string;
+  opponent_id: number;
+  is_home: boolean;
+  runs_for: number;
+  runs_against: number;
+}
+
+export interface StreakSummary {
+  kind: "W" | "L";
+  length: number;
+  label: string;
+  games: StreakGameRef[];
+}
+
+export interface StandingSummary {
+  division_name: string | null;
+  division_rank: number | null;
+  games_behind: number | null;
+  league_name: string | null;
+  league_rank: number | null;
+  wildcard_rank: number | null;
+  wildcard_games_behind: number | null;
+  in_playoff_position: boolean;
+  elimination_number: number | null;
+  clinched_division: boolean;
+  eliminated: boolean;
+}
+
 export interface TeamRef {
   id: number;
   name: string;
@@ -27,6 +65,12 @@ export interface TeamRef {
   division_name: string | null;
   wins: number | null;
   losses: number | null;
+  /** Derived from ingested results under the same as-of cut the model uses.
+   *  Display context only — never a model input. */
+  home_record: RecordSplit | null;
+  away_record: RecordSplit | null;
+  streak: StreakSummary | null;
+  standing: StandingSummary | null;
 }
 
 export interface BallparkRef {
@@ -172,6 +216,21 @@ export interface GameListResponse {
   games: GameCard[];
 }
 
+export interface MatchupSummaryRow {
+  key: string;
+  label: string;
+  /** HOME | AWAY | EVEN | UNAVAILABLE. EVEN means measured and level;
+   *  UNAVAILABLE means not measured. They are never the same thing. */
+  advantage: string;
+  team: string | null;
+  value: string | null;
+  magnitude_pp: number | null;
+  detail: string | null;
+  available: boolean;
+  required_source: string | null;
+  is_context: boolean;
+}
+
 export interface MatchupBar {
   category: string;
   label: string;
@@ -239,6 +298,7 @@ export interface GameDetail {
   drivers_against: DriverSummary[];
   all_drivers: DriverSummary[];
   matchup_bars: MatchupBar[];
+  matchup_summary: MatchupSummaryRow[];
   home_detail: SideDetail;
   away_detail: SideDetail;
   matchup_history: Record<string, unknown>;

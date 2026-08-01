@@ -156,6 +156,48 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ensemble_check(args: argparse.Namespace) -> int:
+    """Measure whether blending a GBDT into the logistic model helps.
+
+    Prints the comparison and exits non-zero only on failure to run — a verdict
+    of "no improvement" is a successful measurement, not an error.
+    """
+    from app.backtest.walkforward import make_steps
+    from app.db.session import session_scope
+    from app.modeling.dataset import build_dataset
+    from app.modeling.ensemble import compare_walk_forward
+    from app.modeling.registry import get_active_version
+
+    with session_scope() as session:
+        version = get_active_version(session)
+        C = float((version.hyperparameters or {}).get("C", 0.001))
+        dataset = build_dataset(session, seasons=None)
+        steps = make_steps(dataset.labelled, step_days=args.step_days)
+        comparison = compare_walk_forward(dataset, steps, C=C)
+
+    if comparison is None:
+        print(json.dumps({"error": "walk-forward produced no comparable games"}))
+        return 1
+
+    print(
+        json.dumps(
+            {
+                "n_games": comparison.n_games,
+                "logistic": comparison.logistic.metrics,
+                "gbdt": comparison.gbdt.metrics,
+                "blended": comparison.blended.metrics,
+                "best_weight": comparison.best_weight,
+                "weight_grid": {w: m["log_loss"] for w, m in comparison.weight_grid.items()},
+                "improves": comparison.improves,
+                "verdict": comparison.verdict,
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    return 0
+
+
 def cmd_check_sources(args: argparse.Namespace) -> int:
     from app.db.session import session_scope
     from app.services.diagnostics import refresh_freshness
@@ -225,6 +267,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override RAW_PAYLOAD_RETENTION_DAYS for this run",
     )
     p.set_defaults(func=cmd_prune)
+
+    p = sub.add_parser(
+        "ensemble-check",
+        help="Walk-forward comparison of logistic vs GBDT vs blend",
+    )
+    p.add_argument("--step-days", type=int, default=45)
+    p.set_defaults(func=cmd_ensemble_check)
 
     sub.add_parser("check-sources", help="Recompute freshness").set_defaults(
         func=cmd_check_sources

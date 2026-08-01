@@ -258,6 +258,21 @@ window, which is thin in the tails. It is surfaced in the product rather than
 smoothed over — the backtest page shows this table with its gap column, and the
 game detail page links each prediction to the band it falls in.
 
+### The ensemble question, answered
+
+A gradient-boosted component was built and evaluated walk-forward against the
+logistic model on the same 8,339 out-of-sample games. It loses on every metric
+(log loss 0.6895 vs 0.6842), and the out-of-sample blend-weight search — over a
+grid that includes zero so the null hypothesis can win — chose **zero**. Log
+loss rises monotonically as the boosted component gains weight.
+
+So the logistic model is served unchanged. That is the rule working: a
+component is kept only when it improves out-of-sample performance, and this one
+does not. On ~9,000 rows of 42 correlated, already-shrunk rate differences
+there is little interaction structure left for trees to find. Re-run it with
+`make ensemble-check` when Statcast adds genuinely non-linear inputs;
+[MODELING_PLAN.md](MODELING_PLAN.md) has the full table.
+
 ### What the ablation actually found
 
 Refitting the whole walk-forward once per feature group, plus a second pass

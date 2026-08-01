@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Badge } from "./Badge";
 import { ProbabilityBar } from "./ProbabilityBar";
+import { TeamContextLine } from "./TeamContextLine";
 import {
   CONFIDENCE_LABEL,
   RECOMMENDATION_LABEL,
@@ -11,7 +12,7 @@ import {
   record,
   timestamp,
 } from "@/lib/format";
-import type { GameCard as GameCardType } from "@/lib/types";
+import type { GameCard as GameCardType, TeamRef as TeamRefType } from "@/lib/types";
 
 const RECOMMENDATION_TONE: Record<string, "home" | "accent" | "neutral" | "warn"> = {
   STRONG_LEAN: "home",
@@ -22,6 +23,7 @@ const RECOMMENDATION_TONE: Record<string, "home" | "accent" | "neutral" | "warn"
 };
 
 function TeamRow({
+  team,
   name,
   abbreviation,
   wins,
@@ -30,7 +32,9 @@ function TeamRow({
   favored,
   score,
   showScore,
+  isHome,
 }: {
+  team: TeamRefType;
   name: string;
   abbreviation: string;
   wins: number | null;
@@ -39,15 +43,20 @@ function TeamRow({
   favored: boolean;
   score: number | null;
   showScore: boolean;
+  isHome: boolean;
 }) {
   const rec = record(wins, losses);
   return (
     <div className="flex min-w-0 items-baseline justify-between gap-3">
-      <div className="min-w-0">
-        <p className={`truncate text-sm ${favored ? "font-semibold" : "font-medium"}`}>
-          <span className="mr-1.5 font-mono text-[0.7rem] subtle">{abbreviation}</span>
-          {name}
-          {rec ? <span className="ml-1.5 text-xs subtle tnum">{rec}</span> : null}
+      <div className="min-w-0 flex-1">
+        <p className={`flex min-w-0 items-baseline gap-1.5 text-sm ${favored ? "font-semibold" : "font-medium"}`}>
+          <span className="font-mono text-[0.7rem] subtle">{abbreviation}</span>
+          <span className="truncate">{name}</span>
+          {rec ? <span className="shrink-0 text-xs subtle tnum">{rec}</span> : null}
+          {/* Role-specific record and streak: an away team's road record is
+              what bears on an away game, and it is often nothing like the
+              overall one. Context only — never a model input. */}
+          <TeamContextLine team={team} isHome={isHome} className="ml-auto" />
         </p>
         <p className="mt-0.5 truncate text-xs muted">
           {pitcher.full_name ? (
@@ -105,6 +114,8 @@ export function GameCardView({ game }: { game: GameCardType }) {
 
       <div className="flex flex-col gap-2">
         <TeamRow
+          team={game.away}
+          isHome={false}
           name={game.away.team_name ?? game.away.name}
           abbreviation={game.away.abbreviation}
           wins={game.away.wins}
@@ -115,6 +126,8 @@ export function GameCardView({ game }: { game: GameCardType }) {
           showScore={game.is_final}
         />
         <TeamRow
+          team={game.home}
+          isHome
           name={game.home.team_name ?? game.home.name}
           abbreviation={game.home.abbreviation}
           wins={game.home.wins}

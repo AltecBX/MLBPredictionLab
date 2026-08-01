@@ -45,6 +45,19 @@ export function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Today's slate, in the league's own terms.
+ *
+ * `isoDate(new Date())` resolves in UTC, which rolls over at 8pm US Eastern —
+ * so a server running in UTC would swap to tomorrow's empty slate while that
+ * evening's games were still in the third inning. MLB's `officialDate` follows
+ * US Eastern, so that is what "today" has to mean here.
+ */
+export function todayIsoDate(now: Date = new Date()): string {
+  // en-CA formats as YYYY-MM-DD, which is the shape we want.
+  return now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
 export function shiftIsoDate(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const base = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));

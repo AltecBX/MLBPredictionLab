@@ -6,6 +6,8 @@ import { DriverList } from "@/components/DriverList";
 import { FeatureTable } from "@/components/FeatureTable";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { MatchupBars } from "@/components/MatchupBars";
+import { MatchupSummary } from "@/components/MatchupSummary";
+import { TeamStandingBlock } from "@/components/TeamStandingBlock";
 import { ProbabilityBar } from "@/components/ProbabilityBar";
 import { Section, StatBlock } from "@/components/StatBlock";
 import { Tabs, type TabDef } from "@/components/Tabs";
@@ -228,6 +230,23 @@ function PredictionTab({ detail }: { detail: GameDetail }) {
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
+      <Section
+        title="At a glance"
+        description="The same nine rows for every game, so two games can be compared line by line. Rows marked as context describe the matchup but carry no probability weight."
+      >
+        <MatchupSummary rows={detail.matchup_summary} />
+      </Section>
+
+      <Section
+        title="Standings, splits and streaks"
+        description="Derived from ingested results under the same as-of cut the model uses, so these agree with the prediction beside them. Context only — see Methodology for why streak length is deliberately not a model input."
+      >
+        <div className="flex flex-col gap-4">
+          <TeamStandingBlock team={card.away} isHome={false} />
+          <TeamStandingBlock team={card.home} isHome />
+        </div>
+      </Section>
+
       <Section
         title={`Why the model favors ${favored.team_name ?? favored.name}`}
         description={`${favored.name} win probability ${pct(

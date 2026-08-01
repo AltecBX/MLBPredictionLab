@@ -270,3 +270,53 @@ and the UI hides the market comparison entirely rather than showing zeros.
   quality.
 * It does not report a probability without an accompanying completeness and
   freshness state.
+
+---
+
+## Ensemble: measured, and rejected on the evidence
+
+A gradient-boosted component was built, blended with the logistic model, and
+evaluated walk-forward. It does not earn its place, so the logistic model is
+served unchanged.
+
+Reproduce with `python -m app.cli ensemble-check`. Measured over **8,339
+out-of-sample games**, 27 walk-forward steps, both components sharing the same
+training window, validation slice and test window at every step:
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| **Logistic (served)** | **0.6842** | **0.2455** | **0.83%** | **55.9%** | **0.572** |
+| GBDT alone | 0.6895 | 0.2481 | 1.38% | 53.7% | 0.548 |
+| Best blend | 0.6842 | 0.2455 | 0.83% | 55.9% | 0.572 |
+
+The blend weight is searched on out-of-sample predictions only, over a grid
+that includes 0.0 so the null hypothesis can win. It did:
+
+| GBDT weight | 0.0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 |
+|---|---|---|---|---|---|---|
+| Log loss | **0.6842** | 0.6842 | 0.6844 | 0.6847 | 0.6851 | 0.6855 |
+
+Monotonically worse as the boosted component gains weight. That is a clean
+negative result, not an inconclusive one.
+
+**Why this is the expected outcome.** The dataset is ~9,000 rows and 42
+strongly correlated engineered features, most of them already differences of
+rates that have been shrunk toward a baseline. There is very little interaction
+structure left for trees to find that the linear model has not already been
+handed directly, and boosting on a small wide matrix spends its capacity on
+noise. The ablation result points the same way: no single feature carries more
+than 8.8% of the model's weight, which is the signature of a broad, flat,
+additive signal.
+
+**Two things this does not mean.** It does not mean trees are wrong for this
+problem — it means they are wrong for *this feature set*. Once Statcast
+provides genuinely non-linear inputs (contact quality, velocity trends,
+platoon splits at the plate-appearance level), the comparison is worth
+re-running; `ensemble-check` exists so it costs one command. And it does not
+mean the ensemble machinery is dead code: it is the measurement that keeps the
+question answerable with evidence instead of assumption.
+
+**Blending is in log-odds, not probability.** Averaging probabilities pulls
+every prediction toward .500 — a shrinkage operator wearing an ensemble's hat,
+and it damages the tails, which is exactly where this model is already
+overconfident. A test asserts the log-odds behaviour.

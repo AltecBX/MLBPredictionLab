@@ -365,3 +365,27 @@ Every feature implementation must:
    by `tests/test_feature_determinism.py`.
 5. Have a leakage test proving that a game's own result cannot influence its own
    feature value. Verified by `tests/test_leakage.py`.
+
+---
+
+## Display context that is deliberately not a feature
+
+Three things are computed from ingested results, shown on the game screens, and
+kept out of every model input on purpose. They live in
+`app/services/team_context.py`, which never writes to a feature vector.
+
+| Shown | Why it is not a feature |
+|---|---|
+| Home and away records, win percentages | `team_home_away_split_diff` already fits exactly this, shrunk toward .500 with a stabilization constant. The display is the raw record because a reader wants the record; the model wants the shrunk rate |
+| Current streak, its length, its games | Streak length is the small-sample trap the stabilized 14-day form delta exists to contain. Six wins is six games. `off_form_delta_w14_diff` carries the same signal with shrinkage and a bound |
+| Division rank, games behind, wild card, elimination number | A coarser, noisier encoding of results that `elo_diff`, `team_win_pct_season_diff` and `team_pythag_win_pct_diff` already fit |
+
+These are **display context, not suppressed features**. If one is ever
+proposed as a model input it goes through `run_ablation` first and stays only
+if it improves out-of-sample log loss, Brier score or calibration without
+introducing leakage (BACKTEST_PLAN.md §7). A test asserts none of them has
+entered `FS_V1` without that evidence.
+
+As-of correctness applies to them regardless: every query filters on
+`knowledge_time <= as_of` and `game_date_utc < as_of`, so the standings shown
+beside a prediction never contain the result of the game being predicted.
