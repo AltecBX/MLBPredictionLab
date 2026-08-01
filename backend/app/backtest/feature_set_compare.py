@@ -35,6 +35,7 @@ from app.backtest.walkforward import Step, collect_predictions, make_steps, run_
 from app.core.logging import get_logger
 from app.features.asof import AsOfStore
 from app.modeling.dataset import Dataset, build_dataset
+from app.modeling.train import select_hyperparameters
 
 log = get_logger(__name__)
 
@@ -57,6 +58,9 @@ class SetResult:
     n_features: int
     metrics: dict[str, Any]
     coverage: int
+    # Regularisation actually used, and how it was chosen.
+    C: float = 0.0
+    C_selected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,13 +91,20 @@ class Comparison:
             "baseline": {
                 "feature_set": self.baseline.version,
                 "n_features": self.baseline.n_features,
+                "C": self.baseline.C,
                 **_headline(self.baseline.metrics),
             },
             "candidate": {
                 "feature_set": self.candidate.version,
                 "n_features": self.candidate.n_features,
+                "C": self.candidate.C,
                 **_headline(self.candidate.metrics),
             },
+            "regularisation": (
+                "selected per feature set by the same walk-forward rule"
+                if self.candidate.C_selected
+                else "fixed, identical for both sets"
+            ),
             "delta": {
                 "log_loss": self.delta_log_loss,
                 "brier": self.delta_brier,
@@ -214,10 +225,19 @@ def compare_feature_sets(
     start: date | None = None,
     end: date | None = None,
     step_days: int = 30,
-    C: float = 0.001,
+    C: float | None = None,
     store: AsOfStore | None = None,
 ) -> Comparison | None:
-    """Fit both feature sets walk-forward and score them on the same games."""
+    """Fit both feature sets walk-forward and score them on the same games.
+
+    When ``C`` is not given, regularisation is selected for each set separately
+    by the same walk-forward rule the trainer uses. That matters: a candidate
+    set has more features than the baseline, and forcing it to use a penalty
+    tuned for a smaller set would handicap it for a reason that has nothing to
+    do with whether its features carry information. The selection is on
+    out-of-sample log loss for both sets equally, so neither is advantaged, and
+    the report says which C each ended up with.
+    """
     store = store or AsOfStore.load(session, seasons)
 
     baseline = build_dataset(
@@ -237,8 +257,17 @@ def compare_feature_sets(
         log.warning("compare.no_steps")
         return None
 
-    base_frame = collect_predictions(run_walk_forward(baseline, steps, C=C))
-    cand_frame = collect_predictions(run_walk_forward(candidate, steps, C=C))
+    if C is None:
+        base_c, _ = select_hyperparameters(baseline, step_days=step_days)
+        cand_c, _ = select_hyperparameters(candidate, step_days=step_days)
+        selected = True
+    else:
+        base_c = cand_c = C
+        selected = False
+    log.info("compare.regularisation", baseline_C=base_c, candidate_C=cand_c)
+
+    base_frame = collect_predictions(run_walk_forward(baseline, steps, C=base_c))
+    cand_frame = collect_predictions(run_walk_forward(candidate, steps, C=cand_c))
     if base_frame.empty or cand_frame.empty:
         log.warning("compare.no_predictions")
         return None
@@ -284,11 +313,11 @@ def compare_feature_sets(
     comparison = Comparison(
         baseline=SetResult(
             baseline_version, len(baseline.feature_names), base_metrics.to_dict(),
-            len(base_frame),
+            len(base_frame), C=base_c, C_selected=selected,
         ),
         candidate=SetResult(
             candidate_version, len(candidate.feature_names), cand_metrics.to_dict(),
-            len(cand_frame),
+            len(cand_frame), C=cand_c, C_selected=selected,
         ),
         n_games=len(cand_frame),
         n_common_games=len(common),

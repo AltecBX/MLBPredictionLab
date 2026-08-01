@@ -413,36 +413,60 @@ group enters the active set only after `run_ablation` shows it improves
 out-of-sample log loss, Brier score or calibration (BACKTEST_PLAN.md §7).
 Registration is not acceptance.
 
-### `sc_sp_*` — starting-pitcher Statcast (`statcast_sp`)
+### `sc_sp_*` — starting-pitcher Statcast (`statcast_sp`) — **built**
 
-Every one is a home-minus-away difference of a stabilized rolling rate, over
-14 / 30 / 60 day, season and prior-season windows, shrunk toward the league
-rate with a per-statistic stabilization constant.
+Nine features, registered as feature set **`fs_v2`** — `fs_v1` plus this group,
+so the two can be refit walk-forward and scored on the same games. Each is a
+home-minus-away difference oriented so a positive value favours the home side;
+for the four "allowed" measures that means away-minus-home, since allowing
+weaker contact is the good outcome.
 
-| Key | What | Shrink `k` |
-|---|---|---|
-| `sc_sp_xwoba_allowed_*` | Expected wOBA allowed on contact | 300 BBE |
-| `sc_sp_xba_allowed_*` | Expected batting average allowed | 300 |
-| `sc_sp_xslg_allowed_*` | Expected slugging allowed | 300 |
-| `sc_sp_hard_hit_pct_*` | Share of contact ≥95 mph | 200 |
-| `sc_sp_barrel_pct_*` | Savant class 6 per batted ball | 200 |
-| `sc_sp_avg_ev_allowed_*` | Mean exit velocity | 200 |
-| `sc_sp_ev50_allowed_*` | Median exit velocity — less tail-sensitive | 200 |
-| `sc_sp_csw_pct_*` | Called strikes plus whiffs per pitch | 400 pitches |
-| `sc_sp_swstr_pct_*` | Swinging strikes per pitch | 400 |
-| `sc_sp_chase_pct_*` | Swings at pitches outside the zone | 400 |
-| `sc_sp_zone_pct_*` | Pitches in the zone | 400 |
-| `sc_sp_f_strike_pct_*` | First-pitch strikes | 200 PA |
-| `sc_sp_fb_velo_*` | Four-seam velocity | 100 pitches |
+| Key | What | Denominator | Shrink `k` | Min sample |
+|---|---|---|---|---|
+| `sc_sp_xwoba_allowed_diff` | Expected wOBA against | plate appearances | 250 | 100 |
+| `sc_sp_barrel_pct_allowed_diff` | Savant class 6 per batted ball | balls in play | 80 | 40 |
+| `sc_sp_hard_hit_pct_allowed_diff` | Contact ≥ 95 mph | balls in play | 50 | 40 |
+| `sc_sp_avg_exit_velocity_allowed_diff` | Mean exit velocity | balls in play | 40 | 40 |
+| `sc_sp_whiff_pct_diff` | Swings missed per swing | swings | 150 | 150 |
+| `sc_sp_chase_pct_diff` | Swings induced outside the zone | pitches out of zone | 200 | 150 |
+| `sc_sp_csw_pct_diff` | Called strikes plus whiffs per pitch | pitches | 250 | 300 |
+| `sc_sp_fastball_velocity_diff` | Mean four-seam velocity | four-seam fastballs | 150 | 100 |
+| `sc_sp_velocity_delta_30d_diff` | 30-day velocity minus the pitcher's own season | four-seam fastballs | — | 60 |
 
-### `sc_sp_delta_*` — condition change (`statcast_sp_delta`)
+`k` is smaller than the wOBA-against equivalents in §1 because contact-quality
+rates settle faster than outcome rates: the measurement is of the batted ball
+itself, not of where eight fielders happened to be standing.
 
-Differences of the above between a recent window and a baseline. These are the
-group most likely to be noise, and are registered separately **so ablation can
-reject them without taking the level features with them**.
+**xwOBA against uses Savant's construction** — the expected value of the contact
+where there was contact, the actual value everywhere else. A walk is worth a
+walk and a strikeout is worth nothing. Restricting it to balls in play would
+score a pitcher on contact quality alone and credit him nothing for missing
+bats.
 
-`sc_sp_velo_delta_14`, `sc_sp_velo_delta_30`, `sc_sp_spin_delta_30`,
-`sc_sp_extension_delta_30`, `sc_sp_movement_delta_30`, `sc_sp_usage_delta_30`.
+**Rates are ratios of sums, never means of per-game rates.** A 90-pitch start
+and a 10-pitch relief appearance are not two equal observations; averaging their
+rates says they are.
+
+**Shrinkage follows §1 rule 2 exactly.** This season regresses toward the
+pitcher's prior season, which is itself first regressed toward the league. In
+April a pitcher is mostly last year's pitcher; by August he is this year's. The
+league priors are computed from the same as-of slice, so an April prior is
+April's league and not the finished season's.
+
+**Velocity is a delta, per §1 rule 3.** Ninety-two says one thing about a
+pitcher who has always thrown 92 and something else entirely about one who threw
+95 in April. The level is also carried, separately, so the model can use both.
+
+A rate with no denominator is **missing, not zero**, all the way to the screen.
+A barrel rate of 0.0 would claim a pitcher has never allowed hard contact.
+
+### `sc_sp_delta_*` — condition change beyond velocity
+
+Not built. The velocity trend above is the one member of this family that is in
+`fs_v2`; spin, extension, movement and usage deltas are deferred until the
+velocity trend has been measured, because they are the group most likely to be
+noise and there is no reason to spend the evaluation budget on all of them at
+once.
 
 A flagged change is surfaced as a **risk on the game screen** regardless of
 whether it earns model weight. "This starter is down 1.4 mph over two weeks" is

@@ -200,8 +200,8 @@ def test_the_report_drops_the_per_bin_calibration_arrays():
 def test_the_report_states_which_games_both_models_predicted():
     """A comparison on different game sets is not a comparison."""
     comparison = Comparison(
-        baseline=SetResult("fs_v1", 42, {"log_loss": 0.66}, 1000),
-        candidate=SetResult("fs_v2", 51, {"log_loss": 0.65}, 900),
+        baseline=SetResult("fs_v1", 42, {"log_loss": 0.66}, 1000, C=0.003, C_selected=True),
+        candidate=SetResult("fs_v2", 51, {"log_loss": 0.65}, 900, C=0.001, C_selected=True),
         n_games=900,
         n_common_games=880,
         delta_log_loss=0.01,
@@ -220,3 +220,24 @@ def test_the_report_states_which_games_both_models_predicted():
     assert report["baseline"]["n_features"] < report["candidate"]["n_features"]
     assert report["candidate_coverage"]["sc_sp_whiff_pct_diff"] == 0.81
     assert report["paired_95_ci"]["log_loss"]["ci_low"] == 0.004
+
+
+def test_the_report_states_how_regularisation_was_chosen():
+    """A candidate with more features must not be judged at the baseline's penalty."""
+    def _comparison(selected: bool) -> Comparison:
+        return Comparison(
+            baseline=SetResult("fs_v1", 42, {}, 10, C=0.003, C_selected=selected),
+            candidate=SetResult("fs_v2", 51, {}, 10, C=0.001, C_selected=selected),
+            n_games=10, n_common_games=10,
+            delta_log_loss=0.0, delta_brier=0.0, delta_ece=0.0, delta_accuracy=0.0,
+            log_loss_interval=PairedDelta(0.0, -0.1, 0.1),
+            brier_interval=PairedDelta(0.0, -0.1, 0.1),
+            calibration_interval=PairedDelta(0.0, -0.1, 0.1),
+            verdict="NO_EFFECT", reading="…", candidate_coverage={},
+        )
+
+    per_set = _comparison(True).to_dict()
+    assert per_set["baseline"]["C"] == 0.003
+    assert per_set["candidate"]["C"] == 0.001
+    assert "per feature set" in per_set["regularisation"]
+    assert "identical for both" in _comparison(False).to_dict()["regularisation"]

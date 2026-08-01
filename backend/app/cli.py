@@ -260,6 +260,7 @@ def cmd_compare_feature_sets(args: argparse.Namespace) -> int:
             start=args.start,
             end=args.end,
             step_days=args.step_days,
+            C=args.C,
         )
 
     if comparison is None:
@@ -364,6 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--start", type=_parse_date, default=None)
     p.add_argument("--end", type=_parse_date, default=None)
     p.add_argument("--step-days", type=int, default=30)
+    p.add_argument(
+        "--C", type=float, default=None,
+        help="Pin regularisation for both sets. Default: select each set's own, "
+             "walk-forward, by the same rule the trainer uses.",
+    )
     p.set_defaults(func=cmd_compare_feature_sets)
 
     sub.add_parser("check-sources", help="Recompute freshness").set_defaults(
