@@ -14,28 +14,65 @@ import type {
 } from "./types";
 
 /**
+ * The public domain suffix this app is itself served from, if any.
+ *
+ * Render sets `RENDER_EXTERNAL_HOSTNAME` to a service's own public hostname —
+ * so a web service on `jerry-web.onrender.com` can learn that the public
+ * suffix here is `.onrender.com`. That is what turns a sibling's bare service
+ * name into an address that actually resolves.
+ */
+function publicDomainSuffix(env: NodeJS.ProcessEnv = process.env): string | null {
+  const own = env.RENDER_EXTERNAL_HOSTNAME?.trim();
+  if (own && own.includes(".")) return own.slice(own.indexOf("."));
+  // Render sets RENDER=true everywhere; fall back to its default domain if the
+  // hostname variable is ever absent.
+  return env.RENDER ? ".onrender.com" : null;
+}
+
+/**
  * Normalise whatever the host platform hands us into a full base URL.
  *
- * Render's `fromService` wiring yields a bare `host:port` with no scheme, and
- * it is easy to paste a root URL without the `/api/v1` suffix. Both are
- * unambiguous, so accept them rather than failing the whole site over a
- * missing prefix. Anything genuinely wrong still surfaces as an explicit
- * unavailable state naming the URL that was tried.
+ * Three shapes have to work:
+ *
+ *   https://api.example.com/api/v1   already complete
+ *   https://api.example.com          missing the version prefix
+ *   api:8000  /  127.0.0.1:8000      a container-network address
+ *
+ * And one that is not obvious. Render's `fromService … property: host` yields
+ * a **bare internal service name** — `jerry-api-pwkc`, not the public FQDN.
+ * On the free tier that address is unusable: a free service cannot *receive*
+ * private network traffic, so every request to it is refused. Since Render's
+ * public hostname for that service is the same name plus the platform's domain
+ * suffix, and this app is told its own public hostname, the public address is
+ * derivable. Doing that here keeps the blueprint one-click rather than making
+ * someone paste a URL that Render only invents at create time.
+ *
+ * Anything genuinely wrong still surfaces as an explicit unavailable state
+ * naming the URL that was tried.
  */
-export function normalizeApiBaseUrl(raw: string): string {
+export function normalizeApiBaseUrl(
+  raw: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   let url = raw.trim().replace(/\/+$/, "");
   if (!url) return "http://127.0.0.1:8000/api/v1";
+
   if (!/^https?:\/\//i.test(url)) {
-    // Loopback and Docker/Render private hostnames are plain HTTP; anything
-    // with a public dotted domain is not.
-    const host = url.split(":")[0];
-    const isPrivate =
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      !host.includes(".") ||
-      host.endsWith(".internal") ||
-      host.endsWith(".local");
-    url = `${isPrivate ? "http" : "https"}://${url}`;
+    const [host, port] = url.split(":");
+    const looksLocal = host === "localhost" || host === "127.0.0.1";
+    const dotless = !host.includes(".");
+
+    const suffix = publicDomainSuffix(env);
+    if (dotless && !looksLocal && !port && suffix) {
+      // A bare sibling service name on a platform with a public domain.
+      url = `https://${host}${suffix}`;
+    } else {
+      // Loopback and container-network names are plain HTTP; a public dotted
+      // domain is not.
+      const isPrivate =
+        looksLocal || dotless || host.endsWith(".internal") || host.endsWith(".local");
+      url = `${isPrivate ? "http" : "https"}://${url}`;
+    }
   }
   if (!/\/api\/v\d+$/.test(url)) url += "/api/v1";
   return url;

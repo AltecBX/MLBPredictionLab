@@ -93,4 +93,48 @@ describe("normalizeApiBaseUrl", () => {
   it("falls back to the local default when the value is blank", () => {
     expect(normalizeApiBaseUrl("   ")).toBe("http://127.0.0.1:8000/api/v1");
   });
+
+  // Render's `fromService ... property: host` yields a bare internal service
+  // name. On the free tier that address is unusable — a free service cannot
+  // receive private network traffic — so it has to become the public one.
+  it("turns a bare Render service name into its public address", () => {
+    const env = { RENDER: "true", RENDER_EXTERNAL_HOSTNAME: "jerry-web.onrender.com" };
+    expect(normalizeApiBaseUrl("jerry-api-pwkc", env)).toBe(
+      "https://jerry-api-pwkc.onrender.com/api/v1",
+    );
+  });
+
+  it("derives the suffix from its own hostname, including a custom domain", () => {
+    const env = { RENDER: "true", RENDER_EXTERNAL_HOSTNAME: "lab.example.com" };
+    expect(normalizeApiBaseUrl("jerry-api", env)).toBe(
+      "https://jerry-api.example.com/api/v1",
+    );
+  });
+
+  it("still assumes onrender.com when only the RENDER flag is present", () => {
+    expect(normalizeApiBaseUrl("jerry-api-pwkc", { RENDER: "true" })).toBe(
+      "https://jerry-api-pwkc.onrender.com/api/v1",
+    );
+  });
+
+  it("leaves container-network addresses alone off Render", () => {
+    // docker-compose: `api` is a real internal host and must stay plain HTTP.
+    expect(normalizeApiBaseUrl("api:8000", {})).toBe("http://api:8000/api/v1");
+    expect(normalizeApiBaseUrl("api", {})).toBe("http://api/api/v1");
+  });
+
+  it("never rewrites an address that carries an explicit port", () => {
+    // A port means a real network address, not a platform service name.
+    const env = { RENDER: "true", RENDER_EXTERNAL_HOSTNAME: "jerry-web.onrender.com" };
+    expect(normalizeApiBaseUrl("jerry-api:10000", env)).toBe(
+      "http://jerry-api:10000/api/v1",
+    );
+  });
+
+  it("never rewrites loopback, even on Render", () => {
+    const env = { RENDER: "true", RENDER_EXTERNAL_HOSTNAME: "jerry-web.onrender.com" };
+    expect(normalizeApiBaseUrl("127.0.0.1:8000", env)).toBe(
+      "http://127.0.0.1:8000/api/v1",
+    );
+  });
 });
