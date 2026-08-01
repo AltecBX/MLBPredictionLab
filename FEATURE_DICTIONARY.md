@@ -389,3 +389,84 @@ entered `FS_V1` without that evidence.
 As-of correctness applies to them regardless: every query filters on
 `knowledge_time <= as_of` and `game_date_utc < as_of`, so the standings shown
 beside a prediction never contain the result of the game being predicted.
+
+---
+
+## Phase 2A candidate groups
+
+Registered, computed from ingested Statcast, and **not yet in `fs_v1`**. A
+group enters the active set only after `run_ablation` shows it improves
+out-of-sample log loss, Brier score or calibration (BACKTEST_PLAN.md §7).
+Registration is not acceptance.
+
+### `sc_sp_*` — starting-pitcher Statcast (`statcast_sp`)
+
+Every one is a home-minus-away difference of a stabilized rolling rate, over
+14 / 30 / 60 day, season and prior-season windows, shrunk toward the league
+rate with a per-statistic stabilization constant.
+
+| Key | What | Shrink `k` |
+|---|---|---|
+| `sc_sp_xwoba_allowed_*` | Expected wOBA allowed on contact | 300 BBE |
+| `sc_sp_xba_allowed_*` | Expected batting average allowed | 300 |
+| `sc_sp_xslg_allowed_*` | Expected slugging allowed | 300 |
+| `sc_sp_hard_hit_pct_*` | Share of contact ≥95 mph | 200 |
+| `sc_sp_barrel_pct_*` | Savant class 6 per batted ball | 200 |
+| `sc_sp_avg_ev_allowed_*` | Mean exit velocity | 200 |
+| `sc_sp_ev50_allowed_*` | Median exit velocity — less tail-sensitive | 200 |
+| `sc_sp_csw_pct_*` | Called strikes plus whiffs per pitch | 400 pitches |
+| `sc_sp_swstr_pct_*` | Swinging strikes per pitch | 400 |
+| `sc_sp_chase_pct_*` | Swings at pitches outside the zone | 400 |
+| `sc_sp_zone_pct_*` | Pitches in the zone | 400 |
+| `sc_sp_f_strike_pct_*` | First-pitch strikes | 200 PA |
+| `sc_sp_fb_velo_*` | Four-seam velocity | 100 pitches |
+
+### `sc_sp_delta_*` — condition change (`statcast_sp_delta`)
+
+Differences of the above between a recent window and a baseline. These are the
+group most likely to be noise, and are registered separately **so ablation can
+reject them without taking the level features with them**.
+
+`sc_sp_velo_delta_14`, `sc_sp_velo_delta_30`, `sc_sp_spin_delta_30`,
+`sc_sp_extension_delta_30`, `sc_sp_movement_delta_30`, `sc_sp_usage_delta_30`.
+
+A flagged change is surfaced as a **risk on the game screen** regardless of
+whether it earns model weight. "This starter is down 1.4 mph over two weeks" is
+worth a reader's attention even if it does not move the probability.
+
+### `sc_bat_*` and `lineup_*` — batter and lineup (`statcast_lineup`)
+
+Per-hitter Statcast rates, weighted by expected plate appearances from batting
+order position, then aggregated. Blocked at the default snapshot by vector 15
+in LEAKAGE_PREVENTION.md — no lineup is knowable at T−3h — so these are built
+for the later timeline snapshots and evaluated there.
+
+`lineup_xwoba_weighted`, `lineup_hard_hit_pct_weighted`,
+`lineup_barrel_pct_weighted`, `lineup_k_pct_weighted`, `lineup_bb_pct_weighted`,
+`lineup_platoon_advantage`, `lineup_vs_arsenal_xwoba`,
+`lineup_confirmed_minus_projected`, `lineup_missing_starter_impact`.
+
+### Expected plate appearances by batting order
+
+Weights used for every lineup aggregate, from the empirical distribution of
+plate appearances by slot in a nine-inning game:
+
+| Slot | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---|---|---|---|---|---|---|---|---|
+| Expected PA | 4.65 | 4.55 | 4.44 | 4.34 | 4.23 | 4.12 | 4.01 | 3.91 | 3.80 |
+
+Recomputed from ingested box scores rather than assumed, and stored as a
+constant with the query that produced it.
+
+---
+
+## Statistics deliberately kept out of the model
+
+Beyond the display-context list above, Phase 2A adds three more that the
+specification explicitly marks as context:
+
+| Kept as context | Why not a feature |
+|---|---|
+| One-run game record | Almost pure noise; run differential already carries the signal without the selection effect |
+| Extra-inning record | Same, on a smaller sample |
+| Raw standings position, streak, head-to-head | Elo, run differential and opponent-adjusted performance encode team strength more directly and with shrinkage |

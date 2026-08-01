@@ -182,3 +182,50 @@ name of the required source. They are **not** filled with placeholder numbers:
 | Overfitting to a single season | Walk-forward across multiple seasons; ablation; importance stability |
 | Overconfident presentation | Confidence is multi-signal, not probability-derived; `INSUFFICIENT_DATA` is a first-class label; "lock" language is banned by test |
 | Silent data gaps | Per-category freshness, explicit `UNAVAILABLE` states, completeness score, diagnostics screen |
+
+---
+
+# Phase 2A
+
+Ordered so each step is usable on its own and the next one depends on it.
+
+| # | Step | State |
+|---|---|---|
+| 1 | Statcast ingestion and data validation | **This change** |
+| 2 | Starting-pitcher Statcast features | Next |
+| 3 | Expected and confirmed lineup features | Blocked on the timeline — see below |
+| 4 | Pitch arsenal matchup engine | Not started |
+| 5 | Individual bullpen availability | Not started |
+| 6 | Weather and empirical park factors | Not started |
+| 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
+| 8 | Run scoring model and simulation | Not started |
+| 9 | Stacked ensemble and calibration | Not started |
+| 10 | Prediction timeline and change explanations | Not started |
+| 11 | UI context features | Partly done — records, streaks, standings, nine-row summary shipped |
+
+## Acceptance for step 1
+
+* A Statcast provider that reaches Savant's CSV export, rate limited and
+  resumable, storing raw responses with retrieval and knowledge timestamps.
+* `pitches` and `batted_ball_events` widened to what the export carries.
+* Reconciliation that compares independently derived Statcast totals against
+  the box-score totals already ingested, and **fails loudly on a mismatch**
+  rather than storing a quiet inconsistency.
+* Ingestion of a real date range, verified against real data.
+
+## Why step 3 is not simply "next"
+
+The lineups already ingested come from completed-game box scores and carry
+`knowledge_time = first pitch + 3h30m`. Measured across all 188,604 rows:
+**zero are knowable before first pitch.** That is correct and conservative —
+the batting order that *played* is not the lineup that was *posted* — but it
+means lineup features cannot enter the T−3h snapshot at all.
+
+So step 3 in its useful form depends on step 10: a later snapshot, at a time
+when a posted lineup genuinely exists. Building lineup features against
+backfilled box-score lineups and scoring them at T−3h would produce an
+improvement that could not be reproduced live. That is the exact failure this
+repository exists to avoid, so it is not done.
+
+The honest sequence is therefore **1 → 2 → 10 → 3**, and this document is
+updated rather than the constraint being worked around.

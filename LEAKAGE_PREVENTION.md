@@ -259,3 +259,54 @@ A flagged run is marked `SUSPECTED_LEAKAGE` in `backtest_results.extra` and the
 UI displays the warning rather than the headline number. The gate is a
 tripwire, not a proof of correctness — but a model that trips it has to be
 explained before it can be trusted.
+
+---
+
+## Phase 2A vectors
+
+### 13. A pitch informing a prediction made before it was thrown
+
+Statcast is pitch-level, so the temptation is to aggregate a whole game. Every
+Statcast feature query filters on `knowledge_time <= as_of` exactly like the
+box-score layer, and `knowledge_time` is the **game's** end, not the pitch's
+timestamp — a game's data becomes available to us as a unit.
+
+*Mechanism*: `AsOfStore` gains pitch and batted-ball frames built through the
+same `_slice` used for team and pitcher games. There is no separate path.
+
+*Test*: a pitcher's 30-day xwOBA-allowed is bit-identical whether or not the
+target game's pitches are present in the database.
+
+### 14. Season-aggregate Statcast endpoints
+
+Savant also exposes leaderboard endpoints returning **current-season totals**
+per player. Attaching one of those to an April game embeds that game and every
+game since — the same mistake the MLB `/stats` endpoints invite, and the reason
+the HTTP client refuses them.
+
+*Mechanism*: the Statcast client refuses any path that is not
+`/statcast_search/csv`, and refuses a request without both `game_date_gt` and
+`game_date_lt`. Aggregation happens here, from dated rows, never at the source.
+
+*Test*: asserts both refusals raise.
+
+### 15. A confirmed lineup that was not knowable yet
+
+The lineups already ingested come from **completed-game box scores**, and carry
+`knowledge_time = first pitch + 3h30m` — i.e. after the game. That is
+deliberate and conservative: the box-score batting order is the lineup that
+*played*, which is not the same object as the lineup that was *posted*
+pregame, and treating them as identical would import late scratches and
+in-game substitutions into a pregame prediction.
+
+Consequence, stated plainly: **no lineup is knowable at the current T−3h
+prediction time**, so lineup features cannot enter the default snapshot. They
+belong to a later snapshot in the prediction timeline, at a time when a posted
+lineup genuinely exists. Reconstructing an earlier `knowledge_time` for a
+box-score lineup would be inventing knowledge, and is not done.
+
+*Mechanism*: lineup rows keep the ingest's `knowledge_time`; the as-of filter
+does the rest.
+
+*Test*: asserts zero lineups are visible at `first_pitch − 1s` across the whole
+ingested history.

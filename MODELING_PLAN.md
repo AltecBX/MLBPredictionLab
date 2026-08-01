@@ -320,3 +320,43 @@ question answerable with evidence instead of assumption.
 every prediction toward .500 — a shrinkage operator wearing an ensemble's hat,
 and it damages the tails, which is exactly where this model is already
 overconfident. A test asserts the log-odds behaviour.
+
+---
+
+## Phase 2A: what changes, and what does not
+
+The calibrated logistic regression **remains the baseline and remains what is
+served** until something beats it on out-of-sample log loss and Brier score.
+That is not deference to the incumbent; it is the same rule that has already
+rejected one challenger on this repository's own evidence.
+
+### Stacking, not voting
+
+When the additional models exist, they combine through a **stacked meta-model
+trained only on out-of-fold predictions** — each base model's prediction for a
+game comes from a fold that did not contain that game, and the meta-model is
+fit only on predictions from *earlier* walk-forward folds. Majority voting is
+explicitly not used: it discards probability magnitude, which is the entire
+output this system is judged on.
+
+The final ensemble is calibrated **separately**, after stacking, on a
+validation slice later than the meta-model's training folds.
+
+### Comparison protocol
+
+Every model is scored on the *same* out-of-sample games, with the same
+training window, validation slice and test window at every step:
+
+| Model | Status |
+|---|---|
+| Calibrated logistic | Baseline, currently served |
+| Gradient boosting | Built; **measured and rejected** — see above |
+| Negative-binomial run model | Not built |
+| Starter + bullpen innings allocation | Not built |
+| Monte Carlo simulation | Not built |
+| Elo with starter adjustment | Elo exists as a reference signal; starter adjustment not built |
+| Stacked ensemble | Not built |
+
+Nothing in that table is claimed to improve anything until the walk-forward
+proves it. The one row that has been measured says the opposite of what was
+hoped, and it is recorded rather than retried until it agreed.
