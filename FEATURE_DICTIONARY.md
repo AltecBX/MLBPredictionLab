@@ -45,6 +45,20 @@ rate carries equal weight with the prior.
 | Runs allowed / 9 (team) | games | 25 | league RA/9 |
 | Runs scored / game (team) | games | 25 | league R/G |
 
+**What counts in a denominator, for Statcast-derived rates.** Two of these are
+easy to get wrong in a way that looks entirely plausible, so both are fixed at
+ingest rather than left to each query:
+
+| Denominator | Is | Is not |
+|---|---|---|
+| Pitches | `pitches` rows where `is_pitch` | The rows Savant emits for a ball or strike *awarded* without a pitch — the no-pitch intentional walk and the pitch-timer violation |
+| Batted balls | rows in `batted_ball_events`, which are balls in play | Foul balls. Statcast measures exit velocity on those too |
+
+Both were measured, not assumed. Counting awarded balls as pitches disagreed
+with the box score on 14 of the first 30 games reconciled; counting fouls as
+batted balls gave 98 per game against a true rate near 52. See DATA_SOURCES.md
+§ Reconciliation.
+
 Rules:
 
 1. A feature whose denominator is below its **minimum sample** is not dropped —

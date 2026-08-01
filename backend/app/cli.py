@@ -82,6 +82,48 @@ def cmd_ingest_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ingest_statcast(args: argparse.Namespace) -> int:
+    """Backfill Statcast for a date range, or for whole seasons.
+
+    The range is explicit on purpose. Statcast tracking starts in 2015 and the
+    fields this system depends on arrive later still (bat speed and swing length
+    only from 2024), so "everything" is not a meaningful instruction — a season
+    with no rows to find would be refetched on every run forever.
+    """
+    from app.db.session import session_scope
+    from app.ingestion.statcast import ingest_statcast_range, season_bounds_for_statcast
+
+    if args.seasons:
+        windows = [season_bounds_for_statcast(int(s)) for s in args.seasons.split(",")]
+    elif args.start and args.end:
+        windows = [(args.start, args.end)]
+    else:
+        print("Pass either --seasons or both --start and --end.", file=sys.stderr)
+        return 2
+
+    totals: list[dict] = []
+    for start, end in windows:
+        if start > end:
+            log.info("statcast.window_skipped", start=str(start), end=str(end))
+            continue
+        with session_scope() as session:
+            result = ingest_statcast_range(
+                session,
+                start,
+                end,
+                limit_dates=args.limit_dates,
+                reconcile=not args.no_reconcile,
+            )
+        totals.append({"start": start.isoformat(), "end": end.isoformat(), **result.as_dict()})
+        log.info("statcast.window_done", start=str(start), end=str(end), pitches=result.pitches)
+
+    print(json.dumps(totals, indent=2))
+    # A discrepancy is a finding, not a crash: the rows are stored and the
+    # affected games are named so a feature query can exclude them. Exit
+    # non-zero so an unattended workflow surfaces it rather than reporting green.
+    return 1 if any(t["discrepancy_count"] for t in totals) else 0
+
+
 def cmd_daily(args: argparse.Namespace) -> int:
     from app.db.session import session_scope
     from app.ingestion.maintenance import prune_raw_payloads
@@ -235,6 +277,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seasons", required=True, help="e.g. 2023,2024,2025")
     p.add_argument("--skip-boxscores", action="store_true")
     p.set_defaults(func=cmd_ingest_history)
+
+    p = sub.add_parser("ingest-statcast", help="Backfill Statcast pitches for a range")
+    p.add_argument("--start", type=_parse_date)
+    p.add_argument("--end", type=_parse_date)
+    p.add_argument("--seasons", default=None, help="e.g. 2023,2024,2025 (overrides start/end)")
+    p.add_argument("--limit-dates", type=int, default=None)
+    p.add_argument("--no-reconcile", action="store_true")
+    p.set_defaults(func=cmd_ingest_statcast)
 
     p = sub.add_parser("daily", help="Refresh schedule + results, then predict")
     p.add_argument("--date", type=_parse_date, default=None)

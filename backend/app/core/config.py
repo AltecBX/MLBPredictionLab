@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     )
     mlb_statsapi_max_retries: int = Field(default=4, ge=0, le=10)
 
+    # Baseball Savant. Spacing is deliberately an order of magnitude slower than
+    # the MLB Stats API client's: Savant is a smaller service and one request
+    # returns megabytes. A backfill is not urgent.
+    statcast_base_url: str = "https://baseballsavant.mlb.com"
+    statcast_timeout_s: float = Field(default=120.0, gt=0)
+    statcast_min_interval_ms: int = Field(default=2000, ge=0)
+    statcast_max_retries: int = Field(default=3, ge=0, le=10)
+
     # --- Modeling ----------------------------------------------------------
     active_model_name: str = "jerry_logistic"
     feature_set_version: str = "fs_v1"

@@ -163,6 +163,7 @@ name of the required source. They are **not** filled with placeholder numbers:
 | `make ingest-reference` | Teams, ballparks, players |
 | `make ingest-schedule` | Schedule window (default ±10 days) |
 | `make ingest-history SEASONS=2023,2024,2025` | Backfill schedule + results + boxscores |
+| `python -m app.cli ingest-statcast --seasons 2025` | Backfill Statcast pitches, then reconcile against the box scores. Also a `workflow_dispatch` job, `statcast.yml` |
 | `make train` | Walk-forward fit, register a model version |
 | `make predict` | Generate immutable predictions for the current slate |
 | `make backtest` | Full walk-forward evaluation with slices and ablation |
@@ -191,8 +192,8 @@ Ordered so each step is usable on its own and the next one depends on it.
 
 | # | Step | State |
 |---|---|---|
-| 1 | Statcast ingestion and data validation | **This change** |
-| 2 | Starting-pitcher Statcast features | Next |
+| 1 | Statcast ingestion and data validation | **Done — verified on 188 real games** |
+| 2 | Starting-pitcher Statcast features | **This change** |
 | 3 | Expected and confirmed lineup features | Blocked on the timeline — see below |
 | 4 | Pitch arsenal matchup engine | Not started |
 | 5 | Individual bullpen availability | Not started |
@@ -203,15 +204,31 @@ Ordered so each step is usable on its own and the next one depends on it.
 | 10 | Prediction timeline and change explanations | Not started |
 | 11 | UI context features | Partly done — records, streaks, standings, nine-row summary shipped |
 
-## Acceptance for step 1
+## Acceptance for step 1 — met
 
-* A Statcast provider that reaches Savant's CSV export, rate limited and
-  resumable, storing raw responses with retrieval and knowledge timestamps.
-* `pitches` and `batted_ball_events` widened to what the export carries.
-* Reconciliation that compares independently derived Statcast totals against
-  the box-score totals already ingested, and **fails loudly on a mismatch**
-  rather than storing a quiet inconsistency.
-* Ingestion of a real date range, verified against real data.
+| Criterion | Evidence |
+|---|---|
+| Provider reaches Savant's CSV export, rate limited, resumable, timestamped | `app/providers/baseball_savant/`, `pending_statcast_dates()` |
+| `pitches` and `batted_ball_events` widened to what the export carries | Migration `e37fd67a9dfd`; 41 and 25 columns |
+| Reconciliation against the independently ingested box scores, loud on mismatch | Four checks, DATA_SOURCES.md § Reconciliation |
+| Ingested a real date range and verified it | 2024-07-01 … 07-14: 188 games, 55,167 pitches, 9,677 balls in play, **0 discrepancies** |
+
+Two defects were found by the reconciliation rather than by inspection, and both
+are recorded in DATABASE_SCHEMA.md rather than quietly patched:
+
+1. **Awarded balls and strikes are not pitches.** Savant emits a row for the
+   no-pitch intentional walk and the pitch-timer violation. Counting them
+   disagreed with the box score on 14 of the first 30 games, by up to 20 pitches.
+   `is_pitch` now carries the distinction and every denominator uses it.
+2. **Statcast measures fouls.** Defining a batted ball as "has a launch
+   measurement" gave 98 per game against a true rate near 52 — an 85% inflation
+   that would have diluted every contact-quality metric. Membership is now
+   decided by `description`.
+
+Derived rates on the ingested window, for the record: 88.1 mph average exit
+velocity, 8.3% barrel, 38.2% hard hit, 48.0% swing, 23.2% whiff per swing, 49.6%
+zone, 22.5% strikeout, 8.0% walk. Home runs agree exactly across three
+independent paths — batted-ball table, pitch table and box score, 485 each.
 
 ## Why step 3 is not simply "next"
 

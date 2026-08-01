@@ -360,6 +360,7 @@ on older seasons or on pitches its tracking missed:
 | `spin_axis` | integer | `spin_axis` | Degrees. Movement direction, independent of rate |
 | `batter_stands` | char(1) | `stand` | Platoon state without a roster lookup |
 | `pitcher_throws` | char(1) | `p_throws` | Same |
+| `is_pitch` | boolean | derived from `description` | **False when no ball was thrown** — see below |
 | `is_swing` | boolean | derived from `description` | |
 | `is_whiff` | boolean | derived from `description` | Swinging strike |
 | `is_called_strike` | boolean | derived from `description` | Separates command from stuff |
@@ -369,12 +370,30 @@ on older seasons or on pitches its tracking missed:
 | `pitcher_days_since_prev` | smallint | `pitcher_days_since_prev_game` | Rest, from the source rather than recomputed |
 | `bat_speed` | numeric(4,1) | `bat_speed` | 2023+ only; null before |
 | `swing_length` | numeric(4,2) | `swing_length` | Same |
+| `pa_event` | text | `events` | The plate appearance's outcome, on its final pitch only |
+| `woba_value` | numeric(5,4) | `woba_value` | On that same terminal pitch |
+| `woba_denom` | smallint | `woba_denom` | |
 
-`is_swing`, `is_whiff` and `is_called_strike` are **derived once at ingest** from
-`description` rather than at query time. The mapping is a documented constant
-(`SWING_DESCRIPTIONS`, `WHIFF_DESCRIPTIONS`, `CALLED_STRIKE_DESCRIPTIONS`) with
-a test, so a change to Savant's vocabulary fails loudly instead of silently
-reclassifying history.
+`is_pitch`, `is_swing`, `is_whiff` and `is_called_strike` are **derived once at
+ingest** from `description` rather than at query time. The mapping is a
+documented constant (`SWING_DESCRIPTIONS`, `WHIFF_DESCRIPTIONS`,
+`CALLED_STRIKE_DESCRIPTIONS`, `NON_PITCH_DESCRIPTIONS`) with a test, so a change
+to Savant's vocabulary fails loudly instead of silently reclassifying history.
+
+**`is_pitch` is not a formality.** Savant emits a row for every ball or strike
+*awarded* without a pitch — the no-pitch intentional walk (`automatic_ball`) and
+the pitch-timer violation (`automatic_strike`). They are real events but they are
+not pitches. Counting them as pitches disagreed with the box score on **14 of the
+first 30 games reconciled**, by up to 20 pitches in one game; excluding them, all
+30 agreed exactly. Every count and rate denominator filters on `is_pitch`.
+
+**`pa_event` is what makes plate appearances countable.** It is Savant's own
+outcome field, so strikeouts, walks and hit-by-pitches come from the source
+rather than from a hand-written rules engine over `description` — two strikes
+plus a foul tip is a strikeout, plus a plain foul is not, and a rule like that
+drifts the first time the rulebook changes. It also carries the wOBA numerator
+and denominator for the terminal pitch, which is what lets a pitcher's wOBA
+against include strikeouts and walks rather than only balls in play.
 
 **Uniqueness**: `(game_id, at_bat_number, pitch_number)`. Re-ingesting a date is
 idempotent, and a duplicated pitch is a constraint violation rather than a
@@ -394,6 +413,18 @@ silently doubled sample.
 `is_barrel` is set from `launch_speed_angle == 6`, which is Savant's
 classification rather than a reimplementation of the launch-speed/angle table.
 Reimplementing it would drift from the published definition for no gain.
+
+**Membership is decided by `description`, not by the presence of launch data.**
+Statcast measures exit velocity and launch angle on *foul balls* too. Admitting
+every row with a launch measurement produced **98 batted balls per game against
+a true rate near 52** — an 85% inflation that would have diluted barrel rate,
+hard-hit rate, average exit velocity and xwOBA with a population no published
+version of those metrics includes. A row belongs here only when `description` is
+one of `IN_PLAY_DESCRIPTIONS`. Fouls stay in `pitches`, where they belong.
+
+A ball in play whose tracking failed *is* stored, with null launch columns and
+null `is_barrel` / `is_hard_hit`. Unknown is recorded as unknown; it is never
+folded into False. Measured coverage on 9,677 balls in play: 99.7% tracked.
 
 ### Sizing
 

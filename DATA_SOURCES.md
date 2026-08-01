@@ -255,8 +255,46 @@ takes an explicit date range rather than defaulting to all history.
 ### Resumability
 
 Identical in shape to the boxscore backfill: `pending_statcast_dates()` returns
-dates that have final games but no stored pitches, so an interrupted run picks
-up where it stopped and a completed date is never refetched.
+dates where *some* final regular-season game still has no pitches, so an
+interrupted run picks up where it stopped and a completed date is never
+refetched. A date counts as done only when **every** game on it has pitches —
+"any game has pitches" would abandon the rest of a date that died halfway.
+
+A date whose games predate Statcast tracking has no rows to find and so stays
+pending forever. That is the second reason `ingest-statcast` takes an explicit
+range: the caller says which seasons are tracked, rather than the system
+refetching 1998 on every run.
+
+### Reconciliation against the MLB Stats API
+
+Savant and the box scores already ingested are two independent descriptions of
+the same game, so they can be made to check each other. Every ingested game is
+compared on four counts, and a mismatch is recorded as a named discrepancy —
+the rows are still stored, but the affected game is identified so a feature
+query can exclude it.
+
+| Check | Statcast side | Box-score side |
+|---|---|---|
+| `pitch_count` | rows where `is_pitch` | Σ `pitches_thrown` |
+| `strikeouts` | `pa_event` in the strikeout set | Σ `strikeouts_pitched` |
+| `home_runs` | `pa_event = 'home_run'` | Σ `home_runs_allowed` |
+| `balls_in_play` | rows in `batted_ball_events` | Σ (`at_bats` − `strikeouts` + `sac_flies` + `sac_bunts`) |
+
+The fourth exists because `batted_ball_events` is the table every contact-quality
+feature reads, and it should not inherit the pitch table's clean bill of health.
+
+**Measured on 2024-07-01 … 2024-07-14 — 188 games, 55,167 pitch rows, 9,677
+balls in play: zero discrepancies on all four checks.** Getting there found two
+real defects, both documented in DATABASE_SCHEMA.md: `automatic_ball` /
+`automatic_strike` rows are not pitches (14 of the first 30 games disagreed
+until they were excluded), and Statcast measures fouls, so a batted ball has to
+be defined by `description` rather than by having a launch measurement (98 per
+game before the fix, 51.5 after).
+
+The tolerance for the discrete checks is one event, to absorb a later scoring
+correction. The pitch-count tolerance is 0.5%; before the `is_pitch` fix it had
+been set to 2%, which is exactly the kind of number that hides a real defect
+behind a plausible-looking allowance.
 
 ---
 
