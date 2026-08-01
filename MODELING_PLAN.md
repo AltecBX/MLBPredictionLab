@@ -554,14 +554,35 @@ Reproduce with `python -m app.cli simulate-check --seasons 2024,2025 --start 202
 | **Blend at the pre-registered weight 0.5** | **0.68217** | **0.24460** | **0.91%** | **55.65%** | 0.5650 |
 | Blend at the searched weight 0.7 | 0.68190 | 0.24449 | 0.96% | 55.61% | 0.5656 |
 
-| Paired 95% interval, pre-registered blend vs logistic | Δ log loss | Δ Brier |
-|---|---|---|
-| | **+0.00465 [+0.00162, +0.00762]** | **+0.00218 [+0.00071, +0.00361]** |
+**2024 — 1,741 scored games**
 
-Both intervals exclude zero. For scale, the three rejected feature groups moved
-log loss by −0.0004, +0.0004 and −0.0004, every interval spanning zero. This is
-an order of magnitude larger and the first result with a sign the data is sure
-of.
+| | Log loss | Brier | Calibration error | Accuracy |
+|---|---|---|---|---|
+| Logistic (served), 42 features | 0.68882 | 0.24743 | 3.27% | 56.58% |
+| Simulation alone, **0 fitted parameters** | **0.68066** | **0.24386** | **0.94%** | 56.12% |
+| Blend at the pre-registered weight 0.5 | 0.68236 | 0.24462 | 2.02% | **57.27%** |
+
+**Both seasons, same sign, both intervals excluding zero:**
+
+| Season | n | Δ log loss @ 0.5 | Paired 95% CI | Δ Brier | Searched weight |
+|---|---|---|---|---|---|
+| 2024 | 1,741 | **+0.00646** | [+0.00328, +0.00984] | +0.00281 | 1.0 |
+| 2025 | 2,363 | **+0.00465** | [+0.00162, +0.00762] | +0.00218 | 0.7 |
+
+For scale, the three rejected feature groups moved log loss by −0.0004, +0.0004
+and −0.0004, with every interval spanning zero and the sign flipping between
+seasons. This is an order of magnitude larger, holds its sign across both
+seasons, and both intervals exclude zero — which is exactly the standard the
+rejections were held to and failed.
+
+**The searched weight is unstable and the pre-registered one is not.** 2024
+wanted 1.0 — the simulation alone, no logistic at all — and 2025 wanted 0.7. A
+weight chosen on one season would have been wrong on the other. The even split
+improves on both, which is the better reason to use it than the one it was
+chosen for.
+
+**In 2024 the simulation alone beat everything**, including the blend, at a
+calibration error of 0.94% against the logistic model's 3.27%.
 
 **The weight is pre-registered, not searched.** The grid picks whichever weight
 scores best on the games it is scored on, and reporting that number would be
@@ -605,8 +626,9 @@ simulation knows the shape of a baseball game.
 
 ### What is not yet established
 
-* **One season, at the blend level.** 2024 is the second measurement and belongs
-  beside this one before the blend is served.
+* **Two seasons, not five.** Both agree, but the optimal weight moved between
+  them, and a third season would say whether 0.5 is genuinely the stable choice
+  or merely between the two answers so far.
 * **The run model is deliberately crude.** No park factor, no starter, no
   bullpen, no weather. Every one of those is a run-scoring input the feature
   layer already computes and the run model currently ignores, which is the

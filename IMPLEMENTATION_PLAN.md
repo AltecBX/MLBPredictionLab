@@ -199,7 +199,7 @@ Ordered so each step is usable on its own and the next one depends on it.
 | 5 | Individual bullpen availability | Not started |
 | 6 | Weather and empirical park factors | Not started |
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
-| 8 | Run scoring model and simulation | **Next.** Three rejections say the ceiling is the shape of the question, not the column count |
+| 8 | Run scoring model and simulation | **Built, measured, and it works** — +0.0047 to +0.0065 log loss across two seasons, both intervals excluding zero. MODELING_PLAN.md |
 | 9 | Stacked ensemble and calibration | Not started |
 | 10 | Prediction timeline and change explanations | Not started |
 | 11 | UI context features | Partly done — records, streaks, standings, nine-row summary shipped |
@@ -258,6 +258,25 @@ engine, was already next after 2 and 3; this result raises its priority relative
 to more pitcher-level aggregates, because the thing that was measured — a
 starter's stuff *in general* — is not the thing that decides a game. His stuff
 against tonight's nine hitters might be.
+
+## What step 8 changed
+
+Three feature groups were rejected against the binary win target before this,
+and the shared diagnosis was that the ceiling is the shape of the question
+rather than the column count. Step 8 tested that directly by changing the
+target: predict each side's run distribution, then ask P(home > away).
+
+It is the first thing in this repository to beat the served model, and the
+margin is an order of magnitude larger than anything a feature group produced —
++0.0047 and +0.0065 log loss across 2025 and 2024, both paired intervals
+excluding zero, the same sign both times. Calibration error roughly halves.
+
+The lead that follows from it is now the clearest one open. The run model is
+deliberately crude: park factor, starting pitcher, bullpen and weather are all
+run-scoring inputs the feature layer already computes and the run model ignores
+entirely. Every one of them is a direct input to expected runs rather than
+another column bolted to a classifier, which is the shape that has now been
+measured three times and found not to work.
 
 ## Phase 2B — what steps 3 and 4 became
 
