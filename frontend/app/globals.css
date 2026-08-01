@@ -1,123 +1,233 @@
 @import "tailwindcss";
 
 /*
- * Jerry MLB Prediction Lab — design tokens.
+ * Jerry MLB Prediction Lab — design system.
  *
- * A premium analytics surface: high contrast, dense but breathable, no
- * decorative gradients, no sportsbook styling. Light and dark are both
- * first-class; the theme toggle stamps data-theme on <html>.
+ * The product is a measuring instrument, and it should feel like one: precise,
+ * quiet, confident. Numbers are the subject, so they get the best typography on
+ * the page; everything else recedes until asked for.
+ *
+ * Four rules the rest of this file follows:
+ *
+ *   1. One accent. A second accent colour is a second thing competing to be
+ *      important, and on a screen whose whole job is "which side is favoured"
+ *      that competition is a bug.
+ *   2. Depth comes from layered surfaces and tinted shadow, never from
+ *      decorative gradient. A gradient on a card is a sportsbook tell.
+ *   3. Every size, space and duration comes from a scale. A one-off value is a
+ *      value nobody can reproduce.
+ *   4. Motion describes what happened. It never announces itself, and it stops
+ *      entirely when the reader asks it to.
+ *
+ * No webfont, deliberately. The primary device is an iPhone nine times out of
+ * ten, where the system stack is SF Pro — a better typeface than anything worth
+ * downloading, already resident, with no network round trip and no flash of
+ * fallback text. Distinctiveness comes from how it is set, not from novelty.
  */
 
 @theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+    "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", "Cascadia Mono",
+    Menlo, Consolas, monospace;
 
-  --color-ink-50: #f6f7f9;
-  --color-ink-100: #eceef2;
-  --color-ink-200: #d6dae2;
-  --color-ink-300: #b2b9c6;
-  --color-ink-400: #838da0;
-  --color-ink-500: #616c82;
-  --color-ink-600: #4b5468;
-  --color-ink-700: #3c4457;
-  --color-ink-800: #2a3142;
-  --color-ink-900: #1b2130;
-  --color-ink-950: #11151f;
+  /* Neutral ramp. Slightly blue-cooled so it sits under the accent without
+     turning muddy, and so the dark theme reads as ink rather than as soot. */
+  --color-ink-50: #f7f8fa;
+  --color-ink-100: #eef0f4;
+  --color-ink-200: #dde1e9;
+  --color-ink-300: #c0c7d4;
+  --color-ink-400: #8e97a9;
+  --color-ink-500: #68718544;
+  --color-ink-600: #4d5668;
+  --color-ink-700: #39415200;
+  --color-ink-800: #262d3c;
+  --color-ink-900: #161c28;
+  --color-ink-950: #0b0f17;
 
-  --color-accent-400: #4b9fe1;
-  --color-accent-500: #2b7fc4;
-  --color-accent-600: #1f639e;
+  --color-accent-300: #7cc7ff;
+  --color-accent-400: #3ea8f5;
+  --color-accent-500: #1a86dd;
+  --color-accent-600: #0f68b4;
 
-  --color-home-500: #1f7a5a;
-  --color-home-400: #2f9d76;
-  --color-away-500: #8a4a1f;
-  --color-away-400: #b26430;
+  --color-home-500: #0f9268;
+  --color-home-400: #24b586;
+  --color-away-500: #c2601c;
+  --color-away-400: #e5883f;
 
-  --color-warn-500: #a86a10;
-  --color-warn-400: #d08a26;
-  --color-danger-500: #a33a34;
-  --color-danger-400: #cf5c55;
+  --color-warn-500: #a5680a;
+  --color-warn-400: #dc9a24;
+  --color-danger-500: #c0392f;
+  --color-danger-400: #ef6a5f;
 }
+
+/* ---------------------------------------------------------------- scales -- */
 
 :root {
   /*
    * Height of the sticky header, including its 1px border. Anything else that
    * sticks (the game tab strip, the date bar) offsets by this rather than
    * re-deriving it, so one row of padding changing does not silently hide a
-   * control under the header. Verified against the rendered header at both
-   * breakpoints; the E2E suite asserts the tab strip lands clear of it.
+   * control under the header. The E2E suite asserts the tab strip lands clear.
    */
-  --header-h: 61px;
+  --header-h: 56px;
 
+  /* Type. Each step carries its own line-height and tracking, because a scale
+     that only changes size is a scale that looks wrong at both ends: large text
+     needs tighter tracking and shorter leading, small text needs the reverse. */
+  --text-display: 1.5rem;
+  --text-display-lh: 1.08;
+  --text-display-ls: -0.025em;
+  --text-title: 1.3125rem;
+  --text-title-lh: 1.2;
+  --text-title-ls: -0.019em;
+  --text-heading: 1.0625rem;
+  --text-heading-lh: 1.32;
+  --text-heading-ls: -0.013em;
+  --text-body: 0.9375rem;
+  --text-body-lh: 1.55;
+  --text-body-ls: -0.006em;
+  --text-small: 0.8125rem;
+  --text-small-lh: 1.45;
+  --text-small-ls: -0.003em;
+  --text-label: 0.75rem;
+  --text-label-lh: 1.35;
+  --text-label-ls: 0.005em;
+  --text-micro: 0.6875rem;
+  --text-micro-lh: 1.3;
+  --text-micro-ls: 0.02em;
+
+  --radius-sm: 7px;
+  --radius-md: 11px;
+  --radius-lg: 15px;
+  --radius-xl: 21px;
+
+  /* Motion. `--ease-out` is the workhorse; `--ease-spring` overshoots very
+     slightly, which is what makes a bar filling read as physical rather than
+     as a value being assigned. */
+  --dur-fast: 130ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
+  --ease-out: cubic-bezier(0.22, 0.72, 0.24, 1);
+  --ease-spring: cubic-bezier(0.16, 1.02, 0.28, 1);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --header-h: 60px;
+    --text-display: 2.125rem;
+    --text-title: 1.5rem;
+    --text-heading: 1.125rem;
+  }
+}
+
+/* ---------------------------------------------------------------- themes -- */
+
+/*
+ * Light is paper, not screen: the page is a warm-cool off-white so a pure-white
+ * card actually reads as sitting on top of it. A white card on a white page is
+ * the single most common reason a light theme looks unfinished.
+ */
+:root,
+:root[data-theme="light"] {
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --surface-sunken: #f6f7f9;
-  --border: #e2e5eb;
-  --border-strong: #cbd0da;
-  --text: #171b26;
-  --text-muted: #5c667a;
-  --text-subtle: #7c869a;
-  --shadow-card: 0 1px 2px rgb(17 21 31 / 0.05), 0 1px 3px rgb(17 21 31 / 0.04);
-  --home: #16694c;
-  --away: #93511f;
-  --accent: #1f639e;
-  --track: #e8ebf0;
+  --surface-sunken: #f4f6f9;
+  --surface-inset: #eef1f6;
+  --surface-overlay: #ffffff;
+
+  --border: #e4e8ef;
+  --border-strong: #ccd3de;
+  --border-accent: color-mix(in srgb, var(--accent) 38%, transparent);
+
+  --text: #10151f;
+  --text-muted: #545e72;
+  --text-subtle: #78829a;
+
+  /* Shadows are tinted with the page's own hue. A neutral-black shadow on a
+     cool-grey page reads as dirt; a hue-matched one reads as depth. */
+  --shadow-1: 0 1px 2px -1px rgb(16 21 31 / 0.09), 0 1px 3px rgb(16 21 31 / 0.05);
+  --shadow-2:
+    0 2px 4px -2px rgb(16 21 31 / 0.1), 0 6px 14px -4px rgb(16 21 31 / 0.09);
+  --shadow-3:
+    0 8px 20px -6px rgb(16 21 31 / 0.16), 0 20px 44px -12px rgb(16 21 31 / 0.14);
+
+  --home: #0c7d59;
+  --away: #b25617;
+  --accent: #0f6dbb;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  --track: #e7eaf1;
+  --glow: transparent;
   color-scheme: light;
 }
 
+/*
+ * Dark is where the product should feel expensive. A blue-black base rather
+ * than neutral grey, three genuinely distinct surface levels, and a hairline
+ * top highlight on raised surfaces — the one detail that separates a card that
+ * looks lit from a rectangle that looks painted.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface: #11151f;
-    --surface-raised: #171c28;
-    --surface-sunken: #0d111a;
-    --border: #262d3d;
-    --border-strong: #364154;
-    --text: #eef1f6;
-    --text-muted: #a3adc0;
-    --text-subtle: #7d879b;
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
-    --home: #3fb086;
-    --away: #d18148;
-    --accent: #5aa9e6;
-    --track: #232a38;
+    --surface: #0d111a;
+    --surface-raised: #141a26;
+    --surface-sunken: #090c13;
+    --surface-inset: #10151f;
+    --surface-overlay: #1a2130;
+
+    --border: #222b3b;
+    --border-strong: #33405a;
+    --border-accent: color-mix(in srgb, var(--accent) 46%, transparent);
+
+    --text: #eef2f8;
+    --text-muted: #a2adc2;
+    --text-subtle: #7a8499;
+
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-2: 0 2px 6px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.55);
+    --shadow-3: 0 10px 30px -8px rgb(0 0 0 / 0.7), 0 24px 60px -16px rgb(0 0 0 / 0.6);
+
+    --home: #2fc294;
+    --away: #f0964e;
+    --accent: #4aa9f2;
+    --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+    --track: #1e2634;
+    --glow: rgb(255 255 255 / 0.05);
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --surface: #11151f;
-  --surface-raised: #171c28;
-  --surface-sunken: #0d111a;
-  --border: #262d3d;
-  --border-strong: #364154;
-  --text: #eef1f6;
-  --text-muted: #a3adc0;
-  --text-subtle: #7d879b;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
-  --home: #3fb086;
-  --away: #d18148;
-  --accent: #5aa9e6;
-  --track: #232a38;
+  --surface: #0d111a;
+  --surface-raised: #141a26;
+  --surface-sunken: #090c13;
+  --surface-inset: #10151f;
+  --surface-overlay: #1a2130;
+
+  --border: #222b3b;
+  --border-strong: #33405a;
+  --border-accent: color-mix(in srgb, var(--accent) 46%, transparent);
+
+  --text: #eef2f8;
+  --text-muted: #a2adc2;
+  --text-subtle: #7a8499;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-2: 0 2px 6px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.55);
+  --shadow-3: 0 10px 30px -8px rgb(0 0 0 / 0.7), 0 24px 60px -16px rgb(0 0 0 / 0.6);
+
+  --home: #2fc294;
+  --away: #f0964e;
+  --accent: #4aa9f2;
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --track: #1e2634;
+  --glow: rgb(255 255 255 / 0.05);
   color-scheme: dark;
 }
 
-:root[data-theme="light"] {
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-sunken: #f6f7f9;
-  --border: #e2e5eb;
-  --border-strong: #cbd0da;
-  --text: #171b26;
-  --text-muted: #5c667a;
-  --text-subtle: #7c869a;
-  --shadow-card: 0 1px 2px rgb(17 21 31 / 0.05), 0 1px 3px rgb(17 21 31 / 0.04);
-  --home: #16694c;
-  --away: #93511f;
-  --accent: #1f639e;
-  --track: #e8ebf0;
-  color-scheme: light;
-}
+/* ------------------------------------------------------------------ base -- */
 
 html,
 body {
@@ -125,25 +235,33 @@ body {
   color: var(--text);
 }
 
-@media (min-width: 640px) {
-  :root {
-    --header-h: 59px;
-  }
-}
-
 html {
   /* iOS Safari otherwise inflates text after a rotation, which silently breaks
      every width calculation the layout depends on. */
   -webkit-text-size-adjust: 100%;
-
   /* Anchor targets and scrollIntoView must clear both sticky layers. */
-  scroll-padding-top: calc(var(--header-h) + 3rem);
+  scroll-padding-top: calc(var(--header-h) + 3.25rem);
+  /*
+   * Deliberately NOT scroll-behavior: smooth. It reads as polish and behaves as
+   * a tax: it animates every programmatic jump, so "back to top" on a
+   * fifteen-game slate becomes a multi-second ride the reader cannot skip, and
+   * an anchor tap stops feeling instant. Motion in this product describes
+   * something — a card arriving, a meter filling, an indicator moving. Slowing
+   * down a jump the reader asked for describes nothing.
+   */
 }
 
 body {
   font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
+  letter-spacing: var(--text-body-ls);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* Contextual alternates and kerning on; the system faces ship with both and
+     they are what make a tightly tracked heading hold together. */
+  font-feature-settings: "kern" 1, "calt" 1;
   /* A long team name or ballpark must never be the reason the page scrolls
      sideways; break it before the layout breaks. */
   overflow-wrap: break-word;
@@ -154,246 +272,543 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
-.surface {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-card);
-}
-
-.muted {
-  color: var(--text-muted);
-}
-
-.subtle {
-  color: var(--text-subtle);
-}
-
-.tnum {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
-}
-
-.hairline {
-  border-top: 1px solid var(--border);
-}
-
-/* Subtle entrance for card grids; respects reduced-motion. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.rise {
-  animation: rise 220ms cubic-bezier(0.22, 0.8, 0.36, 1) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rise {
-    animation: none;
-  }
-  * {
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Wide content scrolls inside its own container; the page body never does.
-   min-width:0 is load-bearing: a flex item defaults to min-width:auto, which
-   makes it refuse to shrink below its content and pushes the page wide instead
-   of scrolling internally. */
-.scroll-x {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  min-width: 0;
-  max-width: 100%;
-  /* Keep momentum scrolling inside the strip instead of handing the gesture to
-     the page, which on iOS reads as the whole view jittering sideways. */
-  overscroll-behavior-x: contain;
-}
-
-/* Hide the scrollbar on strips that are obviously swipeable (tabs, chips).
-   Tables keep theirs — there the bar is the only cue that more columns exist. */
-.scroll-x.no-bar {
-  scrollbar-width: none;
-}
-.scroll-x.no-bar::-webkit-scrollbar {
-  display: none;
-}
-
-/* A shadow that appears only on the side that still has hidden content — the
-   one reliable "there is more here" cue on a phone, where scrollbars are
-   invisible until you touch. Pure CSS: the local layers scroll with the
-   content and uncover the fixed shadow layers underneath. */
-.scroll-x.edge-cue {
-  background:
-    linear-gradient(to right, var(--surface-raised) 40%, transparent) left center /
-      28px 100% no-repeat local,
-    linear-gradient(to left, var(--surface-raised) 40%, transparent) right center /
-      28px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.14), transparent) left center /
-      14px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.14), transparent) right
-      center / 14px 100% no-repeat scroll;
-}
-
-/* Tooltip panel offset. Authored here rather than inline so the sm: popover
-   position still wins — an inline `bottom` would beat every utility class. */
-.tip-sheet {
-  bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
-}
-
-@media (min-width: 640px) {
-  .tip-sheet {
-    bottom: 100%;
-  }
-}
-
-/* Swipeable strips settle on a tab rather than mid-label. */
-.snap-x-strip {
-  scroll-snap-type: x proximity;
-}
-.snap-x-strip > * {
-  scroll-snap-align: start;
-}
-
-/*
- * Touch targets.
+/* --------------------------------------------------------------- layering --
  *
- * Apple's HIG floor is 44x44pt and this app is used one-handed on an iPhone
- * roughly nine times out of ten, so every interactive element gets it. The
- * padding stays visual; `min-height` does the work so a 12px label still
- * presents a 44px target.
+ * Everything below is a class, and every class below sits in the `components`
+ * layer on purpose.
+ *
+ * Tailwind's own utilities live in the `utilities` layer, and an unlayered rule
+ * beats a layered one no matter what the selectors are. So a helper defined
+ * outside a layer silently wins against the utility written next to it at the
+ * call site: `.tap-sq` setting `display:inline-flex` beat `sm:hidden`, and the
+ * phone-only theme button rendered on desktop as well — two theme controls in
+ * the header, on every wide screen, for as long as that class has existed.
+ *
+ * Declaring these as components inverts that. The class is the default; the
+ * utility at the call site is the exception, and the exception wins.
  */
-.tap {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
+@layer components {
+  /* -------------------------------------------------------------- typography */
 
-.tap-sq {
-  min-height: 44px;
-  min-width: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-@media (min-width: 640px) {
-  /* Pointer devices do not need the floor, and it makes dense toolbars airy. */
-  .tap,
-  .tap-sq {
-    min-height: 34px;
+  .t-display {
+    font-size: var(--text-display);
+    line-height: var(--text-display-lh);
+    letter-spacing: var(--text-display-ls);
+    font-weight: 680;
   }
-  .tap-sq {
-    min-width: 34px;
+
+  .t-title {
+    font-size: var(--text-title);
+    line-height: var(--text-title-lh);
+    letter-spacing: var(--text-title-ls);
+    font-weight: 650;
   }
-}
 
-/* iOS safe areas — the home indicator and the notch. Only ever additive, so a
- * browser without env() support renders exactly what it did before. */
-.safe-b {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
+  .t-heading {
+    font-size: var(--text-heading);
+    line-height: var(--text-heading-lh);
+    letter-spacing: var(--text-heading-ls);
+    font-weight: 620;
+  }
 
-.safe-x {
-  padding-left: max(1rem, env(safe-area-inset-left, 0px));
-  padding-right: max(1rem, env(safe-area-inset-right, 0px));
-}
+  .t-body {
+    font-size: var(--text-body);
+    line-height: var(--text-body-lh);
+    letter-spacing: var(--text-body-ls);
+  }
 
-/* Room for the fixed bottom tab bar so the last card is never trapped under it. */
-.pad-bottom-nav {
-  padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
-}
+  .t-small {
+    font-size: var(--text-small);
+    line-height: var(--text-small-lh);
+    letter-spacing: var(--text-small-ls);
+  }
 
-@media (min-width: 640px) {
+  .t-label {
+    font-size: var(--text-label);
+    line-height: var(--text-label-lh);
+    letter-spacing: var(--text-label-ls);
+  }
+
+  .t-micro {
+    font-size: var(--text-micro);
+    line-height: var(--text-micro-lh);
+    letter-spacing: var(--text-micro-ls);
+  }
+
+  /* Section eyebrow: the small all-caps label that names a region without
+     competing with the content inside it. */
+  .eyebrow {
+    font-size: var(--text-micro);
+    line-height: 1;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    font-weight: 640;
+    color: var(--text-subtle);
+  }
+
+  .muted {
+    color: var(--text-muted);
+  }
+
+  .subtle {
+    color: var(--text-subtle);
+  }
+
+  /* Tabular figures, for anything that sits in a column or changes in place. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "kern" 1, "tnum" 1;
+  }
+
+  /*
+   * The house numeral. Percentages and scores are the subject of this product, so
+   * they get their own treatment: tabular, tightened, and set a shade heavier than
+   * the text around them so a column of them reads as data rather than as prose.
+   */
+  .numeral {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "kern" 1, "tnum" 1, "ss01" 1;
+    letter-spacing: -0.02em;
+    font-weight: 620;
+  }
+
+  .numeral-lg {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "kern" 1, "tnum" 1;
+    letter-spacing: -0.035em;
+    font-weight: 660;
+  }
+
+  /* ---------------------------------------------------------------- surfaces */
+
+  .surface {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-1);
+  }
+
+  /*
+   * A raised card. The inset top highlight is the detail that does the work in
+   * dark mode: a single hairline of light along the top edge is how a physical
+   * object catches a light source, and its absence is why flat dark cards look
+   * like holes rather than surfaces. It resolves to transparent in light mode,
+   * where the shadow alone is enough.
+   */
+  .card {
+    position: relative;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow:
+      var(--shadow-2),
+      inset 0 1px 0 var(--glow);
+    transition:
+      transform var(--dur-base) var(--ease-out),
+      box-shadow var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .card-interactive:hover {
+      transform: translateY(-2px);
+      box-shadow:
+        var(--shadow-3),
+        inset 0 1px 0 var(--glow);
+      border-color: var(--border-strong);
+    }
+  }
+
+  .inset {
+    background: var(--surface-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .hairline {
+    border-top: 1px solid var(--border);
+  }
+
+  /* A divider that fades at both ends — a full-bleed rule inside a rounded card
+     always reads as a mistake at the corners. */
+  .rule-soft {
+    height: 1px;
+    border: 0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--border) 12%,
+      var(--border) 88%,
+      transparent
+    );
+  }
+
+  /* ---------------------------------------------------------------- controls */
+
+  /*
+   * Touch targets.
+   *
+   * Apple's HIG floor is 44x44pt and this app is used one-handed on an iPhone
+   * roughly nine times out of ten, so every interactive element gets it. The
+   * padding stays visual; `min-height` does the work so a 12px label still
+   * presents a 44px target.
+   */
+  .tap {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .tap-sq {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  @media (min-width: 640px) {
+    /* Pointer devices do not need the floor, and it makes dense toolbars airy. */
+    .tap,
+    .tap-sq {
+      min-height: 34px;
+    }
+    .tap-sq {
+      min-width: 34px;
+    }
+  }
+
+  /* Pill control — chips, segmented items, the date stepper. */
+  .pill {
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .pill:hover {
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+  }
+
+  .pill:active {
+    transform: scale(0.97);
+  }
+
+  .pill-active {
+    color: var(--accent);
+    border-color: var(--border-accent);
+    background: var(--accent-soft);
+    font-weight: 580;
+  }
+
+  /* Icon button — square, quiet until touched. */
+  .icon-btn {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+    color: var(--text-muted);
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .icon-btn:hover {
+      color: var(--text);
+      border-color: var(--border-strong);
+      background: var(--surface-inset);
+    }
+  }
+
+  .icon-btn:active {
+    transform: scale(0.94);
+  }
+
+  /* Tapping a link should not leave a grey flash on iOS; :focus-visible and the
+     active state carry the feedback instead. */
+  a,
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (hover: none) {
+    a:active,
+    button:active {
+      opacity: 0.62;
+    }
+  }
+
+  /* ------------------------------------------------------------------ motion */
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* The meter grows from nothing rather than appearing at its value. On a screen
+     whose subject is a probability, watching the number arrive is the difference
+     between a chart and a readout. */
+  @keyframes meter-in {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.82);
+    }
+  }
+
+  .rise {
+    animation: rise var(--dur-slow) var(--ease-out) both;
+  }
+
+  .fade-in {
+    animation: fade-in var(--dur-base) var(--ease-out) both;
+  }
+
+  /* Staggered entrance for a grid. The delay is capped so the last card of a
+     fifteen-game slate is not still waiting when the reader has scrolled to it. */
+  .stagger > * {
+    animation: rise var(--dur-slow) var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 34ms);
+  }
+
+  .meter-fill {
+    transform-origin: left center;
+    animation: meter-in var(--dur-slow) var(--ease-spring) both;
+  }
+
+  .meter-fill-right {
+    transform-origin: right center;
+    animation: meter-in var(--dur-slow) var(--ease-spring) both;
+  }
+
+  .live-dot {
+    animation: pulse-dot 2s var(--ease-out) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise,
+    .fade-in,
+    .stagger > *,
+    .meter-fill,
+    .meter-fill-right,
+    .live-dot {
+      animation: none !important;
+    }
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+
+  /* --------------------------------------------------------------- scrolling */
+
+  /* Wide content scrolls inside its own container; the page body never does.
+     min-width:0 is load-bearing: a flex item defaults to min-width:auto, which
+     makes it refuse to shrink below its content and pushes the page wide instead
+     of scrolling internally. */
+  .scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    min-width: 0;
+    max-width: 100%;
+    /* Keep momentum scrolling inside the strip instead of handing the gesture to
+       the page, which on iOS reads as the whole view jittering sideways. */
+    overscroll-behavior-x: contain;
+  }
+
+  /* Hide the scrollbar on strips that are obviously swipeable (tabs, chips).
+     Tables keep theirs — there the bar is the only cue that more columns exist. */
+  .scroll-x.no-bar {
+    scrollbar-width: none;
+  }
+  .scroll-x.no-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* A mask that fades content at whichever edge still has more behind it — the
+     one reliable "there is more here" cue on a phone, where scrollbars are
+     invisible until you touch. Pure CSS, and it degrades to no mask where
+     `mask-image` is unsupported. */
+  .scroll-x.fade-edges {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 18px,
+      #000 calc(100% - 18px),
+      transparent 100%
+    );
+  }
+
+  /* Swipeable strips settle on a tab rather than mid-label. */
+  .snap-x-strip {
+    scroll-snap-type: x proximity;
+  }
+  .snap-x-strip > * {
+    scroll-snap-align: start;
+  }
+
+  /* ------------------------------------------------------------- safe areas -- */
+
+  /* iOS safe areas — the home indicator and the notch. Only ever additive, so a
+   * browser without env() support renders exactly what it did before. */
+  .safe-b {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-x {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+
+  @media (min-width: 640px) {
+    .safe-x {
+      padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+      padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+    }
+  }
+
+  /* Room for the fixed bottom tab bar so the last card is never trapped under it. */
   .pad-bottom-nav {
-    padding-bottom: 1.5rem;
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
   }
-}
 
-/* Tapping a link should not leave a grey flash on iOS; :focus-visible and the
-   active state below carry the feedback instead. */
-a,
-button,
-[role="button"] {
-  -webkit-tap-highlight-color: transparent;
-}
-
-@media (hover: none) {
-  a:active,
-  button:active {
-    opacity: 0.65;
+  @media (min-width: 640px) {
+    .pad-bottom-nav {
+      padding-bottom: 2rem;
+    }
   }
-}
 
-table.data {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
+  /* Tooltip panel offset. Authored here rather than inline so the sm: popover
+     position still wins — an inline `bottom` would beat every utility class. */
+  .tip-sheet {
+    bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
 
-table.data th {
-  text-align: left;
-  font-weight: 600;
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-subtle);
-  padding: 0.5rem 0.5rem;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
+  @media (min-width: 640px) {
+    .tip-sheet {
+      bottom: 100%;
+    }
+  }
 
-table.data td {
-  padding: 0.6rem 0.5rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.875rem;
-}
+  /* ----------------------------------------------------------------- tables -- */
 
-@media (min-width: 640px) {
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
   table.data th {
-    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 640;
+    font-size: var(--text-micro);
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    padding: 0.55rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
   }
+
   table.data td {
-    padding: 0.55rem 0.75rem;
+    padding: 0.65rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-small);
   }
-}
 
-/* Column headers stay on one line; row labels wrap. "Strikeout rate, 30 day"
-   held on one line is what forces a four-column table past 500px. */
-table.data th[scope="row"] {
-  white-space: normal;
-}
+  @media (min-width: 640px) {
+    table.data th {
+      padding: 0.55rem 0.75rem;
+    }
+    table.data td {
+      padding: 0.6rem 0.75rem;
+    }
+  }
 
-/* Sticky first column so the row label stays put while the numbers scroll —
-   the difference between a usable and a useless wide table on a phone. */
-table.data.sticky-label th[scope="row"] {
-  position: sticky;
-  left: 0;
-  background: var(--surface-raised);
-  z-index: 1;
-}
+  /* Column headers stay on one line; row labels wrap. "Strikeout rate, 30 day"
+     held on one line is what forces a four-column table past 500px. */
+  table.data th[scope="row"] {
+    white-space: normal;
+    font-size: var(--text-small);
+    letter-spacing: var(--text-small-ls);
+    text-transform: none;
+    color: var(--text);
+    font-weight: 520;
+  }
 
-table.data tbody tr:last-child td {
-  border-bottom: none;
-}
+  /* Sticky first column so the row label stays put while the numbers scroll —
+     the difference between a usable and a useless wide table on a phone. */
+  table.data.sticky-label th[scope="row"] {
+    position: sticky;
+    left: 0;
+    background: var(--surface-raised);
+    z-index: 1;
+  }
 
-table.data td.num,
-table.data th.num {
-  text-align: right;
+  table.data tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  table.data td.num,
+  table.data th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    table.data tbody tr:hover td,
+    table.data tbody tr:hover th[scope="row"] {
+      background: var(--surface-inset);
+    }
+  }
 }

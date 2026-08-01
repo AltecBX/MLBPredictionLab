@@ -81,10 +81,12 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur sm:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t sm:hidden"
       style={{
         borderColor: "var(--border)",
-        background: "color-mix(in srgb, var(--surface) 97%, transparent)",
+        background: "color-mix(in srgb, var(--surface) 82%, transparent)",
+        backdropFilter: "blur(18px) saturate(1.7)",
+        WebkitBackdropFilter: "blur(18px) saturate(1.7)",
       }}
     >
       <ul className="safe-b grid grid-cols-4">
@@ -95,11 +97,30 @@ export function BottomNav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className="flex min-h-[3.25rem] flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-[0.68rem]"
+                className="relative flex min-h-[3.375rem] flex-col items-center justify-center gap-1 pt-2 pb-1.5"
                 style={{ color: active ? "var(--accent)" : "var(--text-muted)" }}
               >
+                {/* A short rule at the top edge of the active tab. On a bar
+                    where the only other cue is a colour shift, the mark is what
+                    survives glare, a colourblind reader and a glance. */}
+                <span
+                  aria-hidden
+                  className="absolute inset-x-0 top-0 mx-auto h-[2px] rounded-full transition-all"
+                  style={{
+                    width: active ? "1.75rem" : "0",
+                    opacity: active ? 1 : 0,
+                    background: "var(--accent)",
+                    transitionDuration: "var(--dur-base)",
+                    transitionTimingFunction: "var(--ease-spring)",
+                  }}
+                />
                 <Icon name={item.label} active={active} />
-                <span className={active ? "font-semibold" : undefined}>{item.label}</span>
+                <span
+                  className="t-micro leading-none"
+                  style={{ fontWeight: active ? 620 : 500 }}
+                >
+                  {item.label}
+                </span>
               </Link>
             </li>
           );

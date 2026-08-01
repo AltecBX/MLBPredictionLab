@@ -65,13 +65,29 @@ export function shiftIsoDate(iso: string, days: number): string {
   return base.toISOString().slice(0, 10);
 }
 
-export function longDate(iso: string): string {
+export function longDate(iso: string, options?: { weekday?: boolean }): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1)).toLocaleDateString("en-US", {
-    weekday: "long",
+    ...(options?.weekday === false ? {} : { weekday: "long" as const }),
     month: "long",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * "Fri" — the weekday alone.
+ *
+ * Split out from `longDate` so the date bar can set the weekday and the date at
+ * two different weights on one line. Reading "which day is this" and "which date
+ * is this" are separate jobs, and giving them the same emphasis makes the reader
+ * do both every time.
+ */
+export function weekdayShort(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1)).toLocaleDateString("en-US", {
+    weekday: "short",
     timeZone: "UTC",
   });
 }

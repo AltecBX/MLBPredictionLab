@@ -6,7 +6,7 @@ import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
-import { isoDate, longDate, shiftIsoDate, timestamp, todayIsoDate } from "@/lib/format";
+import { longDate, shiftIsoDate, timestamp, todayIsoDate, weekdayShort } from "@/lib/format";
 import { GROUP_HINT, GROUP_LABEL, groupSlate } from "@/lib/status";
 
 export const dynamic = "force-dynamic";
@@ -37,172 +37,234 @@ export default async function GameCenterPage({
   const date = params.date ?? todayIsoDate();
   const sort = params.sort ?? "game_time";
   const result = await api.games(date, sort);
+  const isToday = date === todayIsoDate();
 
   return (
-    <div className="flex flex-col gap-4 sm:gap-5">
-      <h1 className="sr-only sm:not-sr-only sm:text-xl sm:font-semibold sm:tracking-tight">
-        Daily Game Center
-      </h1>
+    <div className="flex flex-col">
+      <div className="flex items-baseline justify-between gap-3 pb-3">
+        <h1 className="t-display">Daily Game Center</h1>
+        {result.ok ? (
+          <p className="t-micro hidden shrink-0 subtle sm:block">
+            {result.data.model_version
+              ? `Model ${result.data.model_version}`
+              : "No active model"}
+            {" · "}
+            {timestamp(result.data.generated_at)}
+          </p>
+        ) : null}
+      </div>
 
       {/*
        * Only the date row sticks. Changing date is the most repeated action on
-       * this screen, so on a phone it must stay reachable without scrolling
-       * back past a twelve-game slate — but pinning the sort chips too would
-       * cost another 48px of a 844px viewport for a control used once a visit.
+       * this screen, so on a phone it must stay reachable without scrolling back
+       * past a twelve-game slate — but pinning the sort chips too would cost
+       * another 48px of an 844px viewport for a control used once a visit.
+       *
+       * One line, not two: the previous version spent 110px of a phone screen
+       * saying one date. The weekday carries the "which day" reading and the
+       * numeric part carries the rest, so both fit on a single baseline.
        */}
       <header
-        className="sticky z-20 -mx-4 border-b px-4 py-1.5 backdrop-blur"
+        className="sticky z-20 -mx-4 border-b px-4 py-2 sm:-mx-6 sm:px-6"
         style={{
-          top: "var(--header-h)",
+          top: "calc(var(--header-h) - 1px)",
           borderColor: "var(--border)",
-          background: "color-mix(in srgb, var(--surface-sunken) 97%, transparent)",
+          background: "color-mix(in srgb, var(--surface-sunken) 82%, transparent)",
+          backdropFilter: "blur(14px) saturate(1.6)",
+          WebkitBackdropFilter: "blur(14px) saturate(1.6)",
         }}
       >
         <nav
           aria-label="Date"
-          className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
+          className="mx-auto grid max-w-[1240px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
         >
           <Link
             href={`/?date=${shiftIsoDate(date, -1)}&sort=${sort}`}
-            className="tap-sq rounded-lg border text-sm muted transition-colors hover:text-[var(--text)]"
-            style={{ borderColor: "var(--border)" }}
+            className="icon-btn tap-sq"
+            title="Previous day"
           >
-            <span aria-hidden>←</span>
+            <Chevron dir="left" />
             <span className="sr-only">← Prev</span>
           </Link>
 
-          <Link
-            href={`/?date=${todayIsoDate()}&sort=${sort}`}
-            className="tap min-w-0 flex-col justify-center rounded-lg text-center"
-            title="Jump to today"
-          >
-            <span className="truncate text-sm font-semibold sm:text-base">
-              {longDate(date)}
-            </span>
-            <span className="text-[0.65rem] subtle">tap for today</span>
-          </Link>
+          <div className="flex min-w-0 items-center justify-center gap-2">
+            <p className="t-heading min-w-0 truncate text-center">
+              <span className="subtle">{weekdayShort(date)}</span>{" "}
+              <span style={{ fontWeight: 640 }}>{longDate(date, { weekday: false })}</span>
+            </p>
+            {!isToday ? (
+              <Link
+                href={`/?date=${todayIsoDate()}&sort=${sort}`}
+                className="pill tap t-micro shrink-0 px-2.5"
+                style={{ fontWeight: 580 }}
+              >
+                Today
+              </Link>
+            ) : (
+              <span
+                className="t-micro shrink-0 rounded-full px-2 py-0.5"
+                style={{ background: "var(--accent-soft)", color: "var(--accent)", fontWeight: 580 }}
+              >
+                Today
+              </span>
+            )}
+          </div>
 
           <Link
             href={`/?date=${shiftIsoDate(date, 1)}&sort=${sort}`}
-            className="tap-sq rounded-lg border text-sm muted transition-colors hover:text-[var(--text)]"
-            style={{ borderColor: "var(--border)" }}
+            className="icon-btn tap-sq"
+            title="Next day"
           >
-            <span aria-hidden>→</span>
+            <Chevron dir="right" />
             <span className="sr-only">Next →</span>
           </Link>
         </nav>
       </header>
 
-      <div className="-mt-1">
-        <div className="scroll-x no-bar snap-x-strip -mx-4 px-4">
-          <ul className="flex min-w-max items-center gap-1.5 text-xs">
-            <li className="hidden pr-0.5 subtle sm:block">Sort</li>
-            {SORTS.map((option) => (
-              <li key={option.key}>
-                <Link
-                  href={`/?date=${date}&sort=${option.key}`}
-                  aria-current={sort === option.key ? "true" : undefined}
-                  className={`tap whitespace-nowrap rounded-full border px-3 transition-colors ${
-                    sort === option.key
-                      ? "font-medium"
-                      : "muted hover:text-[var(--text)]"
-                  }`}
-                  style={{
-                    borderColor:
-                      sort === option.key ? "var(--accent)" : "var(--border)",
-                    background:
-                      sort === option.key
-                        ? "color-mix(in srgb, var(--accent) 12%, transparent)"
-                        : undefined,
-                    color: sort === option.key ? "var(--accent)" : undefined,
-                  }}
-                >
-                  {option.label}
-                </Link>
-              </li>
-            ))}
-            <li>
-              <span
-                aria-disabled="true"
-                title={UNAVAILABLE_SORT.reason}
-                className="tap cursor-not-allowed whitespace-nowrap rounded-full border border-dashed px-3 subtle"
+      <div className="scroll-x no-bar fade-edges snap-x-strip -mx-4 mt-3 px-4 sm:-mx-6 sm:px-6">
+        <ul className="flex min-w-max items-center gap-1.5">
+          <li className="eyebrow hidden pr-1 sm:block">Sort</li>
+          {SORTS.map((option) => (
+            <li key={option.key}>
+              <Link
+                href={`/?date=${date}&sort=${option.key}`}
+                aria-current={sort === option.key ? "true" : undefined}
+                className={`pill tap t-small whitespace-nowrap px-3 ${
+                  sort === option.key ? "pill-active" : ""
+                }`}
               >
-                {UNAVAILABLE_SORT.label}
-                <Tooltip label={UNAVAILABLE_SORT.reason}>
-                  <InfoIcon />
-                </Tooltip>
-              </span>
+                {option.label}
+              </Link>
             </li>
-          </ul>
-        </div>
+          ))}
+          <li>
+            <span
+              aria-disabled="true"
+              title={UNAVAILABLE_SORT.reason}
+              className="pill tap t-small cursor-not-allowed gap-1 whitespace-nowrap border-dashed px-3 subtle"
+            >
+              {UNAVAILABLE_SORT.label}
+              <Tooltip label={UNAVAILABLE_SORT.reason}>
+                <InfoIcon />
+              </Tooltip>
+            </span>
+          </li>
+        </ul>
       </div>
 
       {result.ok ? (
         <>
-          <section
-            className="surface flex flex-col gap-2 px-4 py-3"
-            aria-label="Data freshness"
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
-              <span className="font-medium">Data freshness by source</span>
+          {/*
+           * Freshness is ambient. It used to be a card the same weight as a
+           * game, which put "when did the schedule last update" beside "who
+           * wins tonight" as equals. It is a strip on the page background now:
+           * present, scannable, and clearly not the subject.
+           */}
+          <section className="mt-5 flex flex-col gap-2" aria-label="Data freshness">
+            <div className="flex items-center justify-between gap-3">
+              <span className="eyebrow shrink-0">
+                Data freshness<span className="hidden sm:inline"> by source</span>
+              </span>
               <AutoRefresh
                 firstPitches={result.data.games.map((g) => g.first_pitch_utc)}
               />
-              <span className="subtle">
-                {result.data.model_version
-                  ? `Model ${result.data.model_version}`
-                  : "No active model"}
-                {" · "}
-                Generated {timestamp(result.data.generated_at)}
-              </span>
             </div>
             <FreshnessStrip entries={result.data.freshness} />
+            <p className="t-micro subtle sm:hidden">
+              {result.data.model_version
+                ? `Model ${result.data.model_version}`
+                : "No active model"}
+              {" · "}
+              {timestamp(result.data.generated_at)}
+            </p>
           </section>
 
           {result.data.games.length ? (
             /* Live first, then upcoming, then what is already settled. Mixing
                them means scanning every card to find the one in progress. */
-            <div className="flex flex-col gap-6">
+            <div className="mt-6 flex flex-col gap-8">
               {groupSlate(result.data.games).map(([group, games]) => (
                 <section key={group} aria-labelledby={`slate-${group}`}>
-                  <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <div className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
                     <h2
                       id={`slate-${group}`}
-                      className="flex items-center gap-1.5 text-sm font-semibold"
+                      className="t-heading flex items-center gap-2"
                     >
                       {group === "LIVE" ? (
                         <span
                           aria-hidden
-                          className="inline-block size-1.5 animate-pulse rounded-full"
-                          style={{ background: "var(--color-danger-500)" }}
+                          className="live-dot inline-block size-2 rounded-full"
+                          style={{
+                            background: "var(--color-danger-500)",
+                            boxShadow:
+                              "0 0 0 3px color-mix(in srgb, var(--color-danger-500) 22%, transparent)",
+                          }}
                         />
                       ) : null}
                       {GROUP_LABEL[group]}
-                      <span className="tnum font-normal subtle">{games.length}</span>
+                      <span
+                        className="t-micro numeral rounded-full px-1.5 py-0.5"
+                        style={{
+                          background: "var(--surface-inset)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {games.length}
+                      </span>
                     </h2>
-                    <p className="text-[0.7rem] subtle">{GROUP_HINT[group]}</p>
+                    <p className="t-micro subtle">{GROUP_HINT[group]}</p>
                   </div>
-                  <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {games.map((game) => (
-                      <GameCardView key={game.game_id} game={game} />
+                  <div className="stagger grid grid-cols-[minmax(0,1fr)] gap-3.5 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+                    {games.map((game, i) => (
+                      <div
+                        key={game.game_id}
+                        className="flex"
+                        // Capped so the last card of a fifteen-game slate is not
+                        // still waiting when the reader has scrolled to it.
+                        style={{ ["--i" as string]: Math.min(i, 9) }}
+                      >
+                        <GameCardView game={game} />
+                      </div>
                     ))}
                   </div>
                 </section>
               ))}
             </div>
           ) : (
-            <EmptyState title="No games scheduled on this date">
-              The MLB schedule has no games for {longDate(date)}. Try another date.
-            </EmptyState>
+            <div className="mt-6">
+              <EmptyState title="No games scheduled on this date">
+                The MLB schedule has no games for {longDate(date)}. Try another date.
+              </EmptyState>
+            </div>
           )}
         </>
       ) : (
-        <UnavailableNotice
-          title="The prediction API is unavailable"
-          reason={result.message}
-          requiredSource="backend at API_BASE_URL"
-        />
+        <div className="mt-6">
+          <UnavailableNotice
+            title="The prediction API is unavailable"
+            reason={result.message}
+            requiredSource="backend at API_BASE_URL"
+          />
+        </div>
       )}
     </div>
+  );
+}
+
+function Chevron({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={dir === "left" ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} />
+    </svg>
   );
 }

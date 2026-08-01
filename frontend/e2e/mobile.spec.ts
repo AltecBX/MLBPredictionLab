@@ -277,8 +277,13 @@ test.describe("iPhone layout", () => {
 
     const navBox = (await page.getByRole("navigation", { name: "Primary" }).boundingBox())!;
     // The footer box intentionally extends under the bar — that padding is what
-    // creates the clearance. Its text is what must stay readable.
-    const textBox = (await page.locator("body > footer p").boundingBox())!;
+    // creates the clearance. Its text is what must stay readable, and it is the
+    // LAST line of it that decides: the footer carries more than one paragraph,
+    // and clearing the bar with the first while burying the last would pass a
+    // check that means nothing.
+    const paragraphs = page.locator("body > footer p");
+    expect(await paragraphs.count()).toBeGreaterThan(0);
+    const textBox = (await paragraphs.last().boundingBox())!;
 
     expect(textBox.y + textBox.height).toBeLessThanOrEqual(navBox.y + 1);
   });

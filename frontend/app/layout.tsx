@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 
 import { BottomNav } from "@/components/BottomNav";
+import { BrandMark } from "@/components/Brand";
+import { PrimaryNav } from "@/components/PrimaryNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
 
@@ -53,16 +55,9 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#11151f" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d111a" },
   ],
 };
-
-const NAV = [
-  { href: "/", label: "Game center" },
-  { href: "/backtest", label: "Backtest" },
-  { href: "/methodology", label: "Methodology" },
-  { href: "/diagnostics", label: "Diagnostics" },
-];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -78,61 +73,67 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded focus:bg-[var(--surface-raised)] focus:px-3 focus:py-2 focus:text-sm"
+          className="t-small sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-[var(--radius-md)] focus:border focus:bg-[var(--surface-overlay)] focus:px-3 focus:py-2 focus:shadow-[var(--shadow-3)]"
         >
           Skip to content
         </a>
+
         <header
-          className="sticky top-0 z-30 border-b backdrop-blur"
+          className="sticky top-0 z-30 border-b"
           style={{
             borderColor: "var(--border)",
-            background: "color-mix(in srgb, var(--surface) 96%, transparent)",
+            // A saturating blur is what keeps the header legible over a scrolling
+            // card grid without resorting to an opaque bar, which would cut the
+            // page in two.
+            background: "color-mix(in srgb, var(--surface) 78%, transparent)",
+            backdropFilter: "blur(14px) saturate(1.6)",
+            WebkitBackdropFilter: "blur(14px) saturate(1.6)",
           }}
         >
           {/* One row on every screen. On a phone the four destinations move to
               the bottom bar, so nothing here wraps. */}
-          <div className="safe-x mx-auto flex max-w-[1180px] items-center gap-x-5 py-2 sm:py-3">
-            <Link href="/" className="tap min-w-0 shrink">
-              <span className="truncate text-[0.95rem] font-semibold tracking-tight">
-                <span className="sm:hidden">Jerry MLB Lab</span>
+          <div className="safe-x mx-auto flex h-[calc(var(--header-h)-1px)] max-w-[1240px] items-center gap-3">
+            <Link
+              href="/"
+              className="tap min-w-0 shrink items-center gap-2"
+              aria-label="Jerry MLB Prediction Lab, home"
+            >
+              <BrandMark />
+              <span className="t-heading min-w-0 truncate" style={{ fontWeight: 640 }}>
+                <span className="sm:hidden">Jerry MLB</span>
                 <span className="hidden sm:inline">Jerry MLB Prediction Lab</span>
               </span>
             </Link>
-            <nav aria-label="Primary" className="hidden sm:block">
-              <ul className="flex items-center gap-1 text-sm">
-                {NAV.map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className="tap whitespace-nowrap rounded px-2.5 muted transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--text)]"
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-            <div className="ml-auto shrink-0">
+
+            <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+              <PrimaryNav />
               <ThemeToggle />
             </div>
           </div>
         </header>
 
-        <main id="main" className="safe-x mx-auto max-w-[1180px] pt-4 pb-6 sm:pt-6">
+        <main
+          id="main"
+          className="safe-x mx-auto max-w-[1240px] pt-4 pb-8 sm:pt-7 sm:pb-10"
+        >
           {children}
         </main>
 
         {/* pad-bottom-nav lives on the last element in the flow so the fixed bar
             never covers content — main already ends above it. */}
-        <footer
-          className="safe-x pad-bottom-nav mx-auto max-w-[1180px] border-t pt-6 text-xs subtle"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <p>
-            Data from the MLB Stats API. Probabilities are model estimates, not
-            guarantees — no game is a lock. Every number on this site traces to a
-            stored, timestamped prediction record.
-          </p>
+        <footer className="safe-x pad-bottom-nav mx-auto max-w-[1240px]">
+          <hr className="rule-soft mb-5" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+            <p className="t-micro max-w-[62ch] subtle">
+              Data from the MLB Stats API and Baseball Savant. Probabilities are
+              model estimates, not guarantees — no game is a lock. Every number on
+              this site traces to a stored, timestamped prediction record.
+            </p>
+            <p className="t-micro flex shrink-0 items-center gap-1.5 subtle">
+              <BrandMark size={14} />
+              Jerry MLB Prediction Lab
+            </p>
+          </div>
         </footer>
 
         <BottomNav />
