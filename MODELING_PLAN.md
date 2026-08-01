@@ -442,6 +442,99 @@ python -m app.cli compare-feature-sets --seasons 2024,2025 --start 2025-04-01
 
 ---
 
+## Projected lineups and the arsenal matchup: measured, and rejected
+
+The third negative result, and the one that says the most about where the
+ceiling is. Seven features testing the two hypotheses the starting-pitcher
+rejection left open — the matchup, and the batters. Neither earns a place; the
+active feature set is unchanged.
+
+Reproduce with:
+
+```
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v3 \
+    --seasons 2024,2025 --start 2025-04-01
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v4 \
+    --seasons 2024,2025 --start 2025-04-01
+```
+
+**Measured together (fs_v3), 2,363 games:**
+
+| | Log loss | Brier | Calibration error | Accuracy |
+|---|---|---|---|---|
+| **fs_v1 (served), 42 features** | **0.68682** | **0.24677** | **2.11%** | 55.56% |
+| fs_v3, 49 features | 0.68726 | 0.24698 | 2.13% | **55.69%** |
+
+Δ log loss −0.000444, paired 95% CI [−0.00102, +0.00014]. Every interval spans
+zero.
+
+**Then the ablation showed the average was the wrong thing to look at.** The two
+halves of the group behaved nothing alike:
+
+| Group | Δ log loss on removal | Group alone, vs a coin flip |
+|---|---|---|
+| offense (6 features) | +0.00047 | +0.00493 |
+| **arsenal_matchup (2)** | +0.00009 | **+0.00380** |
+| bullpen (4) | +0.00078 | +0.00262 |
+| starting_pitcher (13) | +0.00012 | +0.00050 |
+| **projected_lineup (5)** | −0.00053 | **−0.00609** |
+
+Two features carrying +0.0038 on their own is the best per-feature standalone
+signal in this model — team strength manages +0.0060 with eight. Five features
+coming in *worse* than a coin flip is the opposite.
+
+**So the arsenal pair was re-measured alone (fs_v4), 2,363 games:**
+
+| | Log loss | Brier | Calibration error | Accuracy |
+|---|---|---|---|---|
+| fs_v1 (served), 42 features | 0.686816 | 0.246772 | 2.109% | 55.56% |
+| fs_v4, 44 features | **0.686733** | **0.246741** | **2.034%** | **55.82%** |
+
+Δ log loss **+0.000084**, paired 95% CI [−0.00028, +0.00046].
+
+Dropping the lineup half moved the delta by +0.000528. The ablation had
+independently estimated that half was worth −0.00053. **Two different methods
+agreeing to two parts in a million** is the strongest available evidence that
+this comparison machinery measures what it claims to.
+
+It still does not clear the bar. An interval of [−0.00028, +0.00046] is a group
+that cannot be told apart from nothing, and NO_EFFECT is not adoption.
+
+### What three rejections in a row actually say
+
+Not "these were bad ideas". Look at where the model's edge comes from. Against
+the always-50% baseline of 0.6931, fs_v1 scores 0.6868 — an improvement of
+**0.0063**. Team strength alone is worth **+0.0060** of that. Offense adds
++0.0049 standing alone but almost nothing on top. Starting pitching, thirteen
+features of it, is worth +0.0005 alone.
+
+Every group measured in Phase 2 has been redundant with team strength, including
+the two that carry real standalone signal. That is not a feature-engineering
+problem, and a fourth group of the same shape will not fix it. A single baseball
+game is close to a coin flip, and this model is already extracting most of what
+team-level information can say about one.
+
+The hypotheses that remain are the ones that change the *shape* of the question,
+not the number of columns:
+
+1. **Predict runs, not the winner.** A negative-binomial run model with an
+   innings allocation and a Monte Carlo over it produces a distribution rather
+   than a point, and the tails are where a matchup feature would show up if it
+   shows up anywhere. `arsenal_xwoba_edge` predicts contact quality; win
+   probability is three inferential steps downstream of that, and each step
+   costs signal. This is step 8 in IMPLEMENTATION_PLAN.md and it is now the
+   highest-value one.
+2. **A market baseline.** Nothing here has ever been compared against a de-vigged
+   closing line. Without one there is no way to know whether 0.6868 is close to
+   the achievable floor or a long way above it — and that is the single most
+   useful unknown left. It needs a licensed odds provider.
+3. **Confirmed lineups at a later snapshot.** Every lineup feature here is
+   projected because no posted lineup is knowable at T−3h. A pregame poller plus
+   the prediction timeline would let the same features be scored at T−60m, where
+   they would be facts rather than guesses.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is

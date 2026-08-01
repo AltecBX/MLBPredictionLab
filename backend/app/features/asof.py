@@ -26,6 +26,11 @@ from sqlalchemy.orm import Session
 from app.core.errors import LeakageError
 from app.core.logging import get_logger
 from app.db.models import Ballpark, Game, Player, PlayerGameStat, TeamGameStat
+from app.features.batter_agg import (
+    load_batter_statcast,
+    load_batting_orders,
+    load_pitcher_arsenal,
+)
 from app.features.statcast_agg import load_pitcher_statcast
 
 log = get_logger(__name__)
@@ -88,6 +93,9 @@ class AsOfStore:
         players: pd.DataFrame,
         ballparks: pd.DataFrame,
         pitcher_statcast: pd.DataFrame | None = None,
+        batter_statcast: pd.DataFrame | None = None,
+        pitcher_arsenal: pd.DataFrame | None = None,
+        batting_orders: pd.DataFrame | None = None,
     ) -> None:
         self.games = games
         self.pitcher_games = pitcher_games
@@ -97,6 +105,15 @@ class AsOfStore:
         # every feature built from it reports UNAVAILABLE rather than zero.
         self.pitcher_statcast = (
             pd.DataFrame() if pitcher_statcast is None else pitcher_statcast
+        )
+        self.batter_statcast = (
+            pd.DataFrame() if batter_statcast is None else batter_statcast
+        )
+        self.pitcher_arsenal = (
+            pd.DataFrame() if pitcher_arsenal is None else pitcher_arsenal
+        )
+        self.batting_orders = (
+            pd.DataFrame() if batting_orders is None else batting_orders
         )
         self.team_games = self._attach_opponent_starter_hand(
             team_games, pitcher_games, players
@@ -110,6 +127,9 @@ class AsOfStore:
         self._pitcher_statcast_index = self._build_index(
             self.pitcher_statcast, "player_id"
         )
+        self._batter_statcast_index = self._build_index(self.batter_statcast, "player_id")
+        self._arsenal_index = self._build_index(self.pitcher_arsenal, "player_id")
+        self._orders_index = self._build_index(self.batting_orders, "team_id")
         self._team_pitchers_index = self._build_index(pitcher_games, "team_id")
         self._schedule_index = self._build_schedule_index(games)
         self._player_hand = dict(zip(players["id"], players["pitch_hand"], strict=False))
@@ -168,10 +188,19 @@ class AsOfStore:
             ).mappings().all()
         )
 
-        pitcher_statcast = load_pitcher_statcast(session)
-        if seasons and not pitcher_statcast.empty:
-            pitcher_statcast = pitcher_statcast[
-                pitcher_statcast["season"].isin(seasons)
+        def season_filtered(frame: pd.DataFrame) -> pd.DataFrame:
+            if not seasons or frame.empty or "season" not in frame.columns:
+                return frame
+            return frame[frame["season"].isin(seasons)].reset_index(drop=True)
+
+        pitcher_statcast = season_filtered(load_pitcher_statcast(session))
+        batter_statcast = season_filtered(load_batter_statcast(session))
+        pitcher_arsenal = season_filtered(load_pitcher_arsenal(session))
+        batting_orders = load_batting_orders(session)
+        if seasons and not batting_orders.empty and not games.empty:
+            keep = set(games["id"].tolist())
+            batting_orders = batting_orders[
+                batting_orders["game_id"].isin(keep)
             ].reset_index(drop=True)
 
         return cls(
@@ -181,6 +210,9 @@ class AsOfStore:
             players,
             ballparks,
             pitcher_statcast,
+            batter_statcast,
+            pitcher_arsenal,
+            batting_orders,
         )
 
     # -- preparation -------------------------------------------------------
@@ -342,9 +374,57 @@ class AsOfStore:
             frame = frame[frame["is_starter"]]
         return frame
 
+    def batter_statcast_asof(
+        self, batter_id: int, as_of: datetime, start: datetime | None = None
+    ) -> pd.DataFrame:
+        return self._slice(self._batter_statcast_index, batter_id, as_of, start)
+
+    def arsenal_asof(
+        self,
+        pitcher_id: int,
+        as_of: datetime,
+        start: datetime | None = None,
+        starters_only: bool = False,
+    ) -> pd.DataFrame:
+        frame = self._slice(self._arsenal_index, pitcher_id, as_of, start)
+        if starters_only and not frame.empty:
+            frame = frame[frame["is_starter"]]
+        return frame
+
+    def batting_orders_asof(
+        self, team_id: int, as_of: datetime, start: datetime | None = None
+    ) -> pd.DataFrame:
+        """Completed starts for a team, cut at ``as_of``.
+
+        The lineup of the game being predicted is never in here: its
+        knowledge_time is first pitch + 3h30m and as_of precedes first pitch, so
+        the slice excludes it by the same rule everything else obeys.
+        """
+        return self._slice(self._orders_index, team_id, as_of, start)
+
     @property
     def has_statcast(self) -> bool:
         return not self.pitcher_statcast.empty
+
+    @property
+    def has_batter_statcast(self) -> bool:
+        return not self.batter_statcast.empty and not self.batting_orders.empty
+
+    def league_batter_statcast_asof(
+        self, as_of: datetime, start: datetime | None = None
+    ) -> pd.DataFrame:
+        if self.batter_statcast.empty:
+            return self.batter_statcast
+        cutoff = int(
+            np.searchsorted(
+                _ns_array(self.batter_statcast["knowledge_time"]), _ns(as_of), side="right"
+            )
+        )
+        window = self.batter_statcast.iloc[:cutoff]
+        mask = window["game_date_utc"] < as_of
+        if start is not None:
+            mask &= window["game_date_utc"] >= start
+        return window[mask]
 
     def league_pitcher_statcast_asof(
         self, as_of: datetime, start: datetime | None = None, starters_only: bool = False

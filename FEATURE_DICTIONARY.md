@@ -460,6 +460,56 @@ pitcher who has always thrown 92 and something else entirely about one who threw
 A rate with no denominator is **missing, not zero**, all the way to the screen.
 A barrel rate of 0.0 would claim a pitcher has never allowed hard contact.
 
+### `lineup_*` and `arsenal_*` — projected lineup and matchup (`fs_v3`) — **built**
+
+Registered as feature set **`fs_v3`**, which is `fs_v1` plus this group —
+deliberately not `fs_v2` plus it, since stacking a new group on a rejected one
+measures the pair rather than the group.
+
+**The lineup is projected, never read.** No posted lineup is knowable at the
+T−3h snapshot (LEAKAGE_PREVENTION.md §15), so the nine are projected from the
+team's own recent starts: selection by start count over a 21-day window, order by
+each player's median recent slot. Every input is a completed game carrying its
+own `knowledge_time`, and the projection is exactly what a reader could work out
+at the same moment.
+
+| Key | What | Shrink `k` |
+|---|---|---|
+| `lineup_xwoba_weighted_diff` | Expected wOBA of the projected nine, weighted by the measured expected PA of their slots | 220 (PA) |
+| `lineup_xwoba_vs_hand_diff` | The same, each hitter measured against tonight's starter's handedness | 110 |
+| `lineup_whiff_pct_weighted_diff` | Weighted rate at which the projected lineup misses when it swings | 180 (swings) |
+| `arsenal_xwoba_edge_diff` | How this lineup fares against the pitch mix this starter throws, net of how it fares generally | 130 |
+| `arsenal_whiff_edge_diff` | The same edge on whiff rate | 120 |
+| `lineup_continuity_home` / `_away` | Share of the projected nine who started the team's last game | — |
+
+**Pitch families, not pitch types.** A pitcher throws six or seven distinct
+Savant codes and a season gives perhaps 300 of the rarest, far below anything
+that stabilizes. Three families — fastball, breaking, offspeed — is where the
+sample lives. Measured coverage: **99.83%** of pitches fall into one, and their
+whiff-per-swing rates come out at 17.1%, 30.9% and 30.2%, which is the published
+pattern.
+
+**The matchup edge is a shrunk differential, and the construction matters.** It
+is computed as
+
+```
+edge_family = d · (raw_family_rate − raw_overall_rate) / (d + k)
+```
+
+with **both sides raw**, regressed toward *no deviation* — the right null for a
+matchup. The first version subtracted a shrunk overall rate from a raw family
+rate, and a test asserting the edge is independent of lineup quality caught that
+it was not: shrinkage moves the anchor but not the family number, so an identical
+relative weakness read more than twice as large for a poor hitter as for a good
+one. That independence is what stops the feature being a second, noisier copy of
+`lineup_xwoba_weighted` — and two collinear features are one feature plus one
+source of variance.
+
+**`lineup_continuity` is a confession, not a strength signal.** It is absolute
+rather than differenced, and it tells the model how much of the projection the
+most recent game agrees with. A projection is a guess; the model is told how good
+a guess it is.
+
 ### `sc_sp_delta_*` — condition change beyond velocity
 
 Not built. The velocity trend above is the one member of this family that is in
