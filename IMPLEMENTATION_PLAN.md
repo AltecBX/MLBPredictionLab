@@ -237,18 +237,17 @@ against `fs_v1` walk-forward over the full 2024 season. **They do not improve
 out-of-sample performance and are not adopted.** The active set is unchanged at
 `fs_v1`.
 
-| | fs_v1 (served) | fs_v2 |
-|---|---|---|
-| Log loss | **0.68383** | 0.68423 |
-| Brier | **0.24545** | 0.24560 |
-| Calibration error | **0.50%** | 1.59% |
-| Accuracy | 56.17% | **56.69%** |
+| Season | Games | fs_v1 log loss | fs_v2 log loss | Δ, paired 95% CI |
+|---|---|---|---|---|
+| 2024 | 1,741 | **0.68383** | 0.68423 | −0.0004 [−0.0032, +0.0026] |
+| 2025 | 2,363 | 0.68682 | **0.68645** | +0.0004 [−0.0003, +0.0010] |
 
-1,741 scored games, regularisation selected per set by the same rule, paired
-95% intervals all spanning zero. Leave-one-out agrees: removing the group
-improves log loss by 0.0041, and the group alone beats a coin flip by 0.00001.
-MODELING_PLAN.md § Starting-pitcher Statcast has the full table and the
-univariate diagnosis of why.
+Six intervals across the two seasons — log loss, Brier and calibration error —
+and all six span zero. The sign of the log-loss difference **flips** between
+them, which is what a null effect looks like and what a small real one does not.
+Leave-one-out agrees: removing the group improves log loss by 0.0041, and the
+group alone beats a coin flip by 0.00001. MODELING_PLAN.md § Starting-pitcher
+Statcast has the full tables and the univariate diagnosis of why.
 
 The features stay in the registry with `available=False` and the measurement
 attached, so the next attempt starts from a different hypothesis rather than

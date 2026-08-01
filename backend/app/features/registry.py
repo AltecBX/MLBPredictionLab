@@ -422,9 +422,12 @@ DEFERRED: list[FeatureSpec] = [
 # All nine are `available=False`. They were built, measured over a full
 # walk-forward season, and did not earn a place. Two independent views agreed:
 #
-#   * Head to head, fs_v1 against fs_v2 on the same 1,741 games — Δ log loss
-#     −0.0004 with a paired 95% interval of [−0.0032, +0.0026]. Accuracy rose
-#     0.5 points, which is exactly the trade this system does not make.
+#   * Head to head, fs_v1 against fs_v2 on the same games, twice — 2024 gave
+#     Δ log loss −0.0004 [−0.0032, +0.0026] over 1,741 games, 2025 gave +0.0004
+#     [−0.0003, +0.0010] over 2,363. All six intervals across the two seasons
+#     span zero and the sign flips between them, which is what a null effect
+#     looks like. Accuracy rose both times, which is exactly the trade this
+#     system does not make.
 #   * Leave-one-out inside fs_v2 — removing the group *improved* log loss by
 #     0.0041, the largest such improvement of any group. Group-alone, it beat a
 #     coin flip by 0.00001.
@@ -445,10 +448,12 @@ DEFERRED: list[FeatureSpec] = [
 # hypothesis rather than from this one again. MODELING_PLAN.md has the full
 # result beside the GBDT one.
 REJECTION = (
-    "Walk-forward over 2024 (1,741 scored games): Δ log loss −0.0004, paired "
-    "95% CI [−0.0032, +0.0026]; leave-one-out removal improved log loss by "
-    "0.0041; group-alone beat a coin flip by 0.00001. Rejected. See "
-    "MODELING_PLAN.md § Starting-pitcher Statcast."
+    "Walk-forward over two seasons. 2024, 1,741 games: Δ log loss −0.0004, "
+    "paired 95% CI [−0.0032, +0.0026]. 2025, 2,363 games: +0.0004 "
+    "[−0.0003, +0.0010]. Six intervals across log loss, Brier and calibration, "
+    "all six spanning zero, and the sign flips between seasons. Leave-one-out "
+    "removal improved log loss by 0.0041; group-alone beat a coin flip by "
+    "0.00001. Rejected. See MODELING_PLAN.md § Starting-pitcher Statcast."
 )
 
 SC_SP: list[FeatureSpec] = [

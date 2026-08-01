@@ -334,21 +334,41 @@ not earn their place, so the active feature set is unchanged.
 Reproduce with `python -m app.cli compare-feature-sets --seasons 2024`.
 
 **Head to head**, both sets refit walk-forward, regularisation selected for each
-by the same rule, scored on the same 1,741 games:
+by the same rule, scored on the same games. Run twice — once over 2024, once
+testing on 2025 with 2024 available as the prior season, which is the setup
+where these features have their best chance:
+
+**2024 — 1,741 scored games**
 
 | | Log loss | Brier | Calibration error | Accuracy | AUC |
 |---|---|---|---|---|---|
 | **fs_v1 (served), 42 features** | **0.68383** | **0.24545** | **0.50%** | 56.17% | **0.5658** |
 | fs_v2, 51 features | 0.68423 | 0.24560 | 1.59% | **56.69%** | 0.5657 |
 
+**2025 — 2,363 scored games, trained from 2024**
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| fs_v1 (served), 42 features | 0.68682 | 0.24677 | 2.11% | 55.56% | 0.5562 |
+| fs_v2, 51 features | **0.68645** | **0.24660** | **2.02%** | **55.73%** | **0.5580** |
+
 | Paired 95% interval | Δ log loss | Δ Brier | Δ calibration error |
 |---|---|---|---|
-| | −0.0004 [−0.0032, +0.0026] | −0.0001 [−0.0015, +0.0013] | −0.0037 [−0.0220, +0.0129] |
+| 2024 | −0.0004 [−0.0032, +0.0026] | −0.0001 [−0.0015, +0.0013] | −0.0037 [−0.0220, +0.0129] |
+| 2025 | +0.0004 [−0.0003, +0.0010] | +0.0002 [−0.0002, +0.0005] | +0.0009 [−0.0045, +0.0072] |
 
-Every interval spans zero. Accuracy rose half a point, which is exactly the
-trade this system does not make: §2 ranks log loss and calibration above it, and
-a model that is right slightly more often while stating worse probabilities is
-worse.
+**Six intervals, all six spanning zero — and the sign of the log-loss difference
+flips between the two seasons.** That is a stronger statement than either season
+alone could make. A small real effect would show the same sign twice and shrink
+its interval as the sample grew; this one wanders around zero. The 2025 interval
+is four times tighter than 2024's, because the training window is larger, and
+zero is still comfortably inside it. This is the season-stability gate in
+BACKTEST_PLAN.md § Phase 2A doing its job.
+
+Accuracy rose in both seasons, by half a point and then by a fifth of one. That
+is exactly the trade this system does not make: §2 ranks log loss and calibration
+above accuracy, and a model that is right slightly more often while stating no
+better probabilities has not improved.
 
 **Leave-one-out and group-alone**, inside `fs_v2`:
 
@@ -409,9 +429,16 @@ descending order of how much they would change:
    with nine more of the same shape — which is itself evidence that the next
    feature group should not be more of this shape.
 
-One season is one sample. The comparison is one command, and re-running it over
-2025 as that season finishes ingesting is the cheapest available check on
-whether this result holds.
+Both seasons are now measured and both say the same thing. What would still
+change the answer is a different *shape* of feature, not more data on this one —
+which is what the three hypotheses above are for.
+
+Reproduce either run:
+
+```
+python -m app.cli compare-feature-sets --seasons 2024
+python -m app.cli compare-feature-sets --seasons 2024,2025 --start 2025-04-01
+```
 
 ---
 
