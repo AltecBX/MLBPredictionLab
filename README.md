@@ -60,7 +60,7 @@ Written before any code, and kept current:
 * Walk-forward backtest with calibration reporting, eight slice dimensions,
   feature-group ablation and automatic leakage tripwires.
 * Daily Game Center, Game Detail (ten tabs), Backtest and Diagnostics screens.
-* 127 backend tests, 23 frontend component tests and 12 end-to-end tests.
+* 131 backend tests, 25 frontend component tests and 12 end-to-end tests.
 
 ### Deliberately not populated
 
@@ -193,14 +193,18 @@ using each group alone:
 | Offense / bullpen / form / defense | +0.0003 … −0.0001 | 0.6908 … 0.6916 | Redundant given team strength |
 | Rest and travel | −0.0003 | 0.6932 | No standalone signal |
 | Ballpark attributes | −0.0001 | 0.6946 | No standalone signal |
+| Head-to-head | −0.0000 | 0.6981 | Worse than a coin flip alone |
 
 Leave-one-out alone would have called almost everything "neutral", because
 several groups encode the same thing — team quality. The group-alone column is
-what separates *redundant* from *worthless*. Rest/travel and the physical
-ballpark attributes are the only two that fail both tests; they are kept because
-the platform is required to account for them and they are useful context for a
-reader, but the finding is recorded rather than buried, and they are the first
-things Phase 2's weather and empirical park factors should replace.
+what separates *redundant* from *worthless*. Rest/travel, the physical ballpark
+attributes and head-to-head are the three that fail both tests. Head-to-head is
+the sharpest result: on its own it is *worse than a coin flip*, which is exactly
+the small-sample trap the k=40 shrinkage exists to contain — and evidence that
+the constraint is doing its job. All three are kept because the platform is
+required to account for them and they are useful context for a reader, but the
+finding is recorded rather than buried, and they are the first things Phase 2's
+weather and empirical park factors should replace.
 
 Read those numbers honestly: the edge over a coin flip is real but modest, and
 that is what an MLB model without Statcast, lineups or weather should look like.

@@ -60,8 +60,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 Jerry MLB Prediction Lab
               </span>
             </Link>
-            <nav aria-label="Primary" className="order-3 w-full sm:order-none sm:w-auto">
-              <ul className="scroll-x flex min-w-max items-center gap-1 text-sm">
+            <nav
+              aria-label="Primary"
+              className="scroll-x order-3 w-full sm:order-none sm:w-auto"
+            >
+              {/* The scroll container and the min-width content must be different
+                  elements, or the nav forces the page itself to overflow. */}
+              <ul className="flex min-w-max items-center gap-1 text-sm">
                 {NAV.map((item) => (
                   <li key={item.href}>
                     <Link

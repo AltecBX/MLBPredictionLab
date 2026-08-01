@@ -153,7 +153,7 @@ function AblationTable({ rows }: { rows: BacktestSlice[] }) {
             <th scope="col" className="num">Features</th>
             <th scope="col" className="num">Δ log loss if removed</th>
             <th scope="col" className="num">Log loss alone</th>
-            <th scope="col" className="num">vs. coin flip</th>
+            <th scope="col" className="num">Δ vs. coin flip</th>
             <th scope="col">Reading</th>
           </tr>
         </thead>
@@ -198,7 +198,11 @@ function AblationTable({ rows }: { rows: BacktestSlice[] }) {
                   className="num tnum"
                   style={{
                     color:
-                      extra["solo_predicts"] === false ? "var(--text-subtle)" : undefined,
+                      extra["solo_predicts"] === false
+                        ? "var(--text-subtle)"
+                        : extra["solo_predicts"] === true
+                          ? "var(--home)"
+                          : undefined,
                   }}
                 >
                   {extra["solo_vs_baseline"] !== null &&

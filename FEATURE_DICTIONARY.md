@@ -329,7 +329,7 @@ baseline is 0.6931; the full 42-feature model reaches **0.6845**.
 | `offense` | 6 | +0.0003 | 0.6908 | Redundant given team strength — keep |
 | `bullpen` | 4 | +0.0003 | 0.6913 | Redundant given team strength — keep |
 | `recent_form` | 3 | +0.0001 | 0.6915 | Redundant — keep |
-| `head_to_head` | 1 | −0.0000 | — | Neutral; capped by design |
+| `head_to_head` | 1 | −0.0000 | 0.6981 | **Predicts nothing alone** — and is the only group *worse* than a coin flip on its own, which is exactly the small-sample trap the k=40 shrinkage exists to contain |
 | `defense` | 2 | −0.0001 | 0.6916 | Redundant — keep |
 | `environment` | 3 | −0.0001 | 0.6946 | **Predicts nothing alone** — reduce |
 | `travel_rest` | 5 | −0.0003 | 0.6932 | **Predicts nothing alone** — reduce |

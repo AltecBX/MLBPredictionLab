@@ -76,7 +76,7 @@ export function GameCardView({ game }: { game: GameCardType }) {
   const homeFavored = prediction ? prediction.predicted_winner === "HOME" : false;
 
   return (
-    <article className="surface rise flex flex-col gap-3 p-4">
+    <article className="surface rise flex min-w-0 flex-col gap-3 p-4">
       <header className="flex items-start justify-between gap-2">
         {/* The time never wraps; a long ballpark name truncates instead. */}
         <div className="flex min-w-0 items-baseline gap-1.5 text-xs muted">
@@ -169,14 +169,14 @@ export function GameCardView({ game }: { game: GameCardType }) {
           {prediction.top_drivers.length ? (
             <ul className="flex flex-col gap-1 text-xs">
               {prediction.top_drivers.map((driver) => (
-                <li key={driver.feature_key} className="flex items-baseline gap-2">
+                <li key={driver.feature_key} className="flex min-w-0 items-baseline gap-2">
                   <span
                     className="tnum w-12 shrink-0 text-right font-medium"
                     style={{ color: homeFavored ? "var(--home)" : "var(--away)" }}
                   >
                     +{driver.contribution_pp.toFixed(1)}
                   </span>
-                  <span className="truncate muted">{driver.display_name}</span>
+                  <span className="min-w-0 truncate muted">{driver.display_name}</span>
                 </li>
               ))}
             </ul>

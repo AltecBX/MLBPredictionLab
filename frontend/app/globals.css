@@ -185,10 +185,15 @@ body {
   }
 }
 
-/* Wide content scrolls inside its own container; the page body never does. */
+/* Wide content scrolls inside its own container; the page body never does.
+   min-width:0 is load-bearing: a flex item defaults to min-width:auto, which
+   makes it refuse to shrink below its content and pushes the page wide instead
+   of scrolling internally. */
 .scroll-x {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  min-width: 0;
+  max-width: 100%;
 }
 
 table.data {
