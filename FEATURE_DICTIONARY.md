@@ -484,17 +484,36 @@ for the later timeline snapshots and evaluated there.
 `lineup_platoon_advantage`, `lineup_vs_arsenal_xwoba`,
 `lineup_confirmed_minus_projected`, `lineup_missing_starter_impact`.
 
-### Expected plate appearances by batting order
+### Expected plate appearances by batting order — **measured**
 
-Weights used for every lineup aggregate, from the empirical distribution of
-plate appearances by slot in a nine-inning game:
+Weights used for every lineup aggregate. These are now computed from the
+ingested box scores rather than assumed, and the assumption was wrong in both
+level and spread:
 
 | Slot | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
 |---|---|---|---|---|---|---|---|---|---|
-| Expected PA | 4.65 | 4.55 | 4.44 | 4.34 | 4.23 | 4.12 | 4.01 | 3.91 | 3.80 |
+| **Measured** | 4.448 | 4.356 | 4.252 | 4.157 | 4.022 | 3.889 | 3.752 | 3.595 | 3.442 |
+| Previously assumed | 4.65 | 4.55 | 4.44 | 4.34 | 4.23 | 4.12 | 4.01 | 3.91 | 3.80 |
 
-Recomputed from ingested box scores rather than assumed, and stored as a
-constant with the query that produced it.
+16,314 starts per slot, nine-inning regular-season games only. The query:
+
+```sql
+SELECT p.batting_order_slot, AVG(p.pa)
+FROM player_game_stats p JOIN games g ON g.id = p.game_id
+WHERE p.role = 'batter' AND p.is_starter
+  AND p.batting_order_slot BETWEEN 1 AND 9
+  AND g.game_type = 'R' AND g.is_final AND g.innings_played = 9
+GROUP BY 1;
+```
+
+The nine measured weights sum to 35.9, not to the ~38 plate appearances a team
+takes in a nine-inning game, and that gap is the point: this is the expected PA
+of **the player who starts in that slot**, not of the slot. A starter who is
+pinch-hit for in the seventh contributes his own three trips and no more. That
+is exactly the quantity a projected-lineup weight wants, because it already
+prices in the chance of being lifted — and the chance rises down the order,
+which is why the measured spread (1.01 PA from first to ninth) is wider than
+the assumed one (0.85).
 
 ---
 
