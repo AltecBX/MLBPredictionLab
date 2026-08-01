@@ -5,13 +5,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from app.backtest.feature_set_compare import PairedDelta
 from app.modeling.runs import (
     EXTRA_INNING_RUN_RATE,
     fit_dispersion,
     sample_runs,
     simulate_game,
 )
-from app.modeling.simulation import WEIGHT_GRID, _blend, _judge
+from app.modeling.simulation import PREREGISTERED_WEIGHT, WEIGHT_GRID, _blend, _judge
 
 # Measured on this repository's own data: 16,314 nine-inning regular-season
 # team-games, mean 4.463 runs, variance 10.592.
@@ -190,18 +191,52 @@ def _metrics(log_loss: float):
     return Metrics(n=1000, log_loss=log_loss, brier_score=0.24, accuracy=0.55)
 
 
+def _real(mean: float = 0.004) -> PairedDelta:
+    return PairedDelta(mean, mean * 0.4, mean * 1.6)
+
+
+def _inconclusive() -> PairedDelta:
+    return PairedDelta(0.004, -0.002, 0.010)
+
+
 def test_a_chosen_weight_of_zero_is_a_rejection():
-    verdict, reading = _judge(_metrics(0.686), _metrics(0.700), _metrics(0.686), 0.0)
+    verdict, reading = _judge(
+        _metrics(0.686), _metrics(0.700), _metrics(0.686), 0.0, _real()
+    )
     assert verdict == "REJECT"
     assert "grid contained" in reading
 
 
-def test_a_blend_that_lowers_log_loss_improves():
-    verdict, _ = _judge(_metrics(0.6868), _metrics(0.6900), _metrics(0.6860), 0.2)
+def test_a_blend_that_lowers_log_loss_beyond_its_interval_improves():
+    verdict, reading = _judge(
+        _metrics(0.6868), _metrics(0.6900), _metrics(0.6820), 0.7, _real()
+    )
     assert verdict == "IMPROVES"
+    assert "pre-registered" in reading
 
 
-def test_a_blend_that_does_not_lower_log_loss_is_no_effect():
-    verdict, reading = _judge(_metrics(0.6868), _metrics(0.6900), _metrics(0.6869), 0.2)
+def test_the_verdict_is_taken_at_the_preregistered_weight_not_the_searched_one():
+    """Selecting the weight on the games it is scored on is not a finding.
+
+    A searched weight that scores well while the pre-registered blend cannot be
+    told apart from the incumbent means the search found the sample, not signal.
+    """
+    verdict, reading = _judge(
+        _metrics(0.6868), _metrics(0.6900), _metrics(0.6867), 0.7, _inconclusive()
+    )
     assert verdict == "NO_EFFECT"
-    assert "measured no" in reading
+    assert "scored on" in reading
+
+
+def test_a_measurably_worse_blend_is_rejected():
+    verdict, _ = _judge(
+        _metrics(0.6868), _metrics(0.6900), _metrics(0.6900), 0.7,
+        PairedDelta(-0.004, -0.006, -0.002),
+    )
+    assert verdict == "REJECT"
+
+
+def test_the_preregistered_weight_is_an_even_split():
+    """Chosen because it is the obvious a priori answer, not because it won."""
+    assert PREREGISTERED_WEIGHT == 0.5
+    assert PREREGISTERED_WEIGHT in WEIGHT_GRID

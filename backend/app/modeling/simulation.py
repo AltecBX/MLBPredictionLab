@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.backtest.feature_set_compare import PairedDelta, _paired_bootstrap, _per_game_log_loss
 from app.backtest.metrics import Metrics, evaluate
 from app.backtest.walkforward import Step, collect_predictions, run_walk_forward
 from app.core.logging import get_logger
@@ -52,6 +53,20 @@ MIN_GAMES = 10
 # Blend weights searched. Zero is in the grid on purpose: the incumbent has to be
 # beatable, which means it also has to be able to win.
 WEIGHT_GRID = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0)
+
+# The weight the headline number is reported at.
+#
+# The grid search picks whichever weight scores best on the games it is scored
+# on, which is a real optimistic bias — the same one `select_hyperparameters`
+# carries, and tolerable when the thing being selected is a nuisance parameter,
+# but not when it IS the result. So the headline is a weight fixed in advance:
+# an even split between the two models, chosen because it is the obvious a
+# priori answer and not because it won anything. The searched weight is reported
+# beside it, and the gap between them is how much the selection was worth.
+PREREGISTERED_WEIGHT = 0.5
+
+BOOTSTRAP_RESAMPLES = 2000
+BOOTSTRAP_SEED = 20240401
 
 
 def _shrunk(rate: float | None, games: int, prior: float | None) -> float | None:
@@ -158,8 +173,12 @@ class SimulationComparison:
     logistic: dict[str, Any]
     simulation: dict[str, Any]
     blended: dict[str, Any]
+    blended_preregistered: dict[str, Any]
     best_weight: float
     weight_grid: dict[float, float]
+    #: Paired 95% interval for the PRE-REGISTERED blend against the logistic.
+    log_loss_interval: PairedDelta
+    brier_interval: PairedDelta
     verdict: str
     reading: str
 
@@ -169,8 +188,14 @@ class SimulationComparison:
             "dispersion": self.dispersion,
             "logistic": self.logistic,
             "simulation": self.simulation,
-            "blended": self.blended,
+            "blended_at_searched_weight": self.blended,
+            "blended_at_preregistered_weight": self.blended_preregistered,
+            "preregistered_weight": PREREGISTERED_WEIGHT,
             "best_weight": self.best_weight,
+            "paired_95_ci_preregistered_vs_logistic": {
+                "log_loss": self.log_loss_interval.to_dict(),
+                "brier": self.brier_interval.to_dict(),
+            },
             "weight_grid": {str(k): v for k, v in self.weight_grid.items()},
             "verdict": self.verdict,
             "reading": self.reading,
@@ -253,7 +278,18 @@ def compare_walk_forward(
     sim_metrics = evaluate(actual, sim)
     blend_metrics = evaluate(actual, _blend(logistic, sim, best_weight))
 
-    verdict, reading = _judge(logistic_metrics, sim_metrics, blend_metrics, best_weight)
+    fixed = _blend(logistic, sim, PREREGISTERED_WEIGHT)
+    fixed_metrics = evaluate(actual, fixed)
+    ll_interval = _paired_bootstrap(
+        _per_game_log_loss(actual, logistic) - _per_game_log_loss(actual, fixed)
+    )
+    brier_interval = _paired_bootstrap(
+        (logistic - actual) ** 2 - (fixed - actual) ** 2
+    )
+
+    verdict, reading = _judge(
+        logistic_metrics, sim_metrics, fixed_metrics, best_weight, ll_interval
+    )
     return SimulationComparison(
         n_games=int(len(merged)),
         dispersion={
@@ -266,6 +302,9 @@ def compare_walk_forward(
         logistic=_headline(logistic_metrics),
         simulation=_headline(sim_metrics),
         blended=_headline(blend_metrics),
+        blended_preregistered=_headline(fixed_metrics),
+        log_loss_interval=ll_interval,
+        brier_interval=brier_interval,
         best_weight=best_weight,
         weight_grid={w: round(v, 6) for w, v in grid.items() if v is not None},
         verdict=verdict,
@@ -282,24 +321,40 @@ def _observed_runs(store: AsOfStore, game_ids: list[int]) -> np.ndarray:
 
 
 def _judge(
-    logistic: Metrics, simulation: Metrics, blended: Metrics, weight: float
+    logistic: Metrics,
+    simulation: Metrics,
+    blended_fixed: Metrics,
+    searched_weight: float,
+    interval: PairedDelta,
 ) -> tuple[str, str]:
+    """Judged on the PRE-REGISTERED weight and a paired interval.
+
+    Not on the searched weight: that one was chosen on the games it is scored
+    on, and a verdict taken from it would be reporting the selection as if it
+    were the finding.
+    """
     if logistic.log_loss is None or simulation.log_loss is None:
         return "INCONCLUSIVE", "One side produced no scorable predictions."
-    if weight == 0.0:
+    if searched_weight == 0.0:
         return "REJECT", (
             "The blend weight search chose zero. The simulation carries nothing "
             "the logistic model does not already have, and the grid contained "
             "zero precisely so it could say so."
         )
-    if blended.log_loss is not None and blended.log_loss < logistic.log_loss:
-        return "IMPROVES", (
-            f"Blending the simulation at weight {weight} lowers out-of-sample log "
-            f"loss. Worth carrying into the ensemble, and worth re-measuring on a "
-            f"second season before it is served."
+    if not interval.is_distinguishable_from_zero:
+        return "NO_EFFECT", (
+            "At the pre-registered weight the paired interval spans zero. The "
+            "searched weight scored better, but selecting it on the games it is "
+            "scored on is what that number would be measuring."
         )
-    return "NO_EFFECT", (
-        "The blend does not improve on the logistic model alone. A measured no."
+    if not interval.favours_candidate:
+        return "REJECT", "The blend is measurably worse than the logistic model."
+    return "IMPROVES", (
+        f"At the pre-registered weight of {PREREGISTERED_WEIGHT} the blend lowers "
+        f"out-of-sample log loss and the paired interval excludes zero. The "
+        f"searched weight of {searched_weight} scores better still, and the gap "
+        f"between the two is what the selection was worth. Re-measure on a second "
+        f"season before serving it."
     )
 
 
