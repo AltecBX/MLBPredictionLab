@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.backtest.metrics import evaluate
+from app.backtest.metrics import ALWAYS_FIFTY_LOG_LOSS, evaluate
 from app.backtest.walkforward import Step, collect_predictions, run_walk_forward
 from app.core.logging import get_logger
 from app.modeling.dataset import Dataset
@@ -59,6 +59,10 @@ class AblationRow:
     delta_roc_auc: float | None
     verdict: str
     note: str | None = None
+    # Complementary view: the group ALONE, against the always-50% baseline.
+    solo_log_loss: float | None = None
+    solo_vs_baseline: float | None = None
+    solo_predicts: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,7 +76,28 @@ class AblationRow:
             "delta_roc_auc": self.delta_roc_auc,
             "verdict": self.verdict,
             "note": self.note,
+            "solo_log_loss": self.solo_log_loss,
+            "solo_vs_baseline": self.solo_vs_baseline,
+            "solo_predicts": self.solo_predicts,
+            "reading": self.reading,
         }
+
+    @property
+    def reading(self) -> str:
+        """How the two views combine (BACKTEST_PLAN.md §6)."""
+        if self.verdict in ("UNAVAILABLE", "UNTESTABLE"):
+            return self.verdict
+        if self.verdict == "HURTS":
+            return "HARMFUL — remove"
+        if self.solo_predicts is None:
+            return "UNKNOWN"
+        if self.verdict == "IMPROVES":
+            return "UNIQUE SIGNAL — keep"
+        return (
+            "REDUNDANT — keep one representative"
+            if self.solo_predicts
+            else "NO SIGNAL — remove or reduce"
+        )
 
 
 def group_members(group: str, feature_names: list[str]) -> list[str]:
@@ -149,6 +174,24 @@ def run_ablation(
             else:
                 verdict = "NEUTRAL"
 
+        # Group-alone view: does this group predict anything by itself?
+        solo_ll = solo_gap = None
+        solo_predicts: bool | None = None
+        solo_results = run_walk_forward(
+            dataset, steps, C=C, feature_names=members, min_train_rows=min_train_rows
+        )
+        solo_frame = collect_predictions(solo_results)
+        if not solo_frame.empty:
+            solo_aligned = solo_frame[solo_frame["game_id"].isin(common)]
+            if len(solo_aligned) >= 30:
+                solo = evaluate(
+                    solo_aligned["actual"].to_numpy(), solo_aligned["prob"].to_numpy()
+                )
+                if solo.log_loss is not None:
+                    solo_ll = solo.log_loss
+                    solo_gap = ALWAYS_FIFTY_LOG_LOSS - solo.log_loss
+                    solo_predicts = solo_gap > NOISE_BAND
+
         rows.append(
             AblationRow(
                 group=group,
@@ -162,9 +205,15 @@ def run_ablation(
                 ),
                 delta_roc_auc=_delta(ablated.roc_auc, baseline.roc_auc),
                 verdict=verdict,
+                solo_log_loss=solo_ll,
+                solo_vs_baseline=solo_gap,
+                solo_predicts=solo_predicts,
             )
         )
-        log.info("ablation.group", group=group, delta_log_loss=delta_ll, verdict=verdict)
+        log.info(
+            "ablation.group", group=group, delta_log_loss=delta_ll, verdict=verdict,
+            solo_log_loss=solo_ll, solo_predicts=solo_predicts,
+        )
 
     for group, reason in UNAVAILABLE_GROUPS.items():
         rows.append(

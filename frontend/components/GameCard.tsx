@@ -78,12 +78,15 @@ export function GameCardView({ game }: { game: GameCardType }) {
   return (
     <article className="surface rise flex flex-col gap-3 p-4">
       <header className="flex items-start justify-between gap-2">
-        <div className="min-w-0 text-xs muted">
-          <span className="tnum">{gameTime(game.first_pitch_utc)}</span>
+        {/* The time never wraps; a long ballpark name truncates instead. */}
+        <div className="flex min-w-0 items-baseline gap-1.5 text-xs muted">
+          <span className="tnum whitespace-nowrap">{gameTime(game.first_pitch_utc)}</span>
           {game.ballpark.name ? (
             <>
-              <span className="mx-1.5 subtle">·</span>
-              <span className="truncate">{game.ballpark.name}</span>
+              <span className="subtle">·</span>
+              <span className="truncate" title={game.ballpark.name}>
+                {game.ballpark.name}
+              </span>
             </>
           ) : null}
         </div>

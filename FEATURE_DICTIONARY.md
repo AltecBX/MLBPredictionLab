@@ -316,7 +316,43 @@ choosing a side.
 
 ---
 
-## 10. Feature contract
+## 10. Measured value of each feature group
+
+From the walk-forward backtest over 8,134 games (2023–2026). Two complementary
+views, read together per [BACKTEST_PLAN](BACKTEST_PLAN.md) §6. The always-50%
+baseline is 0.6931; the full 42-feature model reaches **0.6845**.
+
+| Group | Features | Δ log loss if removed | Log loss alone | Reading |
+|---|---|---|---|---|
+| `starting_pitcher` | 13 | **+0.0022** | 0.6904 | Unique signal — keep |
+| `team_strength` | 8 | +0.0006 | **0.6865** | Redundant but the strongest single cluster — keep |
+| `offense` | 6 | +0.0003 | 0.6908 | Redundant given team strength — keep |
+| `bullpen` | 4 | +0.0003 | 0.6913 | Redundant given team strength — keep |
+| `recent_form` | 3 | +0.0001 | 0.6915 | Redundant — keep |
+| `head_to_head` | 1 | −0.0000 | — | Neutral; capped by design |
+| `defense` | 2 | −0.0001 | 0.6916 | Redundant — keep |
+| `environment` | 3 | −0.0001 | 0.6946 | **Predicts nothing alone** — reduce |
+| `travel_rest` | 5 | −0.0003 | 0.6932 | **Predicts nothing alone** — reduce |
+
+What this says, plainly:
+
+* **Starting pitching is the only group with unique marginal value.** Removing
+  it costs more than removing anything else, and it also predicts on its own.
+* **Team strength is the strongest single cluster** — eight features alone get
+  within 0.002 of the full model, and "everything except starting pitching"
+  (29 features) reaches 0.6867, barely better. Most of the model's knowledge is
+  team quality plus the starter.
+* **Rest/travel and the physical ballpark attributes carry no standalone
+  signal.** They are retained because the platform is required to account for
+  them and because they are informative *context* for a reader, but they are
+  bounded to a small share of the vector by the heavy L2 regularization the
+  walk-forward selected, and the finding is recorded here rather than hidden.
+  Both are prime candidates for replacement in Phase 2 by empirical park factors
+  and weather, which is where the real environmental signal lives.
+
+---
+
+## 11. Feature contract
 
 Every feature implementation must:
 

@@ -213,3 +213,57 @@ def test_elevation_is_converted_to_kilometres(builder, target_game):
     elevation_km = vector.features["env_venue_elevation_km"]
     assert elevation_km is not None
     assert 0 <= elevation_km < 2.0  # no MLB park is above 2 km
+
+
+def test_starter_rest_is_capped_and_flags_a_single_start_pitcher():
+    """A pitcher with one start on record cannot establish a rotation cadence."""
+    from datetime import UTC, datetime
+
+    from app.features.builder import MAX_MEANINGFUL_REST, FeatureBuilder
+
+    first_pitch = datetime(2024, 8, 1, 23, 0, tzinfo=UTC)
+
+    # A 40-day layoff caps at the meaningful bound and is flagged estimated.
+    single = pd.DataFrame({"game_date_utc": [pd.Timestamp(first_pitch) - timedelta(days=40)]})
+    rest, short = FeatureBuilder._starter_rest(single, first_pitch)
+    assert rest.value == MAX_MEANINGFUL_REST
+    assert rest.is_estimated is True
+    assert short.value == 0.0
+
+    # Normal rotation rest passes through unflagged.
+    regular = pd.DataFrame(
+        {
+            "game_date_utc": [
+                pd.Timestamp(first_pitch) - timedelta(days=11),
+                pd.Timestamp(first_pitch) - timedelta(days=5),
+            ]
+        }
+    )
+    rest, short = FeatureBuilder._starter_rest(regular, first_pitch)
+    assert rest.value == pytest.approx(5.0)
+    assert rest.is_estimated is False
+    assert short.value == 0.0
+
+    # Short rest is flagged.
+    short_rest = pd.DataFrame(
+        {
+            "game_date_utc": [
+                pd.Timestamp(first_pitch) - timedelta(days=9),
+                pd.Timestamp(first_pitch) - timedelta(days=3),
+            ]
+        }
+    )
+    _, short = FeatureBuilder._starter_rest(short_rest, first_pitch)
+    assert short.value == 1.0
+
+
+def test_starter_rest_is_missing_without_any_prior_start():
+    from datetime import UTC, datetime
+
+    from app.features.builder import FeatureBuilder
+
+    rest, short = FeatureBuilder._starter_rest(
+        pd.DataFrame(), datetime(2024, 8, 1, tzinfo=UTC)
+    )
+    assert rest.value is None and short.value is None
+    assert "no prior starts" in (rest.detail or "")

@@ -294,3 +294,30 @@ def test_gate_thresholds_match_the_documented_values():
     assert GATES["roc_auc_too_high"] == 0.70
     assert GATES["dominant_feature_share"] == 0.40
     assert NOISE_BAND > 0
+
+
+def test_ablation_reports_the_group_alone_view_and_a_combined_reading():
+    """Leave-one-out and group-alone are reported together (BACKTEST_PLAN.md §6)."""
+    from app.backtest.ablation import run_ablation
+
+    dataset = _dataset()
+    steps = make_steps(dataset.labelled, step_days=30)
+    baseline = collect_predictions(run_walk_forward(dataset, steps, C=0.3, min_train_rows=200))
+    rows = {r.group: r for r in run_ablation(dataset, steps, 0.3, baseline, min_train_rows=200)}
+
+    signal = rows["starting_pitcher"]
+    noise = rows["bullpen"]
+
+    # sp_a carries the fixture's only extra signal, so it predicts on its own.
+    assert signal.solo_log_loss is not None
+    assert signal.solo_predicts is True
+    assert signal.reading == "UNIQUE SIGNAL — keep"
+
+    # bp_b is pure noise: neutral to remove and predicts nothing alone.
+    assert noise.solo_predicts is False
+    assert noise.reading == "NO SIGNAL — remove or reduce"
+
+    # Unavailable groups pass the reading through rather than inventing one.
+    assert rows["weather"].reading == "UNAVAILABLE"
+    for row in rows.values():
+        assert row.to_dict()["reading"] == row.reading

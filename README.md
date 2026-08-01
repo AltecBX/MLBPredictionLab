@@ -181,6 +181,27 @@ window, which is thin in the tails. It is surfaced in the product rather than
 smoothed over — the backtest page shows this table with its gap column, and the
 game detail page links each prediction to the band it falls in.
 
+### What the ablation actually found
+
+Refitting the whole walk-forward once per feature group, plus a second pass
+using each group alone:
+
+| Group | Δ log loss if removed | Log loss alone | Reading |
+|---|---|---|---|
+| Starting pitching | **+0.0022** | 0.6904 | Unique signal |
+| Team strength | +0.0006 | **0.6865** | Strongest single cluster |
+| Offense / bullpen / form / defense | +0.0003 … −0.0001 | 0.6908 … 0.6916 | Redundant given team strength |
+| Rest and travel | −0.0003 | 0.6932 | No standalone signal |
+| Ballpark attributes | −0.0001 | 0.6946 | No standalone signal |
+
+Leave-one-out alone would have called almost everything "neutral", because
+several groups encode the same thing — team quality. The group-alone column is
+what separates *redundant* from *worthless*. Rest/travel and the physical
+ballpark attributes are the only two that fail both tests; they are kept because
+the platform is required to account for them and they are useful context for a
+reader, but the finding is recorded rather than buried, and they are the first
+things Phase 2's weather and empirical park factors should replace.
+
 Read those numbers honestly: the edge over a coin flip is real but modest, and
 that is what an MLB model without Statcast, lineups or weather should look like.
 The backtest's sanity gates flag any run that claims better than the market's

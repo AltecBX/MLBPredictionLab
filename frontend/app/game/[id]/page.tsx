@@ -157,8 +157,8 @@ export default async function GameDetailPage({
                 value={pct(prediction.data_completeness, 0)}
                 sub={
                   prediction.missing_data.length
-                    ? `Missing: ${prediction.missing_data.join(", ")}`
-                    : "All model inputs available"
+                    ? `Not available: ${prediction.missing_data.join(", ")}`
+                    : "Every input this model consumes was available"
                 }
               />
               <StatBlock

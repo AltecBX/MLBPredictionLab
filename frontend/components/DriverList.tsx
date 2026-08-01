@@ -34,9 +34,6 @@ export function DriverList({
             ) : null}
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <Badge tone="muted">{driver.category_label}</Badge>
-              {driver.feature_display ? (
-                <span className="tnum text-[0.7rem] subtle">{driver.feature_display}</span>
-              ) : null}
               {driver.sample_size ? (
                 <span className="text-[0.7rem] subtle">n={driver.sample_size}</span>
               ) : null}

@@ -150,25 +150,25 @@ function AblationTable({ rows }: { rows: BacktestSlice[] }) {
         <thead>
           <tr>
             <th scope="col">Feature group</th>
-            <th scope="col" className="num">Removed</th>
-            <th scope="col" className="num">Δ log loss</th>
-            <th scope="col" className="num">Δ Brier</th>
-            <th scope="col" className="num">Δ calib.</th>
-            <th scope="col">Verdict</th>
+            <th scope="col" className="num">Features</th>
+            <th scope="col" className="num">Δ log loss if removed</th>
+            <th scope="col" className="num">Log loss alone</th>
+            <th scope="col" className="num">vs. coin flip</th>
+            <th scope="col">Reading</th>
           </tr>
         </thead>
         <tbody>
           {ordered.map((row) => {
             const extra = row.extra as Record<string, unknown>;
             const verdict = String(extra["verdict"] ?? "—");
-            const tone =
-              verdict === "IMPROVES"
-                ? "home"
-                : verdict === "HURTS"
-                  ? "away"
-                  : verdict === "UNAVAILABLE"
-                    ? "muted"
-                    : "neutral";
+            const reading = String(extra["reading"] ?? verdict);
+            const tone = reading.startsWith("UNIQUE")
+              ? "home"
+              : reading.startsWith("HARMFUL") || reading.startsWith("NO SIGNAL")
+                ? "away"
+                : reading === "UNAVAILABLE" || reading === "UNTESTABLE"
+                  ? "muted"
+                  : "neutral";
             return (
               <tr key={row.slice_key}>
                 <th scope="row" className="font-normal">
@@ -190,29 +190,41 @@ function AblationTable({ rows }: { rows: BacktestSlice[] }) {
                     : "—"}
                 </td>
                 <td className="num tnum">
-                  {extra["delta_brier"] !== null && extra["delta_brier"] !== undefined
-                    ? (extra["delta_brier"] as number).toFixed(4)
+                  {extra["solo_log_loss"] !== null && extra["solo_log_loss"] !== undefined
+                    ? (extra["solo_log_loss"] as number).toFixed(4)
                     : "—"}
                 </td>
-                <td className="num tnum">
-                  {extra["delta_calibration_error"] !== null &&
-                  extra["delta_calibration_error"] !== undefined
-                    ? (extra["delta_calibration_error"] as number).toFixed(4)
+                <td
+                  className="num tnum"
+                  style={{
+                    color:
+                      extra["solo_predicts"] === false ? "var(--text-subtle)" : undefined,
+                  }}
+                >
+                  {extra["solo_vs_baseline"] !== null &&
+                  extra["solo_vs_baseline"] !== undefined
+                    ? (extra["solo_vs_baseline"] as number) > 0
+                      ? `−${(extra["solo_vs_baseline"] as number).toFixed(4)}`
+                      : `+${Math.abs(extra["solo_vs_baseline"] as number).toFixed(4)}`
                     : "—"}
                 </td>
                 <td>
-                  <Badge tone={tone as never}>{verdict}</Badge>
+                  <Badge tone={tone as never}>{String(extra["reading"] ?? verdict)}</Badge>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <p className="mt-2 text-xs muted">
-        Δ is the change when the group is removed and the entire walk-forward is refit.
-        A positive Δ log loss means removing the group made predictions worse, so the
-        group earns its place. A group that does not clear the noise band is a candidate
-        for removal — that is a measured decision, not a preference.
+      <p className="mt-2 max-w-prose text-xs leading-relaxed muted">
+        <strong>Δ log loss if removed</strong> is the change when the group is dropped and
+        the entire walk-forward is refit; positive means removing it made predictions
+        worse, so the group earns its place. <strong>Log loss alone</strong> refits using
+        only that group, against the 0.6931 coin-flip baseline. The two are read together
+        because leave-one-out understates a group that is merely redundant: several groups
+        encode team quality, so dropping any one of them barely moves the metric even
+        though the cluster matters. A group that is neutral to remove <em>and</em> predicts
+        nothing on its own is the only clean removal case.
       </p>
     </div>
   );

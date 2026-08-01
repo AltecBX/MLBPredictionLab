@@ -24,9 +24,11 @@ export function ProbabilityBar({
       <div
         className={`flex items-baseline justify-between ${compact ? "text-xs" : "text-sm"}`}
       >
+        {/* Each side is emphasised when IT is favored, in the colour its half of
+            the bar uses, so the text and the bar agree at a glance. */}
         <span
-          className={`tnum font-semibold ${homeFavored ? "" : "opacity-60"}`}
-          style={{ color: homeFavored ? "var(--home)" : undefined }}
+          className={`tnum font-semibold ${homeFavored ? "opacity-60" : ""}`}
+          style={{ color: homeFavored ? undefined : "var(--away)" }}
         >
           {pct(away)} <span className="font-normal opacity-70">{awayLabel}</span>
         </span>

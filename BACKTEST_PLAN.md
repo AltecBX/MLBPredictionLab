@@ -131,9 +131,30 @@ n, and a verdict of `IMPROVES` / `NEUTRAL` / `HURTS`. The threshold for
 `IMPROVES` is a Δ log loss beyond the run-to-run noise band, estimated by
 repeating the full model with different seeds.
 
-**A group that does not improve walk-forward log loss is removed from the active
-feature set.** That decision is recorded in the model version notes so the
-history of what was tried and rejected is preserved.
+### Marginal value is not total value
+
+Leave-one-out ablation measures a group's **marginal** contribution *given every
+other group*. On a correlated feature set that systematically understates a
+group's worth: Elo, season win percentage, run differential and Pythagorean
+expectation all encode team quality, so removing any one of them barely moves
+the metric even though team quality is the single most valuable thing the model
+knows.
+
+The ablation suite therefore reports a second, complementary view — each group
+**alone** — and the two are read together:
+
+| Reading | Interpretation |
+|---|---|
+| Removal hurts **and** the group alone predicts | Carries unique signal; keep. |
+| Removal is neutral **but** the group alone predicts | Redundant given the rest; keep one representative, revisit when correlated groups change. |
+| Removal is neutral **and** the group alone does not predict | Carries nothing; the removal rule applies. |
+| Removal helps beyond the noise band | Actively harmful; remove. |
+
+**A group in the last two rows is removed or reduced in the active feature set**,
+and that decision is recorded in the model version notes so the history of what
+was tried and rejected is preserved. A group in the middle row is kept but
+flagged, because deleting every redundant member of a correlated cluster would
+delete the cluster's signal entirely.
 
 ---
 

@@ -43,6 +43,9 @@ FEATURE_SET_VERSION = "fs_v1"
 # denominator of the fatigue index (a ratio), never presented as observed data.
 RELIEF_IP_PER_DAY_FLOOR = 1.5
 
+# Beyond this many days, a starter's layoff says nothing more about tonight.
+MAX_MEANINGFUL_REST = 10.0
+
 
 @dataclass(frozen=True, slots=True)
 class LeagueBaseline:
@@ -500,17 +503,28 @@ class FeatureBuilder:
     def _starter_rest(
         career_starts: pd.DataFrame, first_pitch: datetime
     ) -> tuple[FeatureValue, FeatureValue]:
+        """Days since the starter's previous start, and a short-rest flag.
+
+        Capped at MAX_MEANINGFUL_REST because beyond that the gap is an injured
+        list return or a debut, and the marginal information about tonight is
+        nil — leaving it uncapped let a rookie with one start on record show a
+        24-day "rest edge", which is noise dressed up as a finding.
+        """
         if career_starts.empty:
             return (
                 FeatureValue.missing("no prior starts on record"),
                 FeatureValue.missing("no prior starts on record"),
             )
+        n = len(career_starts)
         last = career_starts["game_date_utc"].max()
         days = (pd.Timestamp(first_pitch) - pd.Timestamp(last)).total_seconds() / 86400.0
-        days = max(min(days, 30.0), 0.0)
+        raw_days = max(days, 0.0)
+        capped = min(raw_days, MAX_MEANINGFUL_REST)
+        # One start on record cannot establish a rotation cadence.
+        estimated = n < 2 or raw_days > MAX_MEANINGFUL_REST
         return (
-            FeatureValue(days, len(career_starts), False),
-            FeatureValue(1.0 if days < 4.0 else 0.0, len(career_starts), False),
+            FeatureValue(capped, n, estimated),
+            FeatureValue(1.0 if capped < 4.0 else 0.0, n, estimated),
         )
 
     def _schedule_values(

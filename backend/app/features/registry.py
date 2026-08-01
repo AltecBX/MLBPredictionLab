@@ -223,8 +223,9 @@ FS_V1: list[FeatureSpec] = [
     ),
     FeatureSpec(
         "sp_days_rest_diff", "Starter rest edge", FeatureCategory.STARTING_PITCHING,
-        "Days since each starter's previous start, capped at 30 days so a long "
-        "layoff cannot dominate the vector.",
+        "Days since each starter's previous start, capped at 10 days because beyond "
+        "that the gap is an injured-list return or a debut rather than a rotation "
+        "decision. Flagged estimated when the pitcher has one start on record.",
         unit="days", min_sample=1,
         narrative="sends the better-rested starter",
     ),
@@ -236,8 +237,10 @@ FS_V1: list[FeatureSpec] = [
     ),
     FeatureSpec(
         "sp_experience_diff", "Starter experience edge", FeatureCategory.STARTING_PITCHING,
-        "Career starts before this game; rookies carry more downside variance.",
-        unit="starts", window="career", min_sample=0,
+        "Starts on record before this game, counted from the ingested history rather "
+        "than a full career total. Rookies and recent call-ups carry more downside "
+        "variance, which is what this captures.",
+        unit="starts", window="ingested history", min_sample=0,
         narrative="sends the more experienced starter",
     ),
 
