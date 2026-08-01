@@ -1,62 +1,72 @@
 # Jerry MLB Prediction Lab — one-click deploy to Render.
 #
-# Provisions five things: Postgres, a Key Value store (Redis), the read-only
-# API, the Next.js web app, and a daily job that refreshes data and reissues
-# predictions. Everything below runs on Render's free plans; DEPLOYMENT.md
-# spells out exactly what that costs you and when to upgrade.
+#   https://render.com/deploy?repo=https://github.com/AltecBX/MLBPredictionLab
 #
-# Deploy:  https://render.com/deploy?repo=https://github.com/AltecBX/MLBPredictionLab
-# Or:      Render dashboard -> New -> Blueprint -> pick this repository.
+# Three resources, all on plans that are genuinely free: Postgres, the
+# read-only API, and the Next.js web app.
 #
-# The first deploy brings up an empty database. Seeding it is a deliberate,
-# separate step — see DEPLOYMENT.md § "First run". The web app reports every
-# empty category as UNAVAILABLE until then, which is the correct state, not a
-# broken one.
+# What is deliberately NOT here, and why:
+#
+#   * No cron job. Render does not offer a free plan for cron jobs, and one in
+#     this file would fail the whole blueprint. The daily refresh runs as a
+#     GitHub Actions workflow instead — .github/workflows/refresh.yml — which
+#     is free, lives beside the code, and can be triggered from a phone.
+#
+#   * No Key Value / Redis. Also not free. The backend treats an unset
+#     REDIS_URL as "caching disabled" rather than failing, so the only cost is
+#     that every request reaches Postgres. At one reader's traffic that is
+#     nothing.
+#
+# Read DEPLOYMENT.md before relying on this. Two Render free-tier facts matter
+# enough to repeat here: services sleep after 15 minutes idle and take about a
+# minute to wake, and a free Postgres instance expires 30 days after creation.
 
 databases:
   - name: jerry-db
     plan: free
     databaseName: jerry_mlb
     user: jerry
-    # 1 GB on the free plan. Four seasons of raw payloads do not fit; two do.
-    # DEPLOYMENT.md § "Sizing" has the measured numbers.
+    # 1 GB. Four seasons of raw payloads measure 908 MB and do not leave room;
+    # two seasons are about 460 MB. DEPLOYMENT.md § Sizing has the breakdown.
 
 services:
-  # ---------------------------------------------------------------- cache
-  - type: keyvalue
-    name: jerry-cache
-    plan: free
-    ipAllowList: [] # reachable only from inside the Render private network
-    maxmemoryPolicy: allkeys-lru
-
   # ------------------------------------------------------------------ api
+  # Read-only. It never trains and never computes a prediction inside a GET —
+  # predictions are rows written by the refresh workflow — so it needs no model
+  # artifact and no writable disk.
   - type: web
     name: jerry-api
     runtime: docker
     plan: free
+    region: oregon
+    # Both paths are relative to the REPO ROOT, not to rootDir. rootDir only
+    # scopes which changes trigger a rebuild.
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         fromDatabase: { name: jerry-db, property: connectionString }
-      - key: REDIS_URL
-        fromService: { name: jerry-cache, type: keyvalue, property: connectionString }
       - key: ENVIRONMENT
         value: production
       - key: LOG_FORMAT
         value: json
       - key: LOG_LEVEL
         value: INFO
-      # Set this to the web service's URL once it exists; the API refuses
-      # cross-origin browser requests from anywhere else.
+      # Left blank on purpose: caching is optional and Render Key Value is not
+      # free. Blank means "not configured", not "broken".
+      - key: REDIS_URL
+        value: ""
+      # The browser origin of the web app. Fill this in after the first deploy,
+      # once Render has assigned jerry-web its URL.
       - key: CORS_ORIGINS
         sync: false
       - key: ADMIN_API_KEY
         generateValue: true
       # Later-phase providers stay unset on purpose. Each unset variable makes
       # its category report UNAVAILABLE in the UI, naming itself as the fix.
-      # Nothing is ever filled with a placeholder number.
+      # Never set one to a fake value to make a screen look complete.
       - key: LINEUP_PROVIDER
         sync: false
       - key: WEATHER_PROVIDER
@@ -75,45 +85,16 @@ services:
     name: jerry-web
     runtime: docker
     plan: free
+    region: oregon
     rootDir: frontend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
     envVars:
-      # Server-side fetches go over Render's private network, so the API never
-      # needs to be publicly reachable for the site to render.
+      # The API's PUBLIC hostname, not its private one. A free Render service
+      # cannot *receive* private network traffic, so a private address here
+      # would refuse the connection. `host` yields a bare hostname; the client
+      # normalises that to https://<host>/api/v1.
       - key: API_BASE_URL
-        fromService: { name: jerry-api, type: web, property: hostport }
+        fromService: { name: jerry-api, type: web, property: host }
       - key: NODE_ENV
         value: production
-
-  # ----------------------------------------------------------------- jobs
-  # Refresh schedule and results, retrain, reissue predictions.
-  #
-  # Training runs on every pass rather than only when the model is stale: a
-  # Render cron job gets a fresh, empty filesystem each time, and `predict`
-  # loads the pickled model from disk. Training in the same run is what makes
-  # the artifact present. It is also the honest default — a model refit on
-  # last night's games is strictly better than yesterday's.
-  - type: cronjob
-    name: jerry-daily
-    runtime: docker
-    plan: free
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
-    # 09:15 UTC — after every previous-day game has a final boxscore, before
-    # the earliest first pitch.
-    schedule: "15 9 * * *"
-    dockerCommand: >
-      sh -c '
-        python -m app.cli daily &&
-        python -m app.cli train &&
-        python -m app.cli predict &&
-        python -m app.cli check-sources'
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase: { name: jerry-db, property: connectionString }
-      - key: REDIS_URL
-        fromService: { name: jerry-cache, type: keyvalue, property: connectionString }
-      - key: ENVIRONMENT
-        value: production
-      - key: LOG_FORMAT
-        value: json

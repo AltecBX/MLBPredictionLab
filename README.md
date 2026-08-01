@@ -6,6 +6,36 @@ number traces back to a stored, timestamped, reproducible record.
 
 ---
 
+## Get it running
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AltecBX/MLBPredictionLab)
+
+Five steps, all doable from a phone, no terminal at any point:
+
+1. **Tap the button.** Sign in with GitHub, then **Apply**. Render reads
+   `render.yaml` and creates the database, the API and the web app.
+2. **Copy the database URL.** Render dashboard → `jerry-db` → **External
+   Database URL** → copy.
+3. **Paste it into GitHub.** This repo → Settings → Secrets and variables →
+   Actions → New repository secret, named `DATABASE_URL`.
+4. **Run the seed.** Actions tab → **Seed the database** → Run workflow.
+   Takes about 30 minutes and does the ingest, the training and the first
+   predictions for you.
+5. **Open the `jerry-web` URL** from Render, then Share → Add to Home Screen.
+
+From then on it keeps itself current: `.github/workflows/refresh.yml` re-ingests,
+retrains and reissues predictions every morning at 09:15 UTC.
+
+Two things about Render's free tier you should know before you start, both
+covered properly in [DEPLOYMENT.md](DEPLOYMENT.md):
+
+* **Free services sleep after 15 minutes idle** and take about a minute to
+  wake, so the first page load after a gap is slow every time.
+* **A free Postgres instance expires 30 days after it is created.** Upgrading
+  it is the first thing worth paying for.
+
+---
+
 ## The seven questions
 
 The product exists to answer these, in this order:
@@ -64,7 +94,7 @@ Written before any code, and kept current:
 * Mobile-first interface: installable to an iPhone home screen, thumb-reachable
   bottom navigation, 44pt touch targets everywhere, no horizontal scroll on any
   route at any iPhone width.
-* 135 backend tests, 30 frontend unit tests and 22 end-to-end tests, ten of
+* 139 backend tests, 30 frontend unit tests and 22 end-to-end tests, ten of
   which are an explicit iPhone layout contract.
 
 ### Deliberately not populated

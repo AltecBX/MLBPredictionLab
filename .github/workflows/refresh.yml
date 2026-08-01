@@ -1,0 +1,100 @@
+name: Daily refresh
+
+# The scheduler. Replaces the Render cron job in render.yaml, which could not
+# be there: Render has no free plan for cron jobs, and including one would fail
+# the whole blueprint.
+#
+# Runs at 09:15 UTC — after every previous-day game has a final boxscore, and
+# before the earliest first pitch.
+#
+# Training runs on every pass rather than only when the model is stale. A CI
+# runner starts with an empty filesystem and `predict` loads the pickled model
+# from disk, so training in the same job is what puts the artifact there. It is
+# also the better default: a model refit on last night's completed games beats
+# yesterday's.
+
+on:
+  schedule:
+    - cron: "15 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Shared with the seed workflow — these two must never write at once.
+  group: jerry-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Ingest, retrain, reissue
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ENVIRONMENT: production
+      LOG_FORMAT: console
+      REDIS_URL: ""
+    steps:
+      - name: Check the database secret is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set. See DEPLOYMENT.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      # Cheap when there is nothing to apply, and it means a schema change
+      # ships with the first refresh after a merge rather than needing a
+      # separate step someone has to remember.
+      - name: Apply any new migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      # Schedule window and missing boxscores, then enforce the raw-payload
+      # retention bound. Predictions for today are issued by `daily` too, but
+      # before the retrain — the explicit predict below supersedes them with
+      # the fresh model.
+      - name: Refresh data
+        working-directory: backend
+        run: python -m app.cli daily
+
+      - name: Retrain
+        working-directory: backend
+        run: python -m app.cli train
+
+      - name: Reissue predictions
+        working-directory: backend
+        run: python -m app.cli predict --force
+
+      - name: Record source freshness
+        working-directory: backend
+        run: python -m app.cli check-sources
+
+      # A silent scheduler is worse than none: if this has been failing for a
+      # week, the site quietly serves week-old predictions with a stale
+      # freshness badge and nothing says so.
+      - name: Report failure
+        if: failure()
+        run: |
+          {
+            echo "### Daily refresh failed"
+            echo ""
+            echo "The site is now serving whatever predictions were last written, and the"
+            echo "Diagnostics screen will show the sources ageing. Re-run this workflow once"
+            echo "the cause is fixed."
+            echo ""
+            echo "First thing to check: a free Render Postgres instance expires 30 days after"
+            echo "it is created, and every connection fails once it does."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -391,6 +391,32 @@ def test_blank_optional_env_vars_disable_their_category_rather_than_crashing(mon
     assert parsed.weather_provider is None
 
 
+@pytest.mark.parametrize(
+    "given",
+    [
+        # Exactly what Render, Heroku, Railway, Supabase and Neon hand you.
+        "postgresql://jerry:pw@dpg-abc.oregon-postgres.render.com/jerry_mlb",
+        "postgres://u:p@ec2-1-2-3-4.compute-1.amazonaws.com:5432/d",
+        "postgresql://u:p@host:5432/db?sslmode=require",
+        # Already explicit; must survive untouched.
+        "postgresql+psycopg://postgres@127.0.0.1:5432/jerry_mlb",
+    ],
+)
+def test_provider_database_urls_resolve_to_the_installed_driver(given):
+    """A copy-pasted managed-Postgres DSN must not be a startup failure.
+
+    SQLAlchemy reads a bare `postgresql://` as psycopg2, which is not installed,
+    so the process would die on first connect with a bare ModuleNotFoundError —
+    a long way from the actual cause.
+    """
+    from app.core.config import Settings
+
+    parsed = Settings(_env_file=None, database_url=given)
+    assert parsed.sqlalchemy_url.startswith("postgresql+psycopg://")
+    # The rest of the DSN is carried through unchanged.
+    assert parsed.sqlalchemy_url.split("://", 1)[1] == given.split("://", 1)[1]
+
+
 def test_required_provider_cannot_be_blank(monkeypatch):
     """A required category refuses to resolve rather than degrading silently."""
     from app.core.errors import ConfigurationError

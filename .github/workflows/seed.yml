@@ -1,0 +1,109 @@
+name: Seed the database
+
+# Run this once, after the Render blueprint has finished deploying.
+#
+# It does everything that would otherwise need a terminal: creates the schema,
+# backfills real MLB history, fits the model, and issues predictions for today.
+# Start it from the Actions tab — including from a phone browser — and watch it
+# there. Nothing is installed on your machine.
+#
+# It is safe to re-run. Ingestion is idempotent and resumable, so if a run is
+# cancelled or times out, starting it again picks up where it stopped rather
+# than refetching.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: "Seasons to ingest (comma separated). Two fit a free 1 GB Postgres; four do not."
+        required: true
+        default: "2025,2026"
+      backtest:
+        description: "Also run the walk-forward backtest (adds ~10 min, fills the Backtest screen)"
+        type: boolean
+        default: true
+
+concurrency:
+  # Never let two seeds write the same tables at once.
+  group: jerry-data
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    name: Ingest, train, predict
+    runs-on: ubuntu-latest
+    # Ingesting four seasons takes about 45 minutes; leave room for a slow day
+    # at the source without letting a hung run burn the whole budget.
+    timeout-minutes: 180
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ENVIRONMENT: production
+      LOG_FORMAT: console
+      REDIS_URL: ""
+    steps:
+      - name: Check the database secret is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set."
+            echo "Copy the *External* Database URL from your Render Postgres page, then add it"
+            echo "under Settings -> Secrets and variables -> Actions as DATABASE_URL."
+            echo "See DEPLOYMENT.md for the two-line version of this."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Create the schema
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Seed source status rows
+        working-directory: backend
+        run: python -m app.cli bootstrap
+
+      - name: Ingest history
+        working-directory: backend
+        run: python -m app.cli ingest-history --seasons "${{ inputs.seasons }}"
+
+      - name: Train
+        working-directory: backend
+        run: python -m app.cli train
+
+      - name: Predict today
+        working-directory: backend
+        run: python -m app.cli predict
+
+      - name: Backtest
+        if: ${{ inputs.backtest }}
+        working-directory: backend
+        run: python -m app.cli backtest
+
+      - name: Record source freshness
+        working-directory: backend
+        run: python -m app.cli check-sources
+
+      - name: Summary
+        if: always()
+        working-directory: backend
+        run: |
+          {
+            echo "### Seed complete"
+            echo ""
+            echo "Seasons: \`${{ inputs.seasons }}\`"
+            echo ""
+            echo "Open the **jerry-web** URL from your Render dashboard. If a category still"
+            echo "reads UNAVAILABLE it is one this phase does not populate — that is the"
+            echo "correct state, and the screen names the provider that would enable it."
+          } >> "$GITHUB_STEP_SUMMARY"

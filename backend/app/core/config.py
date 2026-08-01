@@ -115,6 +115,25 @@ class Settings(BaseSettings):
             return None
         return v
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _ensure_psycopg_driver(cls, v: object) -> object:
+        """Accept the DSN a managed Postgres provider actually hands out.
+
+        Render, Heroku, Railway, Supabase and Neon all issue `postgresql://` or
+        the legacy `postgres://`. SQLAlchemy reads a bare `postgresql://` as
+        "use psycopg2", which is not installed here, so the process would die on
+        first connect with a bare ModuleNotFoundError — a long way from the
+        actual cause. Pinning the driver is unambiguous and costs nothing, so do
+        it rather than making a copy-paste of a provider's URL a mistake.
+        """
+        if isinstance(v, str):
+            dsn = v.strip()
+            for prefix in ("postgresql://", "postgres://"):
+                if dsn.startswith(prefix):
+                    return "postgresql+psycopg://" + dsn[len(prefix) :]
+        return v
+
     @property
     def sqlalchemy_url(self) -> str:
         return str(self.database_url)
