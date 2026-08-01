@@ -13,8 +13,37 @@ import type {
   GameListResponse,
 } from "./types";
 
-export const API_BASE_URL =
-  process.env.API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+/**
+ * Normalise whatever the host platform hands us into a full base URL.
+ *
+ * Render's `fromService` wiring yields a bare `host:port` with no scheme, and
+ * it is easy to paste a root URL without the `/api/v1` suffix. Both are
+ * unambiguous, so accept them rather than failing the whole site over a
+ * missing prefix. Anything genuinely wrong still surfaces as an explicit
+ * unavailable state naming the URL that was tried.
+ */
+export function normalizeApiBaseUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, "");
+  if (!url) return "http://127.0.0.1:8000/api/v1";
+  if (!/^https?:\/\//i.test(url)) {
+    // Loopback and Docker/Render private hostnames are plain HTTP; anything
+    // with a public dotted domain is not.
+    const host = url.split(":")[0];
+    const isPrivate =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      !host.includes(".") ||
+      host.endsWith(".internal") ||
+      host.endsWith(".local");
+    url = `${isPrivate ? "http" : "https"}://${url}`;
+  }
+  if (!/\/api\/v\d+$/.test(url)) url += "/api/v1";
+  return url;
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(
+  process.env.API_BASE_URL ?? "http://127.0.0.1:8000/api/v1",
+);
 
 export type ApiResult<T> =
   | { ok: true; data: T }

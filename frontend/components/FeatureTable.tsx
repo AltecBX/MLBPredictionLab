@@ -29,8 +29,8 @@ export function FeatureTable({
   }
 
   return (
-    <div className="scroll-x">
-      <table className="data min-w-[520px]">
+    <div className="scroll-x edge-cue">
+      <table className="data sticky-label min-w-[340px]">
         <thead>
           <tr>
             <th scope="col">Metric</th>

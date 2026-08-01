@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeApiBaseUrl } from "@/lib/api";
+
 import {
   humanizeKey,
   moneyline,
@@ -56,5 +58,39 @@ describe("formatters", () => {
     expect(num(0.684049, 4)).toBe("0.6840");
     expect(num(0.68416, 4)).toBe("0.6842");
     expect(num(null)).toBe("—");
+  });
+});
+
+describe("normalizeApiBaseUrl", () => {
+  it("passes a complete URL through unchanged", () => {
+    expect(normalizeApiBaseUrl("https://api.example.com/api/v1")).toBe(
+      "https://api.example.com/api/v1",
+    );
+  });
+
+  it("adds the version prefix when a root URL was given", () => {
+    expect(normalizeApiBaseUrl("https://api.example.com")).toBe(
+      "https://api.example.com/api/v1",
+    );
+    expect(normalizeApiBaseUrl("https://api.example.com/")).toBe(
+      "https://api.example.com/api/v1",
+    );
+  });
+
+  it("assumes http for a private host:port, which is what Render wires in", () => {
+    expect(normalizeApiBaseUrl("jerry-api:10000")).toBe(
+      "http://jerry-api:10000/api/v1",
+    );
+    expect(normalizeApiBaseUrl("127.0.0.1:8000")).toBe("http://127.0.0.1:8000/api/v1");
+  });
+
+  it("assumes https for a public hostname given without a scheme", () => {
+    expect(normalizeApiBaseUrl("jerry-api.onrender.com")).toBe(
+      "https://jerry-api.onrender.com/api/v1",
+    );
+  });
+
+  it("falls back to the local default when the value is blank", () => {
+    expect(normalizeApiBaseUrl("   ")).toBe("http://127.0.0.1:8000/api/v1");
   });
 });

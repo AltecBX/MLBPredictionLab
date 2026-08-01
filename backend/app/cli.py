@@ -84,6 +84,7 @@ def cmd_ingest_history(args: argparse.Namespace) -> int:
 
 def cmd_daily(args: argparse.Namespace) -> int:
     from app.db.session import session_scope
+    from app.ingestion.maintenance import prune_raw_payloads
     from app.ingestion.runner import daily_refresh
     from app.services.prediction import generate_predictions_for_date
 
@@ -92,7 +93,25 @@ def cmd_daily(args: argparse.Namespace) -> int:
     with session_scope() as session:
         target = args.date or utcnow().date()
         generated = generate_predictions_for_date(session, target)
-    print(json.dumps({**counts, "predictions": generated}))
+    # Enforce the payload retention bound on the same pass, so the archive
+    # cannot grow unbounded on an unattended deployment.
+    with session_scope() as session:
+        pruned = prune_raw_payloads(session)
+    print(
+        json.dumps(
+            {**counts, "predictions": generated, "payloads_pruned": pruned["deleted"]}
+        )
+    )
+    return 0
+
+
+def cmd_prune(args: argparse.Namespace) -> int:
+    from app.db.session import session_scope
+    from app.ingestion.maintenance import prune_raw_payloads
+
+    with session_scope() as session:
+        result = prune_raw_payloads(session, older_than_days=args.older_than_days)
+    print(json.dumps(result))
     return 0
 
 
@@ -195,6 +214,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--step-days", type=int, default=30)
     p.add_argument("--no-ablation", action="store_true")
     p.set_defaults(func=cmd_backtest)
+
+    p = sub.add_parser(
+        "prune", help="Delete stored raw payloads past the retention window"
+    )
+    p.add_argument(
+        "--older-than-days",
+        type=int,
+        default=None,
+        help="Override RAW_PAYLOAD_RETENTION_DAYS for this run",
+    )
+    p.set_defaults(func=cmd_prune)
 
     sub.add_parser("check-sources", help="Recompute freshness").set_defaults(
         func=cmd_check_sources

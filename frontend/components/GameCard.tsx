@@ -42,7 +42,7 @@ function TeamRow({
 }) {
   const rec = record(wins, losses);
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex min-w-0 items-baseline justify-between gap-3">
       <div className="min-w-0">
         <p className={`truncate text-sm ${favored ? "font-semibold" : "font-medium"}`}>
           <span className="mr-1.5 font-mono text-[0.7rem] subtle">{abbreviation}</span>
@@ -65,7 +65,7 @@ function TeamRow({
         </p>
       </div>
       {showScore ? (
-        <span className="tnum text-lg font-semibold">{score ?? "—"}</span>
+        <span className="tnum shrink-0 text-lg font-semibold">{score ?? "—"}</span>
       ) : null}
     </div>
   );
@@ -210,13 +210,14 @@ export function GameCardView({ game }: { game: GameCardType }) {
         </p>
       )}
 
-      <footer className="hairline flex items-center justify-between pt-2.5 text-[0.7rem] subtle">
-        <span>
+      <footer className="hairline flex min-w-0 items-center justify-between gap-2 pt-1 text-[0.7rem] subtle">
+        <span className="min-w-0 truncate">
           {prediction ? `Updated ${timestamp(prediction.created_at)}` : "Not predicted"}
         </span>
+        {/* The one action on a card, sized for a thumb rather than a cursor. */}
         <Link
           href={`/game/${game.game_id}`}
-          className="font-medium hover:underline"
+          className="tap shrink-0 pl-3 font-medium hover:underline"
           style={{ color: "var(--accent)" }}
         >
           Full breakdown →

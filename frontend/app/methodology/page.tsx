@@ -77,8 +77,8 @@ export default async function MethodologyPage() {
             title={`Active model inputs (${result.data.active.length})`}
             description={`Feature set ${result.data.feature_set_version}. A positive value always favors the home team; inputs where a lower raw value is better are assembled as away minus home so the sign convention holds throughout.`}
           >
-            <div className="scroll-x">
-              <table className="data min-w-[720px]">
+            <div className="scroll-x edge-cue">
+              <table className="data sticky-label min-w-[560px]">
                 <thead>
                   <tr>
                     <th scope="col">Input</th>
@@ -110,8 +110,8 @@ export default async function MethodologyPage() {
             title={`Inputs not yet available (${result.data.deferred.length})`}
             description="Registered in the feature dictionary, reported as unavailable in the UI, and never populated with placeholder values."
           >
-            <div className="scroll-x">
-              <table className="data min-w-[720px]">
+            <div className="scroll-x edge-cue">
+              <table className="data sticky-label min-w-[560px]">
                 <thead>
                   <tr>
                     <th scope="col">Input</th>

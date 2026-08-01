@@ -29,7 +29,10 @@ export function MatchupBars({
         const width = (Math.abs(bar.net_pp) / max) * 50;
         const homeSide = bar.net_pp > 0;
         return (
-          <div key={bar.category} className="grid grid-cols-[1fr_auto] items-center gap-3">
+          <div
+            key={bar.category}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3"
+          >
             <div>
               <div className="mb-1 flex items-baseline justify-between text-xs">
                 <span className="font-medium">{bar.label}</span>

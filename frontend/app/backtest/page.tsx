@@ -42,8 +42,8 @@ function SliceTable({ rows }: { rows: BacktestSlice[] }) {
   const usable = rows.filter((r) => r.n_games > 0);
   if (!usable.length) return <p className="text-sm muted">No rows in this slice.</p>;
   return (
-    <div className="scroll-x">
-      <table className="data min-w-[560px]">
+    <div className="scroll-x edge-cue">
+      <table className="data sticky-label min-w-[480px]">
         <thead>
           <tr>
             <th scope="col">Slice</th>
@@ -88,8 +88,8 @@ function BandTable({ rows }: { rows: BacktestSlice[] }) {
   const usable = rows.filter((r) => r.n_games > 0);
   if (!usable.length) return <p className="text-sm muted">No bands populated.</p>;
   return (
-    <div className="scroll-x">
-      <table className="data min-w-[520px]">
+    <div className="scroll-x edge-cue">
+      <table className="data sticky-label min-w-[400px]">
         <thead>
           <tr>
             <th scope="col">Band (favorite)</th>
@@ -145,8 +145,8 @@ function AblationTable({ rows }: { rows: BacktestSlice[] }) {
     return bv - av;
   });
   return (
-    <div className="scroll-x">
-      <table className="data min-w-[620px]">
+    <div className="scroll-x edge-cue">
+      <table className="data sticky-label min-w-[480px]">
         <thead>
           <tr>
             <th scope="col">Feature group</th>
@@ -388,8 +388,8 @@ export default async function BacktestPage() {
       </Section>
 
       <Section title="Run metadata" description="Everything needed to reproduce this run.">
-        <div className="scroll-x">
-          <table className="data min-w-[420px]">
+        <div className="scroll-x edge-cue">
+          <table className="data sticky-label min-w-[320px]">
             <tbody>
               <tr>
                 <th scope="row" className="font-normal">Run id</th>

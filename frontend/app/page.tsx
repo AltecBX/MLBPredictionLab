@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
@@ -37,47 +38,70 @@ export default async function GameCenterPage({
   const result = await api.games(date, sort);
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Daily Game Center</h1>
-            <p className="mt-0.5 text-sm muted">{longDate(date)}</p>
-          </div>
-          <nav aria-label="Date" className="flex items-center gap-1 text-sm">
-            <Link
-              href={`/?date=${shiftIsoDate(date, -1)}&sort=${sort}`}
-              className="rounded border px-2.5 py-1.5 muted transition-colors hover:text-[var(--text)]"
-              style={{ borderColor: "var(--border)" }}
-            >
-              ← Prev
-            </Link>
-            <Link
-              href={`/?date=${isoDate(new Date())}&sort=${sort}`}
-              className="rounded border px-2.5 py-1.5 muted transition-colors hover:text-[var(--text)]"
-              style={{ borderColor: "var(--border)" }}
-            >
-              Today
-            </Link>
-            <Link
-              href={`/?date=${shiftIsoDate(date, 1)}&sort=${sort}`}
-              className="rounded border px-2.5 py-1.5 muted transition-colors hover:text-[var(--text)]"
-              style={{ borderColor: "var(--border)" }}
-            >
-              Next →
-            </Link>
-          </nav>
-        </div>
+    <div className="flex flex-col gap-4 sm:gap-5">
+      <h1 className="sr-only sm:not-sr-only sm:text-xl sm:font-semibold sm:tracking-tight">
+        Daily Game Center
+      </h1>
 
-        <div className="scroll-x">
-          <ul className="flex min-w-max items-center gap-1 text-xs">
-            <li className="mr-1 subtle">Sort</li>
+      {/*
+       * Only the date row sticks. Changing date is the most repeated action on
+       * this screen, so on a phone it must stay reachable without scrolling
+       * back past a twelve-game slate — but pinning the sort chips too would
+       * cost another 48px of a 844px viewport for a control used once a visit.
+       */}
+      <header
+        className="sticky z-20 -mx-4 border-b px-4 py-1.5 backdrop-blur"
+        style={{
+          top: "var(--header-h)",
+          borderColor: "var(--border)",
+          background: "color-mix(in srgb, var(--surface-sunken) 92%, transparent)",
+        }}
+      >
+        <nav
+          aria-label="Date"
+          className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
+        >
+          <Link
+            href={`/?date=${shiftIsoDate(date, -1)}&sort=${sort}`}
+            className="tap-sq rounded-lg border text-sm muted transition-colors hover:text-[var(--text)]"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span aria-hidden>←</span>
+            <span className="sr-only">← Prev</span>
+          </Link>
+
+          <Link
+            href={`/?date=${isoDate(new Date())}&sort=${sort}`}
+            className="tap min-w-0 flex-col justify-center rounded-lg text-center"
+            title="Jump to today"
+          >
+            <span className="truncate text-sm font-semibold sm:text-base">
+              {longDate(date)}
+            </span>
+            <span className="text-[0.65rem] subtle">tap for today</span>
+          </Link>
+
+          <Link
+            href={`/?date=${shiftIsoDate(date, 1)}&sort=${sort}`}
+            className="tap-sq rounded-lg border text-sm muted transition-colors hover:text-[var(--text)]"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span aria-hidden>→</span>
+            <span className="sr-only">Next →</span>
+          </Link>
+        </nav>
+      </header>
+
+      <div className="-mt-1">
+        <div className="scroll-x no-bar snap-x-strip -mx-4 px-4">
+          <ul className="flex min-w-max items-center gap-1.5 text-xs">
+            <li className="hidden pr-0.5 subtle sm:block">Sort</li>
             {SORTS.map((option) => (
               <li key={option.key}>
                 <Link
                   href={`/?date=${date}&sort=${option.key}`}
                   aria-current={sort === option.key ? "true" : undefined}
-                  className={`block whitespace-nowrap rounded border px-2 py-1 transition-colors ${
+                  className={`tap whitespace-nowrap rounded-full border px-3 transition-colors ${
                     sort === option.key
                       ? "font-medium"
                       : "muted hover:text-[var(--text)]"
@@ -85,6 +109,10 @@ export default async function GameCenterPage({
                   style={{
                     borderColor:
                       sort === option.key ? "var(--accent)" : "var(--border)",
+                    background:
+                      sort === option.key
+                        ? "color-mix(in srgb, var(--accent) 12%, transparent)"
+                        : undefined,
                     color: sort === option.key ? "var(--accent)" : undefined,
                   }}
                 >
@@ -96,7 +124,7 @@ export default async function GameCenterPage({
               <span
                 aria-disabled="true"
                 title={UNAVAILABLE_SORT.reason}
-                className="flex cursor-not-allowed items-center gap-1 whitespace-nowrap rounded border border-dashed px-2 py-1 subtle"
+                className="tap cursor-not-allowed whitespace-nowrap rounded-full border border-dashed px-3 subtle"
               >
                 {UNAVAILABLE_SORT.label}
                 <Tooltip label={UNAVAILABLE_SORT.reason}>
@@ -106,7 +134,7 @@ export default async function GameCenterPage({
             </li>
           </ul>
         </div>
-      </header>
+      </div>
 
       {result.ok ? (
         <>
@@ -114,8 +142,11 @@ export default async function GameCenterPage({
             className="surface flex flex-col gap-2 px-4 py-3"
             aria-label="Data freshness"
           >
-            <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
               <span className="font-medium">Data freshness by source</span>
+              <AutoRefresh
+                firstPitches={result.data.games.map((g) => g.first_pitch_utc)}
+              />
               <span className="subtle">
                 {result.data.model_version
                   ? `Model ${result.data.model_version}`

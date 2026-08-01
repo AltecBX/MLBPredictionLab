@@ -41,6 +41,15 @@
 }
 
 :root {
+  /*
+   * Height of the sticky header, including its 1px border. Anything else that
+   * sticks (the game tab strip, the date bar) offsets by this rather than
+   * re-deriving it, so one row of padding changing does not silently hide a
+   * control under the header. Verified against the rendered header at both
+   * breakpoints; the E2E suite asserts the tab strip lands clear of it.
+   */
+  --header-h: 61px;
+
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --surface-sunken: #f6f7f9;
@@ -116,10 +125,28 @@ body {
   color: var(--text);
 }
 
+@media (min-width: 640px) {
+  :root {
+    --header-h: 59px;
+  }
+}
+
+html {
+  /* iOS Safari otherwise inflates text after a rotation, which silently breaks
+     every width calculation the layout depends on. */
+  -webkit-text-size-adjust: 100%;
+
+  /* Anchor targets and scrollIntoView must clear both sticky layers. */
+  scroll-padding-top: calc(var(--header-h) + 3rem);
+}
+
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* A long team name or ballpark must never be the reason the page scrolls
+     sideways; break it before the layout breaks. */
+  overflow-wrap: break-word;
 }
 
 * {
@@ -194,6 +221,124 @@ body {
   -webkit-overflow-scrolling: touch;
   min-width: 0;
   max-width: 100%;
+  /* Keep momentum scrolling inside the strip instead of handing the gesture to
+     the page, which on iOS reads as the whole view jittering sideways. */
+  overscroll-behavior-x: contain;
+}
+
+/* Hide the scrollbar on strips that are obviously swipeable (tabs, chips).
+   Tables keep theirs — there the bar is the only cue that more columns exist. */
+.scroll-x.no-bar {
+  scrollbar-width: none;
+}
+.scroll-x.no-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* A shadow that appears only on the side that still has hidden content — the
+   one reliable "there is more here" cue on a phone, where scrollbars are
+   invisible until you touch. Pure CSS: the local layers scroll with the
+   content and uncover the fixed shadow layers underneath. */
+.scroll-x.edge-cue {
+  background:
+    linear-gradient(to right, var(--surface-raised) 40%, transparent) left center /
+      28px 100% no-repeat local,
+    linear-gradient(to left, var(--surface-raised) 40%, transparent) right center /
+      28px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.14), transparent) left center /
+      14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.14), transparent) right
+      center / 14px 100% no-repeat scroll;
+}
+
+/* Tooltip panel offset. Authored here rather than inline so the sm: popover
+   position still wins — an inline `bottom` would beat every utility class. */
+.tip-sheet {
+  bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .tip-sheet {
+    bottom: 100%;
+  }
+}
+
+/* Swipeable strips settle on a tab rather than mid-label. */
+.snap-x-strip {
+  scroll-snap-type: x proximity;
+}
+.snap-x-strip > * {
+  scroll-snap-align: start;
+}
+
+/*
+ * Touch targets.
+ *
+ * Apple's HIG floor is 44x44pt and this app is used one-handed on an iPhone
+ * roughly nine times out of ten, so every interactive element gets it. The
+ * padding stays visual; `min-height` does the work so a 12px label still
+ * presents a 44px target.
+ */
+.tap {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tap-sq {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  /* Pointer devices do not need the floor, and it makes dense toolbars airy. */
+  .tap,
+  .tap-sq {
+    min-height: 34px;
+  }
+  .tap-sq {
+    min-width: 34px;
+  }
+}
+
+/* iOS safe areas — the home indicator and the notch. Only ever additive, so a
+ * browser without env() support renders exactly what it did before. */
+.safe-b {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-x {
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+
+/* Room for the fixed bottom tab bar so the last card is never trapped under it. */
+.pad-bottom-nav {
+  padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .pad-bottom-nav {
+    padding-bottom: 1.5rem;
+  }
+}
+
+/* Tapping a link should not leave a grey flash on iOS; :focus-visible and the
+   active state below carry the feedback instead. */
+a,
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: none) {
+  a:active,
+  button:active {
+    opacity: 0.65;
+  }
 }
 
 table.data {
@@ -209,15 +354,39 @@ table.data th {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-subtle);
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.5rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
 table.data td {
-  padding: 0.55rem 0.75rem;
+  padding: 0.6rem 0.5rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.875rem;
+}
+
+@media (min-width: 640px) {
+  table.data th {
+    padding: 0.5rem 0.75rem;
+  }
+  table.data td {
+    padding: 0.55rem 0.75rem;
+  }
+}
+
+/* Column headers stay on one line; row labels wrap. "Strikeout rate, 30 day"
+   held on one line is what forces a four-column table past 500px. */
+table.data th[scope="row"] {
+  white-space: normal;
+}
+
+/* Sticky first column so the row label stays put while the numbers scroll —
+   the difference between a usable and a useless wide table on a phone. */
+table.data.sticky-label th[scope="row"] {
+  position: sticky;
+  left: 0;
+  background: var(--surface-raised);
+  z-index: 1;
 }
 
 table.data tbody tr:last-child td {

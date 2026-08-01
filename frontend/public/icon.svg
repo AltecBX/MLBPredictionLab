@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Jerry MLB Prediction Lab">
+  <rect width="512" height="512" rx="112" fill="#11151f"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#eef1f6" stroke-width="20"/>
+  <path d="M164 152c40 30 62 66 62 104s-22 74-62 104" fill="none" stroke="#d18148" stroke-width="18" stroke-linecap="round"/>
+  <path d="M348 152c-40 30-62 66-62 104s22 74 62 104" fill="none" stroke="#d18148" stroke-width="18" stroke-linecap="round"/>
+  <path d="M150 330 L214 268 L262 300 L360 196" fill="none" stroke="#5aa9e6" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

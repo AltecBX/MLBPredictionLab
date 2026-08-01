@@ -30,16 +30,16 @@ import type { GameDetail } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const TABS: TabDef[] = [
-  { key: "prediction", label: "Prediction" },
-  { key: "pitchers", label: "Starting pitchers" },
-  { key: "lineups", label: "Lineups & batting" },
-  { key: "bullpens", label: "Bullpens" },
-  { key: "history", label: "Matchup history" },
-  { key: "environment", label: "Weather & ballpark" },
-  { key: "explanation", label: "Model explanation" },
-  { key: "simulation", label: "Simulation" },
-  { key: "market", label: "Market comparison" },
-  { key: "backtest", label: "Backtest evidence" },
+  { key: "prediction", label: "Prediction", shortLabel: "Prediction" },
+  { key: "pitchers", label: "Starting pitchers", shortLabel: "Pitchers" },
+  { key: "lineups", label: "Lineups & batting", shortLabel: "Lineups" },
+  { key: "bullpens", label: "Bullpens", shortLabel: "Bullpens" },
+  { key: "history", label: "Matchup history", shortLabel: "History" },
+  { key: "environment", label: "Weather & ballpark", shortLabel: "Ballpark" },
+  { key: "explanation", label: "Model explanation", shortLabel: "Explain" },
+  { key: "simulation", label: "Simulation", shortLabel: "Sim" },
+  { key: "market", label: "Market comparison", shortLabel: "Market" },
+  { key: "backtest", label: "Backtest evidence", shortLabel: "Backtest" },
 ];
 
 export async function generateMetadata({
@@ -84,22 +84,22 @@ export default async function GameDetailPage({
   const awayLabel = card.away.abbreviation;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4 sm:gap-5">
       <Link
         href={`/?date=${card.official_date}`}
-        className="text-xs muted hover:underline"
+        className="tap -my-1 self-start text-xs muted hover:underline"
       >
         ← {longDate(card.official_date)}
       </Link>
 
-      <header className="surface flex flex-col gap-4 p-4 sm:p-5">
+      <header className="surface flex min-w-0 flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold tracking-tight sm:text-lg">
               {card.away.name}{" "}
               <span className="font-normal subtle">at</span> {card.home.name}
             </h1>
-            <p className="mt-1 text-sm muted">
+            <p className="mt-1 text-xs muted sm:text-sm">
               <span className="tnum">{gameTime(card.first_pitch_utc)}</span>
               {card.ballpark.name ? ` · ${card.ballpark.name}` : ""}
               {card.ballpark.city ? `, ${card.ballpark.city}` : ""}
@@ -130,7 +130,7 @@ export default async function GameDetailPage({
               homeLabel={`${homeLabel}${record(card.home.wins, card.home.losses) ? ` (${record(card.home.wins, card.home.losses)})` : ""}`}
               awayLabel={`${awayLabel}${record(card.away.wins, card.away.losses) ? ` (${record(card.away.wins, card.away.losses)})` : ""}`}
             />
-            <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-4">
               <StatBlock
                 label="Projected score"
                 value={
@@ -227,7 +227,7 @@ function PredictionTab({ detail }: { detail: GameDetail }) {
   const opponent = prediction.predicted_winner === "HOME" ? card.away : card.home;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
       <Section
         title={`Why the model favors ${favored.team_name ?? favored.name}`}
         description={`${favored.name} win probability ${pct(
@@ -313,7 +313,7 @@ function ChangeSummary({ detail }: { detail: GameDetail }) {
   const delta = change.home_win_prob_delta_pp ?? 0;
   return (
     <div className="flex flex-col gap-3">
-      <dl className="grid grid-cols-3 gap-3">
+      <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
         <StatBlock
           label="Home probability"
           value={signedPp(delta)}
@@ -332,8 +332,8 @@ function ChangeSummary({ detail }: { detail: GameDetail }) {
         />
       </dl>
       {change.changed_features.length ? (
-        <div className="scroll-x">
-          <table className="data min-w-[420px]">
+        <div className="scroll-x edge-cue">
+          <table className="data sticky-label min-w-[320px]">
             <thead>
               <tr>
                 <th scope="col">Input</th>
@@ -371,7 +371,7 @@ function PitchersTab({ detail }: { detail: GameDetail }) {
   const { card, home_detail, away_detail } = detail;
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
         {[away_detail, home_detail].map((side, index) => (
           <Section
             key={side.team.id}
@@ -512,7 +512,7 @@ function HistoryTab({ detail }: { detail: GameDetail }) {
         description={history.note}
       >
         {history.available ? (
-          <dl className="grid grid-cols-2 gap-4">
+          <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
             <StatBlock
               label="Shrunk series edge"
               value={num(history.season_series_shrunk_diff, 3)}
@@ -538,8 +538,8 @@ function HistoryTab({ detail }: { detail: GameDetail }) {
       />
       <Section title="Prediction history for this game">
         {detail.prediction_history.length ? (
-          <div className="scroll-x">
-            <table className="data min-w-[480px]">
+          <div className="scroll-x edge-cue">
+            <table className="data sticky-label min-w-[360px]">
               <thead>
                 <tr>
                   <th scope="col">As of</th>
@@ -594,9 +594,9 @@ function EnvironmentTab({ detail }: { detail: GameDetail }) {
   };
   const park = detail.card.ballpark;
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
       <Section title="Ballpark" description="Physical attributes, which are static and genuinely available.">
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-3">
           <StatBlock label="Venue" value={park.name ?? "—"} sub={park.city ?? undefined} />
           <StatBlock label="Roof" value={park.roof_type ?? "—"} />
           <StatBlock
@@ -666,8 +666,8 @@ function ExplanationTab({ detail }: { detail: GameDetail }) {
         description="Exact leave-one-out effect of each model input, in probability points. Contributions are additive in log-odds and sum with the intercept to the final probability."
       >
         {detail.all_drivers.length ? (
-          <div className="scroll-x">
-            <table className="data min-w-[560px]">
+          <div className="scroll-x edge-cue">
+            <table className="data sticky-label min-w-[420px]">
               <thead>
                 <tr>
                   <th scope="col">Input</th>
@@ -719,7 +719,7 @@ function ExplanationTab({ detail }: { detail: GameDetail }) {
           title="Model internals"
           description="Everything needed to reproduce this prediction exactly."
         >
-          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-4">
             <StatBlock
               label="Model"
               value={
@@ -768,7 +768,7 @@ function MarketTab({ detail }: { detail: GameDetail }) {
         description="The fair moneyline implied by the model probability, with no margin applied."
       >
         {prediction ? (
-          <dl className="grid grid-cols-2 gap-4">
+          <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
             <StatBlock
               label={`${detail.card.away.abbreviation} fair line`}
               value={moneyline(market.fair_away_moneyline)}
@@ -808,7 +808,7 @@ function BacktestTab({ detail }: { detail: GameDetail }) {
         description="Historical accuracy of predictions in the same probability band, from the most recent walk-forward backtest."
       >
         {evidence.available ? (
-          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-4">
             <StatBlock label="Probability band" value={`${evidence.band}%`} />
             <StatBlock label="Games in band" value={evidence.n ?? 0} />
             <StatBlock
@@ -841,7 +841,7 @@ function BacktestTab({ detail }: { detail: GameDetail }) {
         title="Overall backtest"
         description="Walk-forward evaluation across the full history. Calibration and proper scoring rules rank above accuracy."
       >
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-4">
           <StatBlock
             label="Games evaluated"
             value={evidence.overall_n?.toLocaleString() ?? "—"}

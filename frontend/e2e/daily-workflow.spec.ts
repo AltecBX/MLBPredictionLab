@@ -88,7 +88,9 @@ test.describe("daily game workflow", () => {
     for (const [tab, marker] of [
       ["pitchers", /Starter comparison/],
       ["bullpens", /Bullpen quality and recent workload/],
-      ["environment", /Ballpark/],
+      // Matched on the panel's own prose: "Ballpark" alone now also matches the
+      // tab strip's short label, which is the wrong element to assert on.
+      ["environment", /Physical attributes, which are static/],
       ["explanation", /Every measured contribution/],
       ["simulation", /Monte Carlo simulation is not available/],
       ["market", /Model fair price/],

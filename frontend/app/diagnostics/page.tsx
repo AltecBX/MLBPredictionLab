@@ -81,8 +81,8 @@ export default async function DiagnosticsPage() {
         title="Data sources"
         description="Last successful update, freshness class and configured provider for every category."
       >
-        <div className="scroll-x">
-          <table className="data min-w-[720px]">
+        <div className="scroll-x edge-cue">
+          <table className="data sticky-label min-w-[560px]">
             <thead>
               <tr>
                 <th scope="col">Category</th>
@@ -235,8 +235,8 @@ export default async function DiagnosticsPage() {
         title="Recent jobs"
         description="Every ingest, training and prediction run, with failures recorded rather than swallowed."
       >
-        <div className="scroll-x">
-          <table className="data min-w-[640px]">
+        <div className="scroll-x edge-cue">
+          <table className="data sticky-label min-w-[500px]">
             <thead>
               <tr>
                 <th scope="col">Job</th>

@@ -21,10 +21,19 @@ export function DriverList({
   const color = tone === "home" ? "var(--home)" : "var(--away)";
 
   return (
-    <ol className="flex flex-col divide-y" style={{ borderColor: "var(--border)" }}>
+    <ol
+      className="flex min-w-0 flex-col divide-y"
+      style={{ borderColor: "var(--border)" }}
+    >
       {drivers.map((driver) => (
-        <li key={driver.feature_key} className="flex items-start gap-3 py-2.5 first:pt-0">
-          <span className="tnum w-14 shrink-0 text-right text-sm font-semibold" style={{ color }}>
+        <li
+          key={driver.feature_key}
+          className="flex min-w-0 items-start gap-3 py-2.5 first:pt-0"
+        >
+          <span
+            className="tnum w-12 shrink-0 text-right text-sm font-semibold sm:w-14"
+            style={{ color }}
+          >
             +{driver.contribution_pp.toFixed(1)}
           </span>
           <div className="min-w-0 flex-1">

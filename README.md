@@ -39,6 +39,7 @@ Written before any code, and kept current:
 | [LEAKAGE_PREVENTION.md](LEAKAGE_PREVENTION.md) | Twelve leakage vectors, the mechanism blocking each, and the test proving it |
 | [BACKTEST_PLAN.md](BACKTEST_PLAN.md) | Walk-forward protocol, metrics, slices, ablation, sanity gates |
 | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Phase boundaries and acceptance criteria |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Getting it onto a URL: Render one-click, Vercel + Render, or self-hosted |
 
 ---
 
@@ -60,7 +61,11 @@ Written before any code, and kept current:
 * Walk-forward backtest with calibration reporting, eight slice dimensions,
   feature-group ablation and automatic leakage tripwires.
 * Daily Game Center, Game Detail (ten tabs), Backtest and Diagnostics screens.
-* 131 backend tests, 25 frontend component tests and 12 end-to-end tests.
+* Mobile-first interface: installable to an iPhone home screen, thumb-reachable
+  bottom navigation, 44pt touch targets everywhere, no horizontal scroll on any
+  route at any iPhone width.
+* 135 backend tests, 30 frontend unit tests and 22 end-to-end tests, ten of
+  which are an explicit iPhone layout contract.
 
 ### Deliberately not populated
 
@@ -72,6 +77,47 @@ Statcast metrics · pregame lineup confirmation · per-pitcher bullpen
 availability · forecast weather · empirical park factors · umpire profiles ·
 injuries · odds, market comparison, ROI and CLV · Monte Carlo simulation ·
 run-scoring model · model ensemble.
+
+---
+
+## Running it on the web
+
+`render.yaml` deploys the whole stack — Postgres, Redis, API, web app and the
+daily job — from one blueprint.
+[**DEPLOYMENT.md**](DEPLOYMENT.md) covers that path, a Vercel + Render split for
+the fastest phone experience, and self-hosting, with the measured sizing and
+timing numbers each one needs.
+
+Two things worth knowing before you start:
+
+* A fresh deploy comes up **empty**, and every screen will say `UNAVAILABLE`.
+  That is correct. Seeding is a separate, deliberate step.
+* Ingesting four seasons takes about 45 minutes and lands at **908 MB**, which
+  does not fit a 1 GB free Postgres tier. Two seasons do. Both numbers are
+  measured; DEPLOYMENT.md § Sizing has the per-table breakdown.
+
+---
+
+## On a phone
+
+The interface is built for an iPhone first, because that is where it is
+actually read.
+
+* **Installable.** Safari → Share → Add to Home Screen gives a standalone app
+  with no browser chrome — roughly 120px of an 844px screen back.
+* **One-row header, bottom tab bar.** The four destinations sit within thumb
+  reach instead of at the top of the screen.
+* **Sticky date bar and tab strip.** Changing date, and moving between a game's
+  ten sections, never require scrolling back up past a twelve-game slate.
+* **44pt touch targets throughout**, including the inline info icons, which
+  expand their hit area without disturbing the text they sit in.
+* **Tooltips open on tap** and render as a sheet above the tab bar rather than
+  a popover that would be clipped at the screen edge.
+* **Safe-area aware**, so nothing hides under the notch or the home indicator.
+
+These are enforced, not asserted: `frontend/e2e/mobile.spec.ts` fails the build
+on horizontal page scroll at 375px or 390px, on any control under 44pt, on a
+sticky layer covering another, and on a broken home-screen install.
 
 ---
 
@@ -239,25 +285,26 @@ Twelve vectors, each with a mechanism and a test — see
 ## Repository layout
 
 ```
-ARCHITECTURE.md …                design documents (8)
+ARCHITECTURE.md …                design documents (8) + DEPLOYMENT.md
 backend/
   app/core/       validated settings, structured logging, cache, clock
   app/db/         SQLAlchemy models for all 28 tables + upsert helper
   app/providers/  Protocols, MLB Stats API client, explicit Unavailable providers
-  app/ingestion/  reference · schedule · results · runner · source status
+  app/ingestion/  reference · schedule · results · runner · status · maintenance
   app/features/   as-of store · shrinkage · Elo · aggregates · registry · builder
   app/modeling/   dataset · logistic · calibration · artifact registry · training
   app/backtest/   walk-forward · metrics · slices · ablation · engine
   app/services/   prediction · confidence · explanation · freshness · diagnostics
   app/api/v1/     games · backtest · diagnostics · meta
   app/cli.py      every operational job
-  tests/          unit · feature · leakage · model · backtest · API integration
+  tests/          unit · feature · leakage · model · backtest · API · maintenance
 frontend/
   app/            game center · game detail · backtest · diagnostics · methodology
   components/     game card · probability bar · matchup bars · calibration chart …
   lib/            API client, contract types, formatters
-  tests/ e2e/     component tests and the daily-workflow end-to-end suite
-docker-compose.yml · Makefile · .env.example
+  manifest.ts     + public/ icons — installable home-screen app
+  tests/ e2e/     component tests · daily-workflow suite · iPhone layout suite
+docker-compose.yml · render.yaml · Makefile · .env.example
 ```
 
 ---
@@ -268,12 +315,15 @@ docker-compose.yml · Makefile · .env.example
 make test          # backend + frontend
 make test-backend  # pytest: unit, feature, leakage, model, backtest, API
 make test-frontend # vitest component tests
-make e2e           # Playwright daily-workflow suite
+make e2e           # Playwright: daily-workflow + iPhone layout suites
 make lint          # ruff
 make typecheck     # tsc
 ```
 
 The leakage suite is the one to run after any refactor of the feature layer.
+`e2e/mobile.spec.ts` is the one to run after any layout change — it is the only
+thing standing between a stray `whitespace-nowrap` and a page that scrolls
+sideways on a phone.
 
 ---
 
