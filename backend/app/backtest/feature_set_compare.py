@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -37,9 +38,17 @@ from app.modeling.dataset import Dataset, build_dataset
 
 log = get_logger(__name__)
 
-# Δ log loss beyond which the difference is treated as real rather than as
-# run-to-run noise on a season-scale sample. Same band the ablation uses.
+# Δ log loss below which a difference is not worth acting on even if it is
+# statistically distinguishable from zero. The same band the ablation uses; it
+# is a practical-significance floor, not the significance test itself.
 NOISE_BAND = 0.0015
+
+# Resamples for the paired bootstrap. Both models predict the same games, so the
+# per-game differences are paired and their spread can be measured directly
+# rather than assumed — which is what makes "beyond the noise band" a claim
+# about this sample instead of about a constant someone chose once.
+BOOTSTRAP_RESAMPLES = 2000
+BOOTSTRAP_SEED = 20240401
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +69,10 @@ class Comparison:
     delta_brier: float | None
     delta_ece: float | None
     delta_accuracy: float | None
+    # Paired 95% intervals for the three metrics the gate is decided on.
+    log_loss_interval: PairedDelta
+    brier_interval: PairedDelta
+    calibration_interval: PairedDelta
     verdict: str
     reading: str
     # How often the candidate group actually had a value to contribute. A
@@ -87,6 +100,13 @@ class Comparison:
                 "calibration_error": self.delta_ece,
                 "accuracy": self.delta_accuracy,
             },
+            # Positive means the candidate is better. An interval spanning zero
+            # means this sample cannot tell the two apart.
+            "paired_95_ci": {
+                "log_loss": self.log_loss_interval.to_dict(),
+                "brier": self.brier_interval.to_dict(),
+                "calibration_error": self.calibration_interval.to_dict(),
+            },
             "candidate_coverage": self.candidate_coverage,
             "verdict": self.verdict,
             "reading": self.reading,
@@ -106,6 +126,72 @@ def _headline(metrics: dict[str, Any]) -> dict[str, Any]:
 
 def _metrics(frame: pd.DataFrame) -> Metrics:
     return evaluate(frame["actual"].to_numpy(), frame["prob"].to_numpy())
+
+
+def _per_game_log_loss(actual: np.ndarray, prob: np.ndarray) -> np.ndarray:
+    p = np.clip(prob, 1e-12, 1 - 1e-12)
+    return -(actual * np.log(p) + (1 - actual) * np.log(1 - p))
+
+
+@dataclass(frozen=True, slots=True)
+class PairedDelta:
+    """A difference, with how sure we are that it is not zero."""
+
+    mean: float
+    ci_low: float
+    ci_high: float
+
+    @property
+    def is_distinguishable_from_zero(self) -> bool:
+        return self.ci_low > 0.0 or self.ci_high < 0.0
+
+    @property
+    def favours_candidate(self) -> bool:
+        return self.ci_low > 0.0
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "mean": round(self.mean, 6),
+            "ci_low": round(self.ci_low, 6),
+            "ci_high": round(self.ci_high, 6),
+        }
+
+
+def _paired_bootstrap(deltas: np.ndarray) -> PairedDelta:
+    """95% percentile bootstrap CI for a mean of paired per-game differences."""
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    n = len(deltas)
+    if n == 0:
+        return PairedDelta(0.0, 0.0, 0.0)
+    draws = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n))
+    means = deltas[draws].mean(axis=1)
+    low, high = np.percentile(means, [2.5, 97.5])
+    return PairedDelta(float(deltas.mean()), float(low), float(high))
+
+
+def _bootstrap_calibration_delta(
+    actual: np.ndarray, base_prob: np.ndarray, cand_prob: np.ndarray
+) -> PairedDelta:
+    """Calibration error does not decompose per game, so resample whole slates.
+
+    The same resampled games go to both models on every draw, which keeps the
+    comparison paired even though the statistic is not additive.
+    """
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    n = len(actual)
+    if n == 0:
+        return PairedDelta(0.0, 0.0, 0.0)
+    deltas = np.empty(BOOTSTRAP_RESAMPLES)
+    for i in range(BOOTSTRAP_RESAMPLES):
+        idx = rng.integers(0, n, size=n)
+        base = evaluate(actual[idx], base_prob[idx]).calibration_error
+        cand = evaluate(actual[idx], cand_prob[idx]).calibration_error
+        deltas[i] = (base - cand) if base is not None and cand is not None else np.nan
+    finite = deltas[np.isfinite(deltas)]
+    if finite.size == 0:
+        return PairedDelta(0.0, 0.0, 0.0)
+    low, high = np.percentile(finite, [2.5, 97.5])
+    return PairedDelta(float(finite.mean()), float(low), float(high))
 
 
 def _coverage(dataset: Dataset, extra: list[str]) -> dict[str, float]:
@@ -167,6 +253,21 @@ def compare_feature_sets(
     base_metrics, cand_metrics = _metrics(base_common), _metrics(cand_common)
     extra = [n for n in candidate.feature_names if n not in set(baseline.feature_names)]
 
+    # Sorting both by game_id above makes these row-aligned, which is what turns
+    # two independent evaluations into one paired comparison.
+    actual = base_common["actual"].to_numpy()
+    base_prob = base_common["prob"].to_numpy()
+    cand_prob = cand_common["prob"].to_numpy()
+    assert (cand_common["actual"].to_numpy() == actual).all()
+
+    ll_interval = _paired_bootstrap(
+        _per_game_log_loss(actual, base_prob) - _per_game_log_loss(actual, cand_prob)
+    )
+    brier_interval = _paired_bootstrap(
+        (base_prob - actual) ** 2 - (cand_prob - actual) ** 2
+    )
+    ece_interval = _bootstrap_calibration_delta(actual, base_prob, cand_prob)
+
     # Positive delta = the candidate is better. Log loss, Brier and calibration
     # error are all lower-is-better, so the sign is flipped for those.
     delta_ll = base_metrics.log_loss - cand_metrics.log_loss
@@ -179,7 +280,7 @@ def compare_feature_sets(
         else None
     )
 
-    verdict, reading = _judge(delta_ll, delta_brier, delta_ece)
+    verdict, reading = _judge(ll_interval, brier_interval, ece_interval)
     comparison = Comparison(
         baseline=SetResult(
             baseline_version, len(baseline.feature_names), base_metrics.to_dict(),
@@ -195,6 +296,9 @@ def compare_feature_sets(
         delta_brier=round(delta_brier, 6),
         delta_ece=None if delta_ece is None else round(delta_ece, 6),
         delta_accuracy=round(delta_acc, 6),
+        log_loss_interval=ll_interval,
+        brier_interval=brier_interval,
+        calibration_interval=ece_interval,
         verdict=verdict,
         reading=reading,
         candidate_coverage=_coverage(candidate, extra),
@@ -211,41 +315,74 @@ def compare_feature_sets(
 
 
 def _judge(
-    delta_ll: float, delta_brier: float, delta_ece: float | None
+    log_loss: PairedDelta, brier: PairedDelta, calibration: PairedDelta
 ) -> tuple[str, str]:
-    """Verdict on the primary metric, with the others as corroboration.
+    """Apply the gate in BACKTEST_PLAN.md § Phase 2A, on measured intervals.
 
-    Log loss decides. It is the proper scoring rule this system is graded on,
-    and it punishes confident errors the way a reader of these predictions
-    would. Brier and calibration are reported alongside so that an improvement
-    that comes entirely from one metric while damaging another is visible rather
-    than buried.
+    Two rules, in order.
+
+    **Log loss has a veto.** If it is distinguishably worse, nothing else saves
+    the group. A proper scoring rule getting worse means the probabilities got
+    worse, and that is the number this system is graded on.
+
+    **Reliability wins when the two disagree.** That is the repository's own
+    rule, not a convenience: a group that leaves log loss where it was but makes
+    the stated probabilities closer to the observed frequencies has improved the
+    product, because the probability is the product. FEATURE_DICTIONARY.md keeps
+    a group only if it improves log loss, Brier score *or* calibration, and this
+    is the "or".
+
+    Every judgement is on a paired 95% bootstrap interval rather than a fixed
+    band, so "beyond noise" is a statement about this sample. NOISE_BAND then
+    acts as a practical-significance floor on top: distinguishable from zero and
+    too small to matter is still not a reason to change the model.
     """
-    supporting = [d for d in (delta_brier, delta_ece) if d is not None]
-    agreeing = sum(1 for d in supporting if d > 0)
-
-    if delta_ll > NOISE_BAND:
-        if agreeing == len(supporting):
-            return "ADOPT", (
-                "Log loss improves beyond the noise band and every other metric "
-                "agrees. The group earns its place."
-            )
-        return "ADOPT_WITH_CAVEAT", (
-            "Log loss improves beyond the noise band, but at least one of Brier "
-            "score and calibration error moved the wrong way. Worth adopting, "
-            "worth watching."
-        )
-    if delta_ll < -NOISE_BAND:
+    if log_loss.is_distinguishable_from_zero and not log_loss.favours_candidate:
         return "REJECT", (
-            "Log loss is worse beyond the noise band. The group is not carrying "
-            "information the existing features do not already have, and adding "
-            "it costs accuracy. A measured no is a result."
+            "Log loss is worse, and the paired interval excludes zero. The group "
+            "is not carrying information the existing features lack, and adding "
+            "it costs probability quality. A measured no is a result."
         )
+
+    if log_loss.favours_candidate and log_loss.mean > NOISE_BAND:
+        if calibration.is_distinguishable_from_zero and not calibration.favours_candidate:
+            return "ADOPT_WITH_CAVEAT", (
+                "Log loss improves, but calibration is measurably worse. "
+                "Reliability is what the reader acts on, so this is worth "
+                "adopting only with the calibration curve watched."
+            )
+        return "ADOPT", (
+            "Log loss improves beyond both the noise floor and the paired "
+            "interval. The group earns its place."
+        )
+
+    if calibration.favours_candidate and calibration.mean > NOISE_BAND:
+        if brier.is_distinguishable_from_zero and not brier.favours_candidate:
+            return "NO_EFFECT", (
+                "Calibration improves but Brier score is measurably worse, which "
+                "is the two halves of the same score pulling apart. Not enough "
+                "to change the model on."
+            )
+        return "ADOPT_ON_CALIBRATION", (
+            "Log loss is within noise, but calibration error improves and the "
+            "paired interval excludes zero. BACKTEST_PLAN.md § Phase 2A is "
+            "explicit that reliability wins when the two disagree: the stated "
+            "probabilities are closer to the observed frequencies, and the "
+            "probability is the product."
+        )
+
     return "NO_EFFECT", (
-        "The difference is inside the noise band for a sample this size. The "
-        "group neither helps nor hurts measurably, so it does not enter the "
+        "No metric moves distinguishably beyond noise for a sample this size. "
+        "The group neither helps nor hurts measurably, so it does not enter the "
         "model — a feature has to earn its place, not merely fail to hurt."
     )
 
 
-__all__ = ["Comparison", "NOISE_BAND", "SetResult", "compare_feature_sets"]
+__all__ = [
+    "BOOTSTRAP_RESAMPLES",
+    "NOISE_BAND",
+    "Comparison",
+    "PairedDelta",
+    "SetResult",
+    "compare_feature_sets",
+]
