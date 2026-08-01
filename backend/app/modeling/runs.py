@@ -102,6 +102,26 @@ def sample_runs(
     return rng.negative_binomial(size, p, size=draws)
 
 
+def partial_size(size: float, part_mean: float, game_mean: float) -> float:
+    """The size parameter for a *fraction* of a game.
+
+    The negative binomial is closed under addition only when the two draws share
+    the same `p`: NB(r₁, p) + NB(r₂, p) = NB(r₁ + r₂, p). Since `p` is
+    `size / (size + mean)`, holding it fixed while taking a fraction f of the
+    mean requires taking the same fraction f of the size.
+
+    Reusing the game-level size for an inning-level draw quietly violates that,
+    and the consequence is not subtle. The home side is drawn as eight innings
+    plus a conditional ninth and the away side as one whole game; with the size
+    reused, the home side came out with **11.7% less variance at the same mean**,
+    purely from which dugout it occupied. Every simulated game was then decided
+    partly by a distributional asymmetry that has nothing to do with baseball.
+    """
+    if not np.isfinite(size) or game_mean <= 0:
+        return size
+    return size * (part_mean / game_mean)
+
+
 @dataclass(frozen=True, slots=True)
 class GameSimulation:
     """What a simulated slate of one game says."""
@@ -174,12 +194,18 @@ def simulate_game(
     # says.
     #
     naive = home_mean * NORMAL_INNING_SHARE
-    probe = sample_runs(rng, naive * 8, size, simulations)
+    probe = sample_runs(rng, naive * 8, partial_size(size, 8, 9), simulations)
     p_needs_ninth = float((probe <= away_total).mean())
     per_inning_home = home_mean / (8.0 + p_needs_ninth)
 
-    home_eight = sample_runs(rng, per_inning_home * 8, size, simulations)
-    home_ninth = sample_runs(rng, per_inning_home, size, simulations)
+    # Split the size along with the mean, so the eight-inning block and the
+    # ninth share the away side's `p` and sum to the same full-game
+    # distribution. Without this the home side is quietly less variable than the
+    # away side at an identical mean — see `partial_size`.
+    home_eight = sample_runs(
+        rng, per_inning_home * 8, partial_size(size, 8, 9), simulations
+    )
+    home_ninth = sample_runs(rng, per_inning_home, partial_size(size, 1, 9), simulations)
 
     # The home team bats in the ninth only when it is tied or behind.
     needs_ninth = home_eight <= away_total
@@ -221,6 +247,9 @@ def _resolve_extra_innings(
     numerical noise in a twenty-thousand-draw simulation, so an exact tail is not
     worth the loop.
     """
+    # One inning is one ninth of a game, so it carries one ninth of the size for
+    # the same reason the regulation split does.
+    inning_size = partial_size(size, 1, 9)
     home = np.zeros(n, dtype=np.int64)
     away = np.zeros(n, dtype=np.int64)
     still_tied = np.ones(n, dtype=bool)
@@ -229,8 +258,8 @@ def _resolve_extra_innings(
         live = int(still_tied.sum())
         if not live:
             break
-        away_inning = sample_runs(rng, EXTRA_INNING_RUN_RATE, size, live)
-        home_inning = sample_runs(rng, EXTRA_INNING_RUN_RATE, size, live)
+        away_inning = sample_runs(rng, EXTRA_INNING_RUN_RATE, inning_size, live)
+        home_inning = sample_runs(rng, EXTRA_INNING_RUN_RATE, inning_size, live)
         away[still_tied] += away_inning
         home[still_tied] += home_inning
         decided = away_inning != home_inning
@@ -239,8 +268,10 @@ def _resolve_extra_innings(
 
     if still_tied.any():
         live = int(still_tied.sum())
-        away[still_tied] += sample_runs(rng, EXTRA_INNING_RUN_RATE, size, live)
-        home[still_tied] += sample_runs(rng, EXTRA_INNING_RUN_RATE, size, live) + 1
+        away[still_tied] += sample_runs(rng, EXTRA_INNING_RUN_RATE, inning_size, live)
+        home[still_tied] += (
+            sample_runs(rng, EXTRA_INNING_RUN_RATE, inning_size, live) + 1
+        )
 
     return home, away
 
@@ -260,6 +291,7 @@ __all__ = [
     "Dispersion",
     "GameSimulation",
     "fit_dispersion",
+    "partial_size",
     "sample_runs",
     "simulate_game",
 ]

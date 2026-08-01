@@ -543,7 +543,15 @@ same diagnosis — the signal is real but already inside team strength by the ti
 it reaches one bit of outcome. This changed the target instead of the inputs, and
 that is what moved.
 
-Reproduce with `python -m app.cli simulate-check --seasons 2024,2025 --start 2025-04-01`.
+Reproduce. Two commands, because one cannot produce both rows — `--start` is the
+lower bound on the *test* windows, so the 2025 invocation scores no 2024 game:
+
+```
+# 2025, trained from 2024
+python -m app.cli simulate-check --seasons 2024,2025 --start 2025-04-01
+# 2024, trained from its own opening weeks
+python -m app.cli simulate-check --seasons 2024
+```
 
 **2025 — 2,363 scored games**
 

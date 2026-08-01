@@ -9,6 +9,7 @@ from app.backtest.feature_set_compare import PairedDelta
 from app.modeling.runs import (
     EXTRA_INNING_RUN_RATE,
     fit_dispersion,
+    partial_size,
     sample_runs,
     simulate_game,
 )
@@ -147,6 +148,43 @@ def test_a_tie_is_always_resolved():
 def test_extra_innings_score_faster_than_regulation():
     """The runner on second is why, and ignoring it mis-times every tiebreak."""
     assert EXTRA_INNING_RUN_RATE > LEAGUE_MEAN / 9
+
+
+def test_splitting_a_game_into_innings_preserves_its_distribution():
+    """The bug a code review caught, and the property that rules it out.
+
+    The negative binomial only adds when the two draws share `p`. The home side
+    is drawn as eight innings plus a conditional ninth and the away side as one
+    whole game; reusing the game-level size for the parts left the home side with
+    11.7% LESS variance at an identical mean — a distributional advantage handed
+    out by which dugout a team occupied. Scaling the size with the mean holds `p`
+    fixed and makes the sum exact.
+    """
+    rng = np.random.default_rng(0)
+    whole = sample_runs(rng, LEAGUE_MEAN, LEAGUE_SIZE, 300_000)
+    per_inning = LEAGUE_MEAN / 9
+    split = sample_runs(
+        rng, per_inning * 8, partial_size(LEAGUE_SIZE, 8, 9), 300_000
+    ) + sample_runs(rng, per_inning, partial_size(LEAGUE_SIZE, 1, 9), 300_000)
+
+    assert split.mean() == pytest.approx(whole.mean(), rel=0.01)
+    assert split.var() == pytest.approx(whole.var(), rel=0.03)
+
+
+def test_the_unscaled_split_really_would_have_been_wrong():
+    """Guards the fix by showing the failure it prevents is real, not theoretical."""
+    rng = np.random.default_rng(0)
+    whole = sample_runs(rng, LEAGUE_MEAN, LEAGUE_SIZE, 300_000)
+    per_inning = LEAGUE_MEAN / 9
+    naive = sample_runs(rng, per_inning * 8, LEAGUE_SIZE, 300_000) + sample_runs(
+        rng, per_inning, LEAGUE_SIZE, 300_000
+    )
+    assert naive.var() < whole.var() * 0.95
+
+
+def test_an_infinite_size_is_unaffected_by_scaling():
+    """Poisson has no dispersion parameter to split."""
+    assert not np.isfinite(partial_size(float("inf"), 8, 9))
 
 
 def test_a_blowout_cannot_become_the_modal_score():

@@ -241,11 +241,19 @@ def compare_walk_forward(
         return None
 
     # Dispersion is fitted on the TRAINING side only — every game before the
-    # first test window — so the simulation never sees a run total it is about
-    # to be scored on.
+    # first game that actually gets scored — so the simulation never sees a run
+    # total it is about to be scored on.
+    #
+    # The cutoff comes from the predictions, not from the requested steps. A step
+    # whose training window is under `min_train_rows` is skipped and emits
+    # nothing, so the earliest *requested* test window can sit months before the
+    # first game anyone is scored on. Taking the cutoff from the request would
+    # then fit dispersion on a handful of games — or on none at all, silently
+    # falling back to Poisson — while ignoring a season of history that precedes
+    # every scored game and is therefore entirely fair to use.
     labelled = dataset.labelled
-    first_test = min(step.test_start for step in steps)
-    train = labelled[labelled["official_date"] < first_test]
+    first_scored = pd.Timestamp(predictions["official_date"].min()).date()
+    train = labelled[labelled["official_date"] < first_scored]
     observed = _observed_runs(store, train["game_id"].tolist())
     dispersion = fit_dispersion(observed)
     log.info(
