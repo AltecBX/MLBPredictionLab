@@ -125,6 +125,7 @@ class FeatureBuilder:
         self.store = store
         self.elo = elo if elo is not None else AsOfElo(store.games)
         self._league_cache: dict[tuple[int, str], LeagueBaseline] = {}
+        self._statcast_league_cache: dict[str, sc.StatcastBaseline] = {}
         self._team_rate_cache: dict[tuple[int, str], dict[int, tuple[float, float, int]]] = {}
 
     # -- league baselines --------------------------------------------------
@@ -551,11 +552,36 @@ class FeatureBuilder:
             starter_id, as_of, sc.recent_window_start(as_of)
         )
 
+        return sc.starter_values(
+            season_slice, prior_slice, recent_slice,
+            self.statcast_league_baseline(as_of, season_start),
+        )
+
+    def statcast_league_baseline(
+        self, as_of: datetime, season_start: datetime
+    ) -> sc.StatcastBaseline:
+        """League Statcast rates as of the START of ``as_of``'s calendar day.
+
+        The day boundary, not the exact timestamp, for the same reason
+        `league_baseline` uses it: it is strictly earlier than any prediction
+        made that day, so an afternoon game cannot move the prior that an
+        evening game on the same slate is measured against. Cached on that key,
+        which also takes the cost from once per side per game — a full sum over
+        every starter's season, thousands of times — to once per day.
+        """
+        day = as_of.astimezone(UTC).date()
+        key = day.isoformat()
+        cached = self._statcast_league_cache.get(key)
+        if cached is not None:
+            return cached
+
+        cut = datetime(day.year, day.month, day.day, tzinfo=UTC)
         league = self.store.league_pitcher_statcast_asof(
-            as_of, season_start, starters_only=True
+            cut, season_start, starters_only=True
         )
         baseline = sc.StatcastBaseline.from_rates(sc.summarize(league))
-        return sc.starter_values(season_slice, prior_slice, recent_slice, baseline)
+        self._statcast_league_cache[key] = baseline
+        return baseline
 
     @staticmethod
     def _starter_rest(

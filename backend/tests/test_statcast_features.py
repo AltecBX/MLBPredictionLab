@@ -324,6 +324,24 @@ def test_the_candidate_set_is_not_the_default_until_it_earns_it(store):
     assert not set(vector.features) & {s.key for s in SC_SP}
 
 
+def test_the_league_prior_cannot_see_a_game_played_earlier_the_same_day(
+    statcast_store,
+):
+    """An afternoon game must not move the prior an evening game is judged by."""
+    from datetime import time
+
+    builder = FeatureBuilder(
+        statcast_store, AsOfElo(statcast_store.games), feature_set_version="fs_v2"
+    )
+    season_start = datetime(2024, 1, 1, tzinfo=UTC)
+    day = datetime(2024, 5, 1, tzinfo=UTC).date()
+    morning = datetime.combine(day, time(13, 0), tzinfo=UTC)
+    evening = datetime.combine(day, time(23, 0), tzinfo=UTC)
+    assert builder.statcast_league_baseline(
+        morning, season_start
+    ) == builder.statcast_league_baseline(evening, season_start)
+
+
 def test_the_as_of_cut_moves_with_as_of(statcast_store):
     early = statcast_store.pitcher_statcast_asof(
         HOME_SP, datetime(2024, 3, 15, tzinfo=UTC)
