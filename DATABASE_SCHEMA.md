@@ -428,13 +428,20 @@ folded into False. Measured coverage on 9,677 balls in play: 99.7% tracked.
 
 ### Sizing
 
-Measured from a real export (2024-04-01: 4,189 pitches, 2.67 MB of CSV):
+Measured on the ingested tables rather than estimated from the export. The
+estimate this replaces was ~150 bytes a row, taken from the CSV width; the
+tables cost more than twice that once indexes are counted, and the difference is
+the difference between "two seasons fit" and "one season is tight".
 
-| | Pitches | Row bytes | Table + index |
-|---|---|---|---|
-| One season | ~700,000 | ~150 | **~120 MB** |
-| Two seasons | ~1,400,000 | ~150 | **~240 MB** |
+| | Rows | Size |
+|---|---|---|
+| `pitches` | 291,642 | 97 MB |
+| `batted_ball_events` | 50,961 | 15 MB |
+| **Per pitch, across both tables and every index** | | **403 bytes** |
+| **Projected, one full season** (~712,000 pitches) | | **~282 MB** |
 
-This does not fit alongside the existing ~460 MB of two-season data in a 1 GB
-free Postgres. `ingest-statcast` therefore takes an explicit date range and
-never defaults to all history, and DEPLOYMENT.md states the ceiling.
+A season averages 293 pitches a game across 2,430 games. 282 MB does not sit
+comfortably beside the ~460 MB of two-season schedule and box-score data in a
+1 GB free Postgres — DEPLOYMENT.md § Sizing has what that means in practice.
+`ingest-statcast` therefore takes an explicit date range and never defaults to
+all history.

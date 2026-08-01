@@ -413,36 +413,60 @@ group enters the active set only after `run_ablation` shows it improves
 out-of-sample log loss, Brier score or calibration (BACKTEST_PLAN.md §7).
 Registration is not acceptance.
 
-### `sc_sp_*` — starting-pitcher Statcast (`statcast_sp`)
+### `sc_sp_*` — starting-pitcher Statcast (`statcast_sp`) — **built**
 
-Every one is a home-minus-away difference of a stabilized rolling rate, over
-14 / 30 / 60 day, season and prior-season windows, shrunk toward the league
-rate with a per-statistic stabilization constant.
+Nine features, registered as feature set **`fs_v2`** — `fs_v1` plus this group,
+so the two can be refit walk-forward and scored on the same games. Each is a
+home-minus-away difference oriented so a positive value favours the home side;
+for the four "allowed" measures that means away-minus-home, since allowing
+weaker contact is the good outcome.
 
-| Key | What | Shrink `k` |
-|---|---|---|
-| `sc_sp_xwoba_allowed_*` | Expected wOBA allowed on contact | 300 BBE |
-| `sc_sp_xba_allowed_*` | Expected batting average allowed | 300 |
-| `sc_sp_xslg_allowed_*` | Expected slugging allowed | 300 |
-| `sc_sp_hard_hit_pct_*` | Share of contact ≥95 mph | 200 |
-| `sc_sp_barrel_pct_*` | Savant class 6 per batted ball | 200 |
-| `sc_sp_avg_ev_allowed_*` | Mean exit velocity | 200 |
-| `sc_sp_ev50_allowed_*` | Median exit velocity — less tail-sensitive | 200 |
-| `sc_sp_csw_pct_*` | Called strikes plus whiffs per pitch | 400 pitches |
-| `sc_sp_swstr_pct_*` | Swinging strikes per pitch | 400 |
-| `sc_sp_chase_pct_*` | Swings at pitches outside the zone | 400 |
-| `sc_sp_zone_pct_*` | Pitches in the zone | 400 |
-| `sc_sp_f_strike_pct_*` | First-pitch strikes | 200 PA |
-| `sc_sp_fb_velo_*` | Four-seam velocity | 100 pitches |
+| Key | What | Denominator | Shrink `k` | Min sample |
+|---|---|---|---|---|
+| `sc_sp_xwoba_allowed_diff` | Expected wOBA against | plate appearances | 250 | 100 |
+| `sc_sp_barrel_pct_allowed_diff` | Savant class 6 per batted ball | balls in play | 80 | 40 |
+| `sc_sp_hard_hit_pct_allowed_diff` | Contact ≥ 95 mph | balls in play | 50 | 40 |
+| `sc_sp_avg_exit_velocity_allowed_diff` | Mean exit velocity | balls in play | 40 | 40 |
+| `sc_sp_whiff_pct_diff` | Swings missed per swing | swings | 150 | 150 |
+| `sc_sp_chase_pct_diff` | Swings induced outside the zone | pitches out of zone | 200 | 150 |
+| `sc_sp_csw_pct_diff` | Called strikes plus whiffs per pitch | pitches | 250 | 300 |
+| `sc_sp_fastball_velocity_diff` | Mean four-seam velocity | four-seam fastballs | 150 | 100 |
+| `sc_sp_velocity_delta_30d_diff` | 30-day velocity minus the pitcher's own season | four-seam fastballs | — | 60 |
 
-### `sc_sp_delta_*` — condition change (`statcast_sp_delta`)
+`k` is smaller than the wOBA-against equivalents in §1 because contact-quality
+rates settle faster than outcome rates: the measurement is of the batted ball
+itself, not of where eight fielders happened to be standing.
 
-Differences of the above between a recent window and a baseline. These are the
-group most likely to be noise, and are registered separately **so ablation can
-reject them without taking the level features with them**.
+**xwOBA against uses Savant's construction** — the expected value of the contact
+where there was contact, the actual value everywhere else. A walk is worth a
+walk and a strikeout is worth nothing. Restricting it to balls in play would
+score a pitcher on contact quality alone and credit him nothing for missing
+bats.
 
-`sc_sp_velo_delta_14`, `sc_sp_velo_delta_30`, `sc_sp_spin_delta_30`,
-`sc_sp_extension_delta_30`, `sc_sp_movement_delta_30`, `sc_sp_usage_delta_30`.
+**Rates are ratios of sums, never means of per-game rates.** A 90-pitch start
+and a 10-pitch relief appearance are not two equal observations; averaging their
+rates says they are.
+
+**Shrinkage follows §1 rule 2 exactly.** This season regresses toward the
+pitcher's prior season, which is itself first regressed toward the league. In
+April a pitcher is mostly last year's pitcher; by August he is this year's. The
+league priors are computed from the same as-of slice, so an April prior is
+April's league and not the finished season's.
+
+**Velocity is a delta, per §1 rule 3.** Ninety-two says one thing about a
+pitcher who has always thrown 92 and something else entirely about one who threw
+95 in April. The level is also carried, separately, so the model can use both.
+
+A rate with no denominator is **missing, not zero**, all the way to the screen.
+A barrel rate of 0.0 would claim a pitcher has never allowed hard contact.
+
+### `sc_sp_delta_*` — condition change beyond velocity
+
+Not built. The velocity trend above is the one member of this family that is in
+`fs_v2`; spin, extension, movement and usage deltas are deferred until the
+velocity trend has been measured, because they are the group most likely to be
+noise and there is no reason to spend the evaluation budget on all of them at
+once.
 
 A flagged change is surfaced as a **risk on the game screen** regardless of
 whether it earns model weight. "This starter is down 1.4 mph over two weeks" is
@@ -460,17 +484,36 @@ for the later timeline snapshots and evaluated there.
 `lineup_platoon_advantage`, `lineup_vs_arsenal_xwoba`,
 `lineup_confirmed_minus_projected`, `lineup_missing_starter_impact`.
 
-### Expected plate appearances by batting order
+### Expected plate appearances by batting order — **measured**
 
-Weights used for every lineup aggregate, from the empirical distribution of
-plate appearances by slot in a nine-inning game:
+Weights used for every lineup aggregate. These are now computed from the
+ingested box scores rather than assumed, and the assumption was wrong in both
+level and spread:
 
 | Slot | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
 |---|---|---|---|---|---|---|---|---|---|
-| Expected PA | 4.65 | 4.55 | 4.44 | 4.34 | 4.23 | 4.12 | 4.01 | 3.91 | 3.80 |
+| **Measured** | 4.448 | 4.356 | 4.252 | 4.157 | 4.022 | 3.889 | 3.752 | 3.595 | 3.442 |
+| Previously assumed | 4.65 | 4.55 | 4.44 | 4.34 | 4.23 | 4.12 | 4.01 | 3.91 | 3.80 |
 
-Recomputed from ingested box scores rather than assumed, and stored as a
-constant with the query that produced it.
+16,314 starts per slot, nine-inning regular-season games only. The query:
+
+```sql
+SELECT p.batting_order_slot, AVG(p.pa)
+FROM player_game_stats p JOIN games g ON g.id = p.game_id
+WHERE p.role = 'batter' AND p.is_starter
+  AND p.batting_order_slot BETWEEN 1 AND 9
+  AND g.game_type = 'R' AND g.is_final AND g.innings_played = 9
+GROUP BY 1;
+```
+
+The nine measured weights sum to 35.9, not to the ~38 plate appearances a team
+takes in a nine-inning game, and that gap is the point: this is the expected PA
+of **the player who starts in that slot**, not of the slot. A starter who is
+pinch-hit for in the seventh contributes his own three trips and no more. That
+is exactly the quantity a projected-lineup weight wants, because it already
+prices in the chance of being lifted — and the chance rises down the order,
+which is why the measured spread (1.01 PA from first to ninth) is wider than
+the assumed one (0.85).
 
 ---
 

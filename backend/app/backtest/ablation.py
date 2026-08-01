@@ -24,8 +24,14 @@ log = get_logger(__name__)
 # difference is inside run-to-run noise for a season-scale sample.
 NOISE_BAND = 0.0015
 
+# Matching is by substring, so a group whose prefix is contained in another's
+# must be excluded explicitly — see EXCLUDED_FROM below. Without that,
+# "sc_sp_whiff_pct_diff" would be counted in `starting_pitcher` as well as in
+# `starting_pitcher_statcast`, and removing one group would silently remove
+# part of the other.
 FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     "starting_pitcher": ("sp_",),
+    "starting_pitcher_statcast": ("sc_sp_",),
     "bullpen": ("bp_",),
     "recent_form": ("_w30_", "_w14_", "off_form_delta"),
     "head_to_head": ("h2h_",),
@@ -100,9 +106,20 @@ class AblationRow:
         )
 
 
+# A group's members minus anything claimed by a more specific group.
+EXCLUDED_FROM: dict[str, tuple[str, ...]] = {
+    "starting_pitcher": ("sc_sp_",),
+}
+
+
 def group_members(group: str, feature_names: list[str]) -> list[str]:
     prefixes = FEATURE_GROUPS.get(group, ())
-    return [name for name in feature_names if any(p in name for p in prefixes)]
+    excluded = EXCLUDED_FROM.get(group, ())
+    return [
+        name
+        for name in feature_names
+        if any(p in name for p in prefixes) and not any(e in name for e in excluded)
+    ]
 
 
 def run_ablation(
