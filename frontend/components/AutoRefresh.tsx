@@ -49,12 +49,19 @@ export function AutoRefresh({ firstPitches }: { firstPitches: string[] }) {
         className="pill flex cursor-pointer items-center gap-1.5 px-2 py-1"
         title="Auto-refresh near first pitch"
       >
+        {/*
+         * A 12px checkbox is not a touch target. The `after:` pseudo-element
+         * extends what the browser hit-tests out to 44pt without changing the
+         * box the layout sees — the same trick the info icon uses, and the one
+         * the iPhone audit in e2e/mobile.spec.ts knows how to measure. It is
+         * switched off above `sm`, where a cursor does not need it.
+         */}
         <input
           type="checkbox"
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
           aria-label="Auto-refresh near first pitch"
-          className="size-3 accent-[var(--accent)]"
+          className="relative size-3 accent-[var(--accent)] after:absolute after:-inset-[16px] after:content-[''] sm:after:hidden"
         />
         <span aria-hidden className="whitespace-nowrap">
           <span className="sm:hidden">Auto-refresh</span>

@@ -8,7 +8,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   return (
-    <div className="surface p-8">
+    <div className="card p-8">
       <h1 className="text-lg font-semibold">Something went wrong</h1>
       <p className="mt-2 text-sm muted">{error.message}</p>
       <button

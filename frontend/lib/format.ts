@@ -77,6 +77,23 @@ export function longDate(iso: string, options?: { weekday?: boolean }): string {
 }
 
 /**
+ * "Aug 1, 2026" — the short month.
+ *
+ * For the narrowest iPhone, where "Saturday, August 1, 2026" truncates and
+ * silently eats the year. Losing the year on a date picker is worse than losing
+ * three letters of the month.
+ */
+export function mediumDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
  * "Fri" — the weekday alone.
  *
  * Split out from `longDate` so the date bar can set the weekday and the date at

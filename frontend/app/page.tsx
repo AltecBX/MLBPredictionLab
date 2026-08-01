@@ -6,7 +6,14 @@ import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
-import { longDate, shiftIsoDate, timestamp, todayIsoDate, weekdayShort } from "@/lib/format";
+import {
+  longDate,
+  mediumDate,
+  shiftIsoDate,
+  timestamp,
+  todayIsoDate,
+  weekdayShort,
+} from "@/lib/format";
 import { GROUP_HINT, GROUP_LABEL, groupSlate } from "@/lib/status";
 
 export const dynamic = "force-dynamic";
@@ -90,7 +97,14 @@ export default async function GameCenterPage({
           <div className="flex min-w-0 items-center justify-center gap-2">
             <p className="t-heading min-w-0 truncate text-center">
               <span className="subtle">{weekdayShort(date)}</span>{" "}
-              <span style={{ fontWeight: 640 }}>{longDate(date, { weekday: false })}</span>
+              <span style={{ fontWeight: 640 }}>
+                {/* The 375px iPhone truncates the long month and swallows the
+                    year with it. Three letters of month is the cheaper loss. */}
+                <span className="min-[420px]:hidden">{mediumDate(date)}</span>
+                <span className="hidden min-[420px]:inline">
+                  {longDate(date, { weekday: false })}
+                </span>
+              </span>
             </p>
             {!isToday ? (
               <Link
