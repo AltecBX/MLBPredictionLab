@@ -77,24 +77,25 @@ def build_dataset(
     include_unplayed: bool = False,
     game_types: tuple[str, ...] = DEFAULT_GAME_TYPES,
     store: AsOfStore | None = None,
+    feature_set_version: str | None = None,
 ) -> Dataset:
     """Build the model matrix for every eligible game."""
     policy: AsOfPolicy = as_of_policy or settings.prediction_as_of_policy  # type: ignore[assignment]
     store = store or AsOfStore.load(session, seasons)
     elo = AsOfElo(store.games)
-    builder = FeatureBuilder(store, elo)
+    version = feature_set_version or FEATURE_SET_VERSION
+    builder = FeatureBuilder(store, elo, feature_set_version=version)
 
     games = store.games
     if games.empty:
-        return Dataset(pd.DataFrame(), feature_keys(FEATURE_SET_VERSION),
-                       FEATURE_SET_VERSION, policy)
+        return Dataset(pd.DataFrame(), feature_keys(version), version, policy)
 
     eligible = games[games["game_type"].isin(game_types)]
     if not include_unplayed:
         eligible = eligible[eligible["home_win"].notna()]
     eligible = eligible.sort_values("game_date_utc")
 
-    names = feature_keys(FEATURE_SET_VERSION)
+    names = feature_keys(version)
     rows: list[dict[str, object]] = []
     skipped = 0
 
@@ -145,7 +146,7 @@ def build_dataset(
         features=len(names),
         policy=policy,
     )
-    return Dataset(frame, names, FEATURE_SET_VERSION, policy)
+    return Dataset(frame, names, version, policy)
 
 
 def build_vectors_for_games(

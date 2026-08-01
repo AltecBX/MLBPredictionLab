@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import LeakageError
 from app.core.logging import get_logger
 from app.db.models import Ballpark, Game, Player, PlayerGameStat, TeamGameStat
+from app.features.statcast_agg import load_pitcher_statcast
 
 log = get_logger(__name__)
 
@@ -86,11 +87,17 @@ class AsOfStore:
         pitcher_games: pd.DataFrame,
         players: pd.DataFrame,
         ballparks: pd.DataFrame,
+        pitcher_statcast: pd.DataFrame | None = None,
     ) -> None:
         self.games = games
         self.pitcher_games = pitcher_games
         self.players = players
         self.ballparks = ballparks
+        # Optional: empty until Statcast has been ingested. Absent is absent —
+        # every feature built from it reports UNAVAILABLE rather than zero.
+        self.pitcher_statcast = (
+            pd.DataFrame() if pitcher_statcast is None else pitcher_statcast
+        )
         self.team_games = self._attach_opponent_starter_hand(
             team_games, pitcher_games, players
         )
@@ -100,6 +107,9 @@ class AsOfStore:
 
         self._team_index = self._build_index(self.team_games, "team_id")
         self._pitcher_index = self._build_index(pitcher_games, "player_id")
+        self._pitcher_statcast_index = self._build_index(
+            self.pitcher_statcast, "player_id"
+        )
         self._team_pitchers_index = self._build_index(pitcher_games, "team_id")
         self._schedule_index = self._build_schedule_index(games)
         self._player_hand = dict(zip(players["id"], players["pitch_hand"], strict=False))
@@ -158,12 +168,19 @@ class AsOfStore:
             ).mappings().all()
         )
 
+        pitcher_statcast = load_pitcher_statcast(session)
+        if seasons and not pitcher_statcast.empty:
+            pitcher_statcast = pitcher_statcast[
+                pitcher_statcast["season"].isin(seasons)
+            ].reset_index(drop=True)
+
         return cls(
             cls._prepare_games(games),
             cls._prepare_team_games(team_games, games),
             cls._prepare_pitcher_games(pitcher_games),
             players,
             ballparks,
+            pitcher_statcast,
         )
 
     # -- preparation -------------------------------------------------------
@@ -311,6 +328,42 @@ class AsOfStore:
         if starters_only and not frame.empty:
             frame = frame[frame["is_starter"]]
         return frame
+
+    def pitcher_statcast_asof(
+        self,
+        pitcher_id: int,
+        as_of: datetime,
+        start: datetime | None = None,
+        starters_only: bool = False,
+    ) -> pd.DataFrame:
+        """Per-game Statcast aggregates for one pitcher, cut at ``as_of``."""
+        frame = self._slice(self._pitcher_statcast_index, pitcher_id, as_of, start)
+        if starters_only and not frame.empty:
+            frame = frame[frame["is_starter"]]
+        return frame
+
+    @property
+    def has_statcast(self) -> bool:
+        return not self.pitcher_statcast.empty
+
+    def league_pitcher_statcast_asof(
+        self, as_of: datetime, start: datetime | None = None, starters_only: bool = False
+    ) -> pd.DataFrame:
+        if self.pitcher_statcast.empty:
+            return self.pitcher_statcast
+        cutoff = int(
+            np.searchsorted(
+                _ns_array(self.pitcher_statcast["knowledge_time"]), _ns(as_of),
+                side="right",
+            )
+        )
+        window = self.pitcher_statcast.iloc[:cutoff]
+        mask = window["game_date_utc"] < as_of
+        if start is not None:
+            mask &= window["game_date_utc"] >= start
+        if starters_only:
+            mask &= window["is_starter"]
+        return window[mask]
 
     def team_pitcher_games_asof(
         self,

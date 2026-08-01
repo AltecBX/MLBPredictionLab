@@ -17,8 +17,10 @@ from typing import Any
 
 import pandas as pd
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.features import aggregates as agg
+from app.features import statcast_features as sc
 from app.features.asof import AsOfStore, season_start_utc
 from app.features.context import GameContext
 from app.features.elo import AsOfElo
@@ -37,7 +39,12 @@ from app.features.shrinkage import (
 
 log = get_logger(__name__)
 
-FEATURE_SET_VERSION = "fs_v1"
+# The default feature set. `fs_v2` adds the starting-pitcher Statcast group;
+# it becomes the default only once the walk-forward comparison says it earns it,
+# and until then FEATURE_SET_VERSION selects it via configuration rather than by
+# an edit here. Either way the builder computes both — the version decides what
+# reaches the model.
+FEATURE_SET_VERSION = settings.feature_set_version
 
 # Innings of relief work a rested bullpen absorbs per day, used only as the
 # denominator of the fatigue index (a ratio), never presented as observed data.
@@ -108,7 +115,13 @@ class FeatureVector:
 class FeatureBuilder:
     """Builds as-of feature vectors. One instance per store; safe to reuse."""
 
-    def __init__(self, store: AsOfStore, elo: AsOfElo | None = None) -> None:
+    def __init__(
+        self,
+        store: AsOfStore,
+        elo: AsOfElo | None = None,
+        feature_set_version: str | None = None,
+    ) -> None:
+        self.feature_set_version = feature_set_version or FEATURE_SET_VERSION
         self.store = store
         self.elo = elo if elo is not None else AsOfElo(store.games)
         self._league_cache: dict[tuple[int, str], LeagueBaseline] = {}
@@ -226,6 +239,7 @@ class FeatureBuilder:
         values.update(
             self._pitching_values(team_id, starter_id, ctx, as_of, season_start, baseline)
         )
+        values.update(self._statcast_starter_values(starter_id, ctx, as_of, season_start))
         values.update(self._schedule_values(team_id, ctx, as_of))
         values.update(self._history_values(team_id, opponent_id, ctx, as_of, season_start))
 
@@ -499,6 +513,50 @@ class FeatureBuilder:
         )
         return out
 
+    def _statcast_starter_values(
+        self,
+        starter_id: int | None,
+        ctx: GameContext,
+        as_of: datetime,
+        season_start: datetime,
+    ) -> dict[str, FeatureValue]:
+        """Contact quality and stuff for tonight's starter.
+
+        Reports every key as missing — never zero — when Statcast has not been
+        ingested for the window, when no starter is named, or when the pitcher
+        has nothing on record. A barrel rate of 0.0 would claim a pitcher has
+        never allowed hard contact; the absence of a measurement is a different
+        state and stays one.
+        """
+        if not self.store.has_statcast:
+            return {
+                key: FeatureValue.missing("Statcast not ingested for this window")
+                for key in sc.FEATURE_KEYS
+            }
+        if starter_id is None:
+            return {
+                key: FeatureValue.missing("starting pitcher not identified")
+                for key in sc.FEATURE_KEYS
+            }
+
+        season_slice = self.store.pitcher_statcast_asof(starter_id, as_of, season_start)
+        self.store.assert_as_of(season_slice, as_of, f"statcast starter {starter_id}")
+        prior_slice = self.store.pitcher_statcast_asof(
+            starter_id, as_of, season_start_utc(ctx.season - 1)
+        )
+        # The prior-season window ends where this season begins.
+        if not prior_slice.empty:
+            prior_slice = prior_slice[prior_slice["game_date_utc"] < season_start]
+        recent_slice = self.store.pitcher_statcast_asof(
+            starter_id, as_of, sc.recent_window_start(as_of)
+        )
+
+        league = self.store.league_pitcher_statcast_asof(
+            as_of, season_start, starters_only=True
+        )
+        baseline = sc.StatcastBaseline.from_rates(sc.summarize(league))
+        return sc.starter_values(season_slice, prior_slice, recent_slice, baseline)
+
     @staticmethod
     def _starter_rest(
         career_starts: pd.DataFrame, first_pitch: datetime
@@ -669,6 +727,11 @@ class FeatureBuilder:
             ("def_efficiency_proxy_diff", "def_efficiency_proxy"),
             ("sched_days_rest_diff", "sched_days_rest"),
             ("h2h_season_series_shrunk_diff", "h2h_season_series"),
+            ("sc_sp_whiff_pct_diff", "sc_sp_whiff_pct"),
+            ("sc_sp_chase_pct_diff", "sc_sp_chase_pct"),
+            ("sc_sp_csw_pct_diff", "sc_sp_csw_pct"),
+            ("sc_sp_fastball_velocity_diff", "sc_sp_fastball_velocity"),
+            ("sc_sp_velocity_delta_30d_diff", "sc_sp_velocity_delta_30d"),
         ):
             emit(key, _diff(home.get(source), away.get(source)))
 
@@ -690,6 +753,10 @@ class FeatureBuilder:
             ("sched_timezone_shift_diff", "sched_timezone_shift"),
             ("sched_games_last_7d_diff", "sched_games_last_7d"),
             ("sched_day_after_night_diff", "sched_day_after_night"),
+            ("sc_sp_xwoba_allowed_diff", "sc_sp_xwoba_allowed"),
+            ("sc_sp_barrel_pct_allowed_diff", "sc_sp_barrel_pct_allowed"),
+            ("sc_sp_hard_hit_pct_allowed_diff", "sc_sp_hard_hit_pct_allowed"),
+            ("sc_sp_avg_exit_velocity_allowed_diff", "sc_sp_avg_exit_velocity_allowed"),
         ):
             emit(key, _diff(away.get(source), home.get(source)))
 
@@ -714,14 +781,14 @@ class FeatureBuilder:
             emit("env_is_dome", FeatureValue.missing("ballpark not on record"))
             emit("env_venue_elevation_km", FeatureValue.missing("ballpark not on record"))
 
-        expected = feature_keys(FEATURE_SET_VERSION)
+        expected = feature_keys(self.feature_set_version)
         present = [k for k in expected if features.get(k) is not None]
         completeness = self._completeness(home, away, features)
 
         return FeatureVector(
             game_id=ctx.game_id,
             as_of=as_of,
-            feature_set_version=FEATURE_SET_VERSION,
+            feature_set_version=self.feature_set_version,
             features={k: features.get(k) for k in expected},
             sample_sizes={k: samples.get(k, 0) for k in expected},
             estimated_flags={k: estimated.get(k, True) for k in expected},

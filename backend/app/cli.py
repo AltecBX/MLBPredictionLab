@@ -240,6 +240,35 @@ def cmd_ensemble_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_compare_feature_sets(args: argparse.Namespace) -> int:
+    """Walk-forward comparison of two feature sets, on the same games.
+
+    This is the gate a candidate feature group has to pass. Exits 0 whatever the
+    verdict — a measured "no" is a successful measurement, and the repository
+    keeps those on purpose.
+    """
+    from app.backtest.feature_set_compare import compare_feature_sets
+    from app.db.session import session_scope
+
+    seasons = [int(s) for s in args.seasons.split(",")] if args.seasons else None
+    with session_scope() as session:
+        comparison = compare_feature_sets(
+            session,
+            baseline_version=args.baseline,
+            candidate_version=args.candidate,
+            seasons=seasons,
+            start=args.start,
+            end=args.end,
+            step_days=args.step_days,
+        )
+
+    if comparison is None:
+        print(json.dumps({"error": "walk-forward produced no comparable games"}))
+        return 1
+    print(json.dumps(comparison.to_dict(), indent=2, default=str))
+    return 0
+
+
 def cmd_check_sources(args: argparse.Namespace) -> int:
     from app.db.session import session_scope
     from app.services.diagnostics import refresh_freshness
@@ -324,6 +353,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--step-days", type=int, default=45)
     p.set_defaults(func=cmd_ensemble_check)
+
+    p = sub.add_parser(
+        "compare-feature-sets",
+        help="Walk-forward comparison of a candidate feature set against the active one",
+    )
+    p.add_argument("--baseline", default="fs_v1")
+    p.add_argument("--candidate", default="fs_v2")
+    p.add_argument("--seasons", default=None, help="e.g. 2024,2025")
+    p.add_argument("--start", type=_parse_date, default=None)
+    p.add_argument("--end", type=_parse_date, default=None)
+    p.add_argument("--step-days", type=int, default=30)
+    p.set_defaults(func=cmd_compare_feature_sets)
 
     sub.add_parser("check-sources", help="Recompute freshness").set_defaults(
         func=cmd_check_sources

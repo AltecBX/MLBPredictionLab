@@ -355,18 +355,6 @@ FS_V1: list[FeatureSpec] = [
 
 # --- Later-phase features: registered, unavailable in Phase 1 ---------------
 DEFERRED: list[FeatureSpec] = [
-    FeatureSpec("sp_xwoba_allowed_diff", "Starter xwOBA allowed",
-                FeatureCategory.STARTING_PITCHING,
-                "Expected wOBA allowed from Statcast contact quality.",
-                phase=2, available=False, source_category="statcast"),
-    FeatureSpec("sp_barrel_pct_allowed_diff", "Starter barrel rate allowed",
-                FeatureCategory.STARTING_PITCHING,
-                "Barrels per batted ball allowed.",
-                phase=2, available=False, source_category="statcast"),
-    FeatureSpec("sp_velocity_delta_30d_diff", "Starter velocity trend",
-                FeatureCategory.STARTING_PITCHING,
-                "30-day change in fastball velocity, an early injury/fatigue signal.",
-                phase=2, available=False, source_category="statcast"),
     FeatureSpec("sp_tto_penalty_diff", "Times-through-order penalty",
                 FeatureCategory.STARTING_PITCHING,
                 "wOBA increase from first to third time through the order.",
@@ -420,10 +408,103 @@ DEFERRED: list[FeatureSpec] = [
 ]
 
 
-REGISTRY: dict[str, FeatureSpec] = {s.key: s for s in FS_V1 + DEFERRED}
+# --- Phase 2A: starting-pitcher Statcast (fs_v2) ---------------------------
+#
+# Registered as a group so `run_ablation` can hold it out whole. Each is a
+# home-minus-away difference oriented so that a POSITIVE value favors the home
+# side, like every other feature here — for the four "allowed" measures that
+# means away-minus-home, since allowing weaker contact is the good outcome.
+#
+# Nothing in this list is claimed to help. It enters the model only if the
+# walk-forward comparison in BACKTEST_PLAN.md says it does.
+SC_SP: list[FeatureSpec] = [
+    FeatureSpec(
+        "sc_sp_xwoba_allowed_diff", "Starter xwOBA allowed",
+        FeatureCategory.STARTING_PITCHING,
+        "Expected wOBA against, from Statcast contact quality on balls in play "
+        "and the actual value of every other plate appearance. Regressed toward "
+        "the pitcher's prior season, itself regressed toward the league.",
+        unit="xwOBA", window="season", min_sample=100, phase=2,
+        higher_favors_home=False, source_category="statcast",
+        narrative="sends out the starter allowing weaker expected contact",
+    ),
+    FeatureSpec(
+        "sc_sp_barrel_pct_allowed_diff", "Starter barrel rate allowed",
+        FeatureCategory.STARTING_PITCHING,
+        "Barrels per batted ball allowed, using Savant's own classification.",
+        unit="pct", window="season", min_sample=40, phase=2,
+        higher_favors_home=False, source_category="statcast",
+        narrative="has given up barrels less often",
+    ),
+    FeatureSpec(
+        "sc_sp_hard_hit_pct_allowed_diff", "Starter hard-hit rate allowed",
+        FeatureCategory.STARTING_PITCHING,
+        "Share of batted balls allowed at 95 mph or more.",
+        unit="pct", window="season", min_sample=40, phase=2,
+        higher_favors_home=False, source_category="statcast",
+        narrative="has allowed hard contact less often",
+    ),
+    FeatureSpec(
+        "sc_sp_avg_exit_velocity_allowed_diff", "Starter exit velocity allowed",
+        FeatureCategory.STARTING_PITCHING,
+        "Mean exit velocity of batted balls allowed.",
+        unit="mph", window="season", min_sample=40, phase=2,
+        higher_favors_home=False, source_category="statcast",
+        narrative="has been hit less hard on average",
+    ),
+    FeatureSpec(
+        "sc_sp_whiff_pct_diff", "Starter whiff rate",
+        FeatureCategory.STARTING_PITCHING,
+        "Swings missed per swing. Measures stuff without the strikeout's "
+        "dependence on the count getting there.",
+        unit="pct", window="season", min_sample=150, phase=2,
+        source_category="statcast",
+        narrative="sends out the starter who misses more bats",
+    ),
+    FeatureSpec(
+        "sc_sp_chase_pct_diff", "Starter chase rate",
+        FeatureCategory.STARTING_PITCHING,
+        "Swings induced on pitches outside the zone, per pitch outside the zone.",
+        unit="pct", window="season", min_sample=150, phase=2,
+        source_category="statcast",
+        narrative="gets hitters to chase more often",
+    ),
+    FeatureSpec(
+        "sc_sp_csw_pct_diff", "Starter called-strike-plus-whiff rate",
+        FeatureCategory.STARTING_PITCHING,
+        "Called strikes plus whiffs per pitch — command and stuff in one rate, "
+        "and the fastest-stabilizing of the three.",
+        unit="pct", window="season", min_sample=300, phase=2,
+        source_category="statcast",
+        narrative="has the better combination of command and swing-and-miss",
+    ),
+    FeatureSpec(
+        "sc_sp_fastball_velocity_diff", "Starter fastball velocity",
+        FeatureCategory.STARTING_PITCHING,
+        "Mean four-seam velocity. Four-seam only, so a change in pitch usage "
+        "cannot be mistaken for a change in stuff.",
+        unit="mph", window="season", min_sample=100, phase=2,
+        source_category="statcast",
+        narrative="throws harder",
+    ),
+    FeatureSpec(
+        "sc_sp_velocity_delta_30d_diff", "Starter velocity trend",
+        FeatureCategory.STARTING_PITCHING,
+        "Last 30 days of fastball velocity minus the pitcher's own season "
+        "average. A delta rather than a level, so recent form moves the "
+        "prediction without erasing the season behind it.",
+        unit="mph", window="w30", min_sample=60, phase=2,
+        source_category="statcast",
+        narrative="is throwing harder lately than his own season baseline",
+    ),
+]
+
+
+REGISTRY: dict[str, FeatureSpec] = {s.key: s for s in FS_V1 + SC_SP + DEFERRED}
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     "fs_v1": [s.key for s in FS_V1],
+    "fs_v2": [s.key for s in FS_V1 + SC_SP],
 }
 
 
