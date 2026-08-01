@@ -71,6 +71,9 @@ test-frontend:  ## Frontend component tests
 e2e:  ## End-to-end: daily workflow + iPhone layout contract
 	cd frontend && npm run build && npx playwright test
 
+ensemble-check:  ## Walk-forward: logistic vs GBDT vs blend
+	cd backend && ../$(PY) -m app.cli ensemble-check
+
 lint:  ## Lint the backend
 	cd backend && ../$(PY) -m ruff check app tests
 
