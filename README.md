@@ -123,9 +123,14 @@ Two things worth knowing before you start:
 
 * A fresh deploy comes up **empty**, and every screen will say `UNAVAILABLE`.
   That is correct. Seeding is a separate, deliberate step.
-* Ingesting four seasons takes about 45 minutes and lands at **908 MB**, which
-  does not fit a 1 GB free Postgres tier. Two seasons do. Both numbers are
-  measured; DEPLOYMENT.md § Sizing has the per-table breakdown.
+* **Budget 60–90 minutes for the seed** on the hosted path, then ~9 minutes to
+  train. The runner writes across the public internet to a hosted database, and
+  that network is the whole cost — locally, with Postgres on the same machine,
+  four seasons takes 45 minutes. The seed workflow skips storing verbatim
+  provider payloads by default because at 56 KB a game they are three quarters
+  of the write volume; DEPLOYMENT.md explains the tradeoff.
+* Four seasons lands at **908 MB**, which does not fit a 1 GB free Postgres
+  tier. Two seasons do.
 
 ---
 

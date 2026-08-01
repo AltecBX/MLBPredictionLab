@@ -39,11 +39,15 @@ services:
     runtime: docker
     plan: free
     region: oregon
-    # Both paths are relative to the REPO ROOT, not to rootDir. rootDir only
-    # scopes which changes trigger a rebuild.
+    # rootDir makes every other path relative to ITSELF, not to the repo root
+    # (render.com/docs/monorepo-support: dockerfilePath and dockerContext
+    # "operate relative to the root directory"). The blueprint-spec page says
+    # "relative to the repo root", which is true only when rootDir is unset —
+    # trusting that sentence with rootDir set resolved this to
+    # backend/backend/Dockerfile and failed every deploy in nine seconds.
+    # dockerContext is omitted deliberately: it defaults to rootDir already.
     rootDir: backend
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -86,9 +90,9 @@ services:
     runtime: docker
     plan: free
     region: oregon
+    # Same rootDir-relative rule as the API above.
     rootDir: frontend
-    dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
+    dockerfilePath: ./Dockerfile
     envVars:
       # The API's PUBLIC hostname, not its private one. A free Render service
       # cannot *receive* private network traffic, so a private address here
