@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
-from app.db.models import BacktestResult, BacktestRun
 from app.backtest.metrics import ALWAYS_FIFTY_LOG_LOSS
+from app.db.models import BacktestResult, BacktestRun
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 

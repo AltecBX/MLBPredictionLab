@@ -6,7 +6,6 @@ cross-validation anywhere (LEAKAGE_PREVENTION.md §8).
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 import numpy as np

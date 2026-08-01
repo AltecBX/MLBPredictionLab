@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
 from app.core.logging import get_logger
-from app.db.upsert import upsert
 from app.db.models import Ballpark, Player, Team
+from app.db.upsert import upsert
 from app.ingestion.status import apply_provider_result, job_run
 from app.providers.base import ProviderStatus
 from app.providers.registry import get_reference_provider

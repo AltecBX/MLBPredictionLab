@@ -21,8 +21,8 @@ from app.providers.base import (
     RawTeam,
     RawVenue,
 )
-from app.providers.mlb_statsapi.client import SOURCE_NAME, MlbStatsApiClient
 from app.providers.mlb_statsapi import mappers
+from app.providers.mlb_statsapi.client import SOURCE_NAME, MlbStatsApiClient
 
 log = get_logger(__name__)
 

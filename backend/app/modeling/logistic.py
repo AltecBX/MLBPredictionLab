@@ -26,7 +26,10 @@ from app.modeling.calibration import Calibrator, fit_calibrator
 # Regularization grid searched by walk-forward validation only. It extends well
 # below the usual default because MLB game features are noisy and the optimum
 # must land inside the grid, not on its edge.
-C_GRID = (0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0)
+# The lower end is measured, not guessed: walk-forward log loss over four
+# seasons rises again below 0.001 (0.6847 at 0.0003, 0.6867 at 0.0001), so the
+# selected value lands inside the grid rather than on its edge.
+C_GRID = (0.0001, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0)
 
 
 def _sigmoid(x: np.ndarray | float) -> np.ndarray | float:

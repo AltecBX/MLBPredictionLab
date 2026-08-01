@@ -15,7 +15,6 @@ from app.providers.base import (
     DataCategory,
     ProviderResult,
     ProviderStatus,
-    RawGame,
     ScheduleProvider,
 )
 from app.providers.mlb_statsapi import mappers

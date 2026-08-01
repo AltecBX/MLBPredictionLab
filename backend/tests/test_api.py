@@ -7,7 +7,6 @@ reachable the module skips rather than silently passing.
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -20,9 +19,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.models import (  # noqa: E402
-    Ballpark,
     BacktestResult,
     BacktestRun,
+    Ballpark,
     DataSourceStatus,
     Game,
     ModelVersion,

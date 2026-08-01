@@ -8,14 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.cache import cached_json, make_key
+from app.api.deps import db_session
 from app.core.clock import utcnow
 from app.core.config import settings
 from app.db.models import Game, ModelVersion
-from app.api.deps import db_session
 from app.schemas.common import FreshnessEntry
 from app.schemas.games import GameDetail, GameListResponse
-from app.services.freshness import cache_ttl, freshness_report
+from app.services.freshness import freshness_report
 from app.services.game_view import (
     SORT_KEYS,
     build_game_cards,

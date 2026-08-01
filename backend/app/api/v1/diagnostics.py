@@ -12,7 +12,6 @@ from app.core.cache import health as cache_health
 from app.core.clock import utcnow
 from app.core.config import settings
 from app.db.session import db_health
-from app.features.registry import DEFERRED, FS_V1, CATEGORY_LABELS
 from app.providers.registry import configured_categories
 from app.services.diagnostics import diagnostics_snapshot
 from app.services.freshness import freshness_report

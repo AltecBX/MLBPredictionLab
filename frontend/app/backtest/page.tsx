@@ -223,11 +223,20 @@ export default async function BacktestPage() {
 
   if (!result.ok) {
     return (
-      <UnavailableNotice
-        title="No backtest report available"
-        reason={result.message}
-        requiredSource="run `make backtest`"
-      />
+      <div className="flex flex-col gap-5">
+        <header>
+          <h1 className="text-xl font-semibold tracking-tight">Walk-forward backtest</h1>
+          <p className="mt-1 max-w-prose text-sm muted">
+            The model is trained only on games before each prediction date. Log loss,
+            Brier score and calibration rank above accuracy.
+          </p>
+        </header>
+        <UnavailableNotice
+          title="No backtest report available"
+          reason={result.message}
+          requiredSource="make backtest"
+        />
+      </div>
     );
   }
 

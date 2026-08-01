@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from datetime import timedelta
 
 import pandas as pd
@@ -10,10 +9,8 @@ import pytest
 
 from app.core.clock import as_of_for_game
 from app.features import aggregates as agg
-from app.features.builder import FeatureBuilder
 from app.features.registry import FS_V1, REGISTRY, feature_keys, spec
 from app.features.shrinkage import FeatureValue, shrink, shrink_mean
-
 
 # --- registry contract ------------------------------------------------------
 

@@ -17,7 +17,6 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
-from app.core.config import settings
 from app.core.errors import ModelNotFoundError
 from app.core.logging import get_logger
 from app.db.models import (

@@ -7,13 +7,12 @@ stored, auditable one (ARCHITECTURE.md §5).
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
-from app.core.clock import utcnow
 from app.db.models import (
     Ballpark,
     Game,

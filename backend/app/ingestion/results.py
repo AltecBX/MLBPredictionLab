@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.db.upsert import upsert
 from app.db.models import (
     Game,
     GameOfficial,
@@ -23,6 +22,7 @@ from app.db.models import (
     PlayerGameStat,
     TeamGameStat,
 )
+from app.db.upsert import upsert
 from app.ingestion.reference import ingest_players
 from app.ingestion.status import apply_provider_result, job_run, record_source_status
 from app.providers.base import DataCategory, RawBoxscore

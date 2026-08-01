@@ -8,6 +8,7 @@ any slice can be recomputed, and runs the ablation suite and sanity gates
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 from datetime import date
 from typing import Any
 
@@ -28,10 +29,9 @@ from app.core.logging import get_logger
 from app.db.models import BacktestPrediction, BacktestResult, BacktestRun
 from app.db.upsert import upsert
 from app.ingestion.status import job_run
-from app.modeling.dataset import build_dataset
-from app.modeling.train import dominant_feature_share, select_hyperparameters
+from app.modeling.dataset import LABEL_COLUMN, build_dataset
 from app.modeling.logistic import LogisticWinModel
-from app.modeling.dataset import LABEL_COLUMN
+from app.modeling.train import dominant_feature_share, select_hyperparameters
 
 log = get_logger(__name__)
 
@@ -192,7 +192,7 @@ def _store_slices(session: Session, run_id: uuid.UUID, slices) -> None:
                     **item.extra,
                     "mean_predicted": m.mean_predicted,
                     "observed_rate": m.observed_rate,
-                    "bins": [b.__dict__ for b in m.bins] if item.slice_type == "overall" else [],
+                    "bins": [asdict(b) for b in m.bins] if item.slice_type == "overall" else [],
                 },
             }
         )

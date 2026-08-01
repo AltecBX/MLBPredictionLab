@@ -6,7 +6,6 @@ the as-of guarantees real rather than aspirational.
 
 from __future__ import annotations
 
-import inspect
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -15,7 +14,7 @@ import pytest
 
 from app.core.clock import as_of_for_game
 from app.core.errors import LeakageError
-from app.features.asof import OUTCOME_COLUMNS, AsOfStore
+from app.features.asof import OUTCOME_COLUMNS
 from app.features.builder import FeatureBuilder
 from app.features.context import FORBIDDEN_CONTEXT_FIELDS, GameContext
 from app.features.elo import AsOfElo, EloEngine
@@ -149,7 +148,6 @@ def test_a_game_finishing_after_as_of_is_invisible(store):
 # --- Vector 6: scaler/imputer fit only on train ------------------------------
 
 def test_scaler_fit_only_on_train():
-    import numpy as np
 
     from app.modeling.logistic import LogisticWinModel
 

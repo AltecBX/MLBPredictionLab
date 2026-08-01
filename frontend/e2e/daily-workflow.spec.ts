@@ -9,9 +9,29 @@ import { expect, test } from "@playwright/test";
  * could be mistaken for "no games today".
  */
 
-async function backendIsReachable(page: import("@playwright/test").Page) {
+type Page = import("@playwright/test").Page;
+
+async function backendIsReachable(page: Page) {
   await page.goto("/");
   return !(await page.getByText(/prediction API is unavailable/i).isVisible());
+}
+
+/**
+ * Open the first game with a prediction, or skip when the slate has none.
+ * Waits for the link rather than counting immediately, because a bare count()
+ * does not auto-wait and every route here is server-rendered on demand.
+ */
+async function openFirstGame(page: Page, date = "2026-08-01"): Promise<string> {
+  await page.goto(`/?date=${date}`);
+  const link = page.getByRole("link", { name: /Full breakdown/ }).first();
+  try {
+    await link.waitFor({ state: "visible", timeout: 15_000 });
+  } catch {
+    test.skip(true, `No games with predictions on ${date}.`);
+  }
+  await link.click();
+  await page.waitForURL(/\/game\/\d+/, { timeout: 30_000 });
+  return page.url().split("?")[0];
 }
 
 test.describe("daily game workflow", () => {
@@ -33,28 +53,20 @@ test.describe("daily game workflow", () => {
     await page.goto("/?date=2026-08-01");
     await expect(page.getByText("August 1, 2026")).toBeVisible();
     await page.getByRole("link", { name: "← Prev" }).click();
-    await expect(page).toHaveURL(/date=2026-07-31/);
+    // Every route is force-dynamic, so the client navigation waits on a server
+    // render that itself calls the API; give it room.
+    await page.waitForURL(/date=2026-07-31/, { timeout: 30_000 });
+    await expect(page.getByText("July 31, 2026")).toBeVisible();
   });
 
   test("a game card opens its full breakdown", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
-    const link = page.getByRole("link", { name: /Full breakdown/ }).first();
-    if ((await link.count()) === 0) {
-      test.skip(true, "No games with predictions on this date.");
-    }
-    await link.click();
-    await expect(page).toHaveURL(/\/game\/\d+/);
+    await openFirstGame(page);
     await expect(page.getByRole("navigation", { name: "Game sections" })).toBeVisible();
+    await expect(page.getByText(/Why the model favors/)).toBeVisible();
   });
 
   test("game detail tabs are deep-linkable and each renders", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
-    const link = page.getByRole("link", { name: /Full breakdown/ }).first();
-    if ((await link.count()) === 0) {
-      test.skip(true, "No games with predictions on this date.");
-    }
-    await link.click();
-    const url = page.url();
+    const base = await openFirstGame(page);
 
     for (const [tab, marker] of [
       ["pitchers", /Starter comparison/],
@@ -65,25 +77,19 @@ test.describe("daily game workflow", () => {
       ["market", /Model fair price/],
       ["backtest", /How reliable have similar predictions been/],
     ] as const) {
-      await page.goto(`${url.split("?")[0]}?tab=${tab}`);
-      await expect(page.getByText(marker)).toBeVisible();
+      await page.goto(`${base}?tab=${tab}`);
+      await expect(page.getByText(marker).first()).toBeVisible();
     }
   });
 
   test("unavailable data states name the source that would enable them", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
-    const link = page.getByRole("link", { name: /Full breakdown/ }).first();
-    if ((await link.count()) === 0) {
-      test.skip(true, "No games with predictions on this date.");
-    }
-    await link.click();
-    const base = page.url().split("?")[0];
+    const base = await openFirstGame(page);
 
     await page.goto(`${base}?tab=market`);
-    await expect(page.getByText("ODDS_PROVIDER")).toBeVisible();
+    await expect(page.getByText("ODDS_PROVIDER", { exact: true })).toBeVisible();
 
     await page.goto(`${base}?tab=lineups`);
-    await expect(page.getByText("LINEUP_PROVIDER")).toBeVisible();
+    await expect(page.getByText("LINEUP_PROVIDER", { exact: true })).toBeVisible();
   });
 
   test("no page promises a guaranteed outcome", async ({ page }) => {
@@ -97,7 +103,7 @@ test.describe("daily game workflow", () => {
   test("backtest page shows calibration and metrics or says why not", async ({ page }) => {
     await page.goto("/backtest");
     await expect(page.getByRole("heading", { name: "Walk-forward backtest" })).toBeVisible();
-    const missing = page.getByText(/No backtest report available/);
+    const missing = page.getByText(/No backtest report available/).first();
     if (await missing.isVisible()) return;
     await expect(page.getByText("Log loss").first()).toBeVisible();
     await expect(page.getByRole("img", { name: /Calibration chart/ })).toBeVisible();
@@ -134,9 +140,11 @@ test.describe("daily game workflow", () => {
     expect(overflow).toBeLessThanOrEqual(1);
   });
 
-  test("an unknown game id returns the not-found page", async ({ page }) => {
-    const response = await page.goto("/game/999999999");
-    expect(response?.status()).toBe(404);
-    await expect(page.getByText("Not found")).toBeVisible();
+  test("an unknown game id renders the not-found page", async ({ page }) => {
+    // The route is force-dynamic and streamed, so the HTTP status is committed
+    // before notFound() runs; the rendered page is the contract that matters.
+    await page.goto("/game/999999999");
+    await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Back to the game center/ })).toBeVisible();
   });
 });

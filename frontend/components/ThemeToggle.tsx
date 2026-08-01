@@ -42,6 +42,7 @@ export function ThemeToggle() {
           type="button"
           onClick={() => choose(option)}
           aria-pressed={theme === option}
+          aria-label={`${option[0].toUpperCase()}${option.slice(1)} theme`}
           title={`${option[0].toUpperCase()}${option.slice(1)} theme`}
           className={`rounded px-2 py-1 text-[0.68rem] capitalize transition-colors ${
             theme === option

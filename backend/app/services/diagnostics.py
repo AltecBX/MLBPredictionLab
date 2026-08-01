@@ -22,8 +22,8 @@ from app.db.models import (
     Game,
     JobRun,
     ModelVersion,
-    Prediction,
     PlayerGameStat,
+    Prediction,
     RawSourcePayload,
     TeamGameStat,
 )
@@ -161,15 +161,14 @@ def _prediction_health(session: Session) -> dict[str, Any]:
                 )
             ).all()
         }
-    failures = [
-        r
-        for r in session.scalars(
+    failures = list(
+        session.scalars(
             select(JobRun)
             .where(JobRun.job_name == "generate_predictions", JobRun.status == "FAILED")
             .order_by(JobRun.started_at.desc())
             .limit(10)
         )
-    ]
+    )
     return {
         "total_predictions": total,
         "latest_created_at": latest,
