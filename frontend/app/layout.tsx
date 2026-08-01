@@ -86,7 +86,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           className="sticky top-0 z-30 border-b backdrop-blur"
           style={{
             borderColor: "var(--border)",
-            background: "color-mix(in srgb, var(--surface) 88%, transparent)",
+            background: "color-mix(in srgb, var(--surface) 96%, transparent)",
           }}
         >
           {/* One row on every screen. On a phone the four destinations move to

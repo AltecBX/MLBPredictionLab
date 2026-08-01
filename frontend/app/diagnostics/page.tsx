@@ -18,12 +18,23 @@ export default async function DiagnosticsPage() {
   const result = await api.diagnostics();
 
   if (!result.ok) {
+    // Keep the heading. Landing on an untitled page that only says something
+    // failed leaves the reader unsure which screen they are even on — and the
+    // backtest page already does it this way.
     return (
-      <UnavailableNotice
-        title="Diagnostics unavailable"
-        reason={result.message}
-        requiredSource="backend at API_BASE_URL"
-      />
+      <div className="flex flex-col gap-5">
+        <header>
+          <h1 className="text-xl font-semibold tracking-tight">Diagnostics</h1>
+          <p className="mt-1 max-w-prose text-sm muted">
+            Internal health: failed jobs, missing data, stale sources, model state.
+          </p>
+        </header>
+        <UnavailableNotice
+          title="Diagnostics unavailable"
+          reason={result.message}
+          requiredSource="backend at API_BASE_URL"
+        />
+      </div>
     );
   }
 

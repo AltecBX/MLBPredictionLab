@@ -42,7 +42,7 @@ export function Tabs({
       style={{
         top: "var(--header-h)",
         borderColor: "var(--border)",
-        background: "color-mix(in srgb, var(--surface-sunken) 92%, transparent)",
+        background: "color-mix(in srgb, var(--surface-sunken) 97%, transparent)",
       }}
     >
       <ul className="flex min-w-max items-center gap-0.5">

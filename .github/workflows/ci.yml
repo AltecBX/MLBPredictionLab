@@ -77,3 +77,42 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  e2e:
+    name: End-to-end (layout and iPhone contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      # No API here on purpose. Every page renders an explicit unavailable
+      # state without one, and a layout that breaks on a phone breaks in that
+      # state too — the overflow and touch-target assertions still run. Tests
+      # that genuinely need a seeded slate skip themselves and say so.
+      - name: End-to-end
+        working-directory: frontend
+        env:
+          CI: "true"
+          API_BASE_URL: http://127.0.0.1:9/api/v1
+        run: npx playwright test --reporter=list
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: frontend/test-results/
+          retention-days: 7

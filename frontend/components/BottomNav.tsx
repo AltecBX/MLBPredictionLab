@@ -84,7 +84,7 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur sm:hidden"
       style={{
         borderColor: "var(--border)",
-        background: "color-mix(in srgb, var(--surface) 92%, transparent)",
+        background: "color-mix(in srgb, var(--surface) 97%, transparent)",
       }}
     >
       <ul className="safe-b grid grid-cols-4">

@@ -68,7 +68,7 @@ test-backend:  ## Backend unit, feature, leakage, model and API tests
 test-frontend:  ## Frontend component tests
 	cd frontend && npm run test
 
-e2e:  ## End-to-end daily workflow tests (requires a built frontend)
+e2e:  ## End-to-end: daily workflow + iPhone layout contract
 	cd frontend && npm run build && npx playwright test
 
 lint:  ## Lint the backend

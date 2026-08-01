@@ -54,7 +54,7 @@ export default async function GameCenterPage({
         style={{
           top: "var(--header-h)",
           borderColor: "var(--border)",
-          background: "color-mix(in srgb, var(--surface-sunken) 92%, transparent)",
+          background: "color-mix(in srgb, var(--surface-sunken) 97%, transparent)",
         }}
       >
         <nav

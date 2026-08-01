@@ -11,9 +11,22 @@ import { expect, test } from "@playwright/test";
 
 type Page = import("@playwright/test").Page;
 
+/**
+ * Whether the API answered.
+ *
+ * Races the two mutually exclusive outcomes rather than reading `isVisible()`
+ * once: the page is streamed, so a bare visibility check can resolve before
+ * either branch has rendered and report "reachable" for a backend that is not.
+ */
 async function backendIsReachable(page: Page) {
   await page.goto("/");
-  return !(await page.getByText(/prediction API is unavailable/i).isVisible());
+  const down = page.getByText(/prediction API is unavailable/i);
+  const up = page.getByLabel("Data freshness");
+  await Promise.race([
+    down.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {}),
+    up.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {}),
+  ]);
+  return !(await down.isVisible());
 }
 
 /**
@@ -160,9 +173,18 @@ test.describe("daily game workflow", () => {
   });
 
   test("an unknown game id renders the not-found page", async ({ page }) => {
+    const reachable = await backendIsReachable(page);
+
     // The route is force-dynamic and streamed, so the HTTP status is committed
     // before notFound() runs; the rendered page is the contract that matters.
     await page.goto("/game/999999999");
+
+    if (!reachable) {
+      // "The API said this game does not exist" and "I could not ask the API"
+      // are different facts, and the app must not conflate them.
+      await expect(page.getByText(/Could not load this game/)).toBeVisible();
+      return;
+    }
     await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();
     await expect(page.getByRole("link", { name: /Back to the game center/ })).toBeVisible();
   });

@@ -71,29 +71,39 @@ async function undersizedTargets(page: Page) {
   });
 }
 
-async function firstGameUrl(page: Page, date = "2026-08-01") {
+/** Routes that render regardless of whether a backend or a slate exists. */
+const ALWAYS = ["/?date=2026-08-01", "/backtest", "/diagnostics", "/methodology"];
+
+/**
+ * The first game's URL, or null when there is no seeded slate.
+ *
+ * Deliberately not a `test.skip`. CI runs this suite against an empty database,
+ * where every screen renders an explicit unavailable state — and a layout that
+ * breaks on a phone breaks there too. Skipping the whole test because no game
+ * exists would silently retire the assertion this file exists for.
+ */
+async function firstGameUrl(page: Page, date = "2026-08-01"): Promise<string | null> {
   await page.goto(`/?date=${date}`);
   const link = page.getByRole("link", { name: /Full breakdown/ }).first();
   try {
-    await link.waitFor({ state: "visible", timeout: 15_000 });
+    await link.waitFor({ state: "visible", timeout: 10_000 });
   } catch {
-    test.skip(true, `No games with predictions on ${date}.`);
+    return null;
   }
-  return (await link.getAttribute("href")) ?? "/";
+  return await link.getAttribute("href");
+}
+
+/** Game routes when a slate is seeded, nothing when it is not. */
+function gameRoutes(game: string | null, tabs: string[]): string[] {
+  return game ? tabs.map((tab) => `${game}?tab=${tab}`) : [];
 }
 
 test.describe("iPhone layout", () => {
   test("no route scrolls the page sideways", async ({ page }) => {
     const game = await firstGameUrl(page);
     const routes = [
-      "/?date=2026-08-01",
-      `${game}?tab=prediction`,
-      `${game}?tab=explanation`,
-      `${game}?tab=pitchers`,
-      `${game}?tab=history`,
-      "/backtest",
-      "/diagnostics",
-      "/methodology",
+      ...ALWAYS,
+      ...gameRoutes(game, ["prediction", "explanation", "pitchers", "history"]),
     ];
 
     for (const route of routes) {
@@ -105,7 +115,7 @@ test.describe("iPhone layout", () => {
   test("the narrowest iPhone does not scroll sideways either", async ({ page }) => {
     await page.setViewportSize(IPHONE_SE);
     const game = await firstGameUrl(page);
-    for (const route of ["/?date=2026-08-01", `${game}?tab=prediction`, "/backtest"]) {
+    for (const route of [...ALWAYS, ...gameRoutes(game, ["prediction"])]) {
       await page.goto(route);
       expect(await horizontalOverflow(page), `sideways scroll on ${route}`).toBeLessThanOrEqual(1);
     }
@@ -113,7 +123,7 @@ test.describe("iPhone layout", () => {
 
   test("every control clears the 44pt touch floor", async ({ page }) => {
     const game = await firstGameUrl(page);
-    for (const route of ["/?date=2026-08-01", `${game}?tab=prediction`, "/backtest"]) {
+    for (const route of [...ALWAYS, ...gameRoutes(game, ["prediction"])]) {
       await page.goto(route);
       expect(await undersizedTargets(page), `small touch targets on ${route}`).toEqual([]);
     }
@@ -162,6 +172,7 @@ test.describe("iPhone layout", () => {
     page,
   }) => {
     const game = await firstGameUrl(page);
+    test.skip(!game, "No seeded slate; the tab strip only exists on a game page.");
     await page.goto(`${game}?tab=backtest`);
 
     const strip = page.getByRole("navigation", { name: "Game sections" });
@@ -189,6 +200,9 @@ test.describe("iPhone layout", () => {
       .getByLabel("Data freshness")
       .getByRole("button", { name: "More information" })
       .first();
+    if (!(await trigger.isVisible().catch(() => false))) {
+      test.skip(true, "No backend; the freshness strip has no tooltips to tap.");
+    }
     // tap(), not click(): click() dispatches mouse events even under touch
     // emulation, so it would exercise the hover path and prove nothing about
     // the phone behaviour this test is named for.
