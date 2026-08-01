@@ -37,18 +37,39 @@ export function AutoRefresh({ firstPitches }: { firstPitches: string[] }) {
   if (!nearGame) return null;
 
   return (
-    <span className="flex items-center gap-2 text-[0.7rem] subtle">
-      <label className="flex cursor-pointer items-center gap-1.5">
+    <span className="t-micro flex shrink-0 items-center gap-2 subtle">
+      {/*
+       * The label is abbreviated on a phone and written out on a pointer
+       * device. The accessible name never changes — it is the full phrase, on
+       * the input, in both cases — so the control reads the same to a screen
+       * reader and to the test suite while costing a third of the width in the
+       * place where width is scarce.
+       */}
+      <label
+        className="pill flex cursor-pointer items-center gap-1.5 px-2 py-1"
+        title="Auto-refresh near first pitch"
+      >
+        {/*
+         * A 12px checkbox is not a touch target. The `after:` pseudo-element
+         * extends what the browser hit-tests out to 44pt without changing the
+         * box the layout sees — the same trick the info icon uses, and the one
+         * the iPhone audit in e2e/mobile.spec.ts knows how to measure. It is
+         * switched off above `sm`, where a cursor does not need it.
+         */}
         <input
           type="checkbox"
           checked={enabled}
           onChange={(e) => setEnabled(e.target.checked)}
-          className="size-3 accent-[var(--accent)]"
+          aria-label="Auto-refresh near first pitch"
+          className="relative size-3 accent-[var(--accent)] after:absolute after:-inset-[16px] after:content-[''] sm:after:hidden"
         />
-        Auto-refresh near first pitch
+        <span aria-hidden className="whitespace-nowrap">
+          <span className="sm:hidden">Auto-refresh</span>
+          <span className="hidden sm:inline">Auto-refresh near first pitch</span>
+        </span>
       </label>
       {lastRefresh ? (
-        <span className="tnum">
+        <span className="tnum hidden sm:inline">
           refreshed{" "}
           {lastRefresh.toLocaleTimeString("en-US", {
             hour: "numeric",

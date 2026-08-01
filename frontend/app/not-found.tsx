@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <div className="surface p-10 text-center">
+    <div className="card p-10 text-center">
       <h1 className="text-lg font-semibold">Not found</h1>
       <p className="mt-2 text-sm muted">
         That page does not exist. It may have been a game id that is not in the

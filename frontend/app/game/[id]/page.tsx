@@ -89,19 +89,28 @@ export default async function GameDetailPage({
     <div className="flex flex-col gap-4 sm:gap-5">
       <Link
         href={`/?date=${card.official_date}`}
-        className="tap -my-1 self-start text-xs muted hover:underline"
+        className="pill tap t-small group -my-1 gap-1.5 self-start px-3"
       >
-        ← {longDate(card.official_date)}
+        <span
+          aria-hidden
+          className="inline-block transition-transform group-hover:-translate-x-0.5"
+        >
+          ←
+        </span>
+        {longDate(card.official_date)}
       </Link>
 
-      <header className="surface flex min-w-0 flex-col gap-4 p-4 sm:p-5">
+      <header className="card flex min-w-0 flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-base font-semibold tracking-tight sm:text-lg">
+            <h1 className="t-title">
               {card.away.name}{" "}
-              <span className="font-normal subtle">at</span> {card.home.name}
+              <span className="subtle" style={{ fontWeight: 400 }}>
+                at
+              </span>{" "}
+              {card.home.name}
             </h1>
-            <p className="mt-1 text-xs muted sm:text-sm">
+            <p className="t-small mt-1.5 muted">
               <span className="tnum">{gameTime(card.first_pitch_utc)}</span>
               {card.ballpark.name ? ` · ${card.ballpark.name}` : ""}
               {card.ballpark.city ? `, ${card.ballpark.city}` : ""}
@@ -132,7 +141,8 @@ export default async function GameDetailPage({
               homeLabel={`${homeLabel}${record(card.home.wins, card.home.losses) ? ` (${record(card.home.wins, card.home.losses)})` : ""}`}
               awayLabel={`${awayLabel}${record(card.away.wins, card.away.losses) ? ` (${record(card.away.wins, card.away.losses)})` : ""}`}
             />
-            <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-4">
+            <hr className="rule-soft" />
+            <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-5 sm:grid-cols-4">
               <StatBlock
                 label="Projected score"
                 value={

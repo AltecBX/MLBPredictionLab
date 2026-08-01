@@ -45,8 +45,13 @@ export function CalibrationChart({
 
   return (
     <figure className="m-0">
-      {/* Capped so the SVG never scales its 10px labels up to headline size. */}
-      <div className="scroll-x max-w-[560px]">
+      {/*
+       * Capped so the SVG never scales its 10px labels up to headline size, and
+       * centred so the cap does not leave a card-width of dead space beside a
+       * chart on a wide screen. 720 is where the labels reach ~13px, which is
+       * still a label.
+       */}
+      <div className="scroll-x mx-auto max-w-[720px]">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="h-auto w-full min-w-[380px]"

@@ -38,11 +38,13 @@ export function Tabs({
       // Sticky directly under the header: ten tabs on a phone means the strip
       // is the primary way around this page, and scrolling a long panel should
       // not strand it at the top.
-      className="scroll-x no-bar snap-x-strip sticky z-20 -mx-4 border-b px-4 backdrop-blur"
+      className="scroll-x no-bar snap-x-strip sticky z-20 -mx-4 border-b px-4 sm:-mx-6 sm:px-6"
       style={{
-        top: "var(--header-h)",
+        top: "calc(var(--header-h) - 1px)",
         borderColor: "var(--border)",
-        background: "color-mix(in srgb, var(--surface-sunken) 97%, transparent)",
+        background: "color-mix(in srgb, var(--surface-sunken) 82%, transparent)",
+        backdropFilter: "blur(14px) saturate(1.6)",
+        WebkitBackdropFilter: "blur(14px) saturate(1.6)",
       }}
     >
       <ul className="flex min-w-max items-center gap-0.5">
@@ -54,17 +56,26 @@ export function Tabs({
                 ref={isActive ? activeRef : undefined}
                 href={`${basePath}?tab=${tab.key}`}
                 aria-current={isActive ? "page" : undefined}
-                className={`tap whitespace-nowrap px-3 text-sm transition-colors ${
-                  isActive ? "font-medium" : "muted hover:text-[var(--text)]"
+                className={`tap t-small relative whitespace-nowrap px-3 transition-colors ${
+                  isActive ? "" : "muted hover:text-[var(--text)]"
                 }`}
                 style={
-                  isActive
-                    ? { color: "var(--accent)", boxShadow: "inset 0 -2px 0 var(--accent)" }
-                    : undefined
+                  isActive ? { color: "var(--accent)", fontWeight: 600 } : undefined
                 }
               >
                 <span className="sm:hidden">{tab.shortLabel ?? tab.label}</span>
                 <span className="hidden sm:inline">{tab.label}</span>
+                {/* The rule is inset from the label rather than running its full
+                    width, and rounded. A full-bleed underline butting against
+                    the neighbouring tab reads as a border; a short one reads as
+                    a marker. */}
+                {isActive ? (
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-2 bottom-0 h-[2px] rounded-t-full"
+                    style={{ background: "var(--accent)" }}
+                  />
+                ) : null}
               </Link>
             </li>
           );

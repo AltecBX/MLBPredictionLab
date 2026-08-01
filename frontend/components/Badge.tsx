@@ -26,9 +26,50 @@ export function Badge({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[0.68rem] font-medium leading-none tracking-wide ${TONE_STYLE[tone]}`}
+      className={`t-micro inline-flex items-center gap-1 rounded-full border px-2 py-[0.1875rem] leading-none ${TONE_STYLE[tone]}`}
+      style={{ fontWeight: 580, letterSpacing: "0.015em" }}
     >
       {children}
+    </span>
+  );
+}
+
+/**
+ * A team's abbreviation set as a fixed-width chip.
+ *
+ * Three letters in a box, monospaced and centred, so a column of them aligns
+ * exactly and the eye can find a club without reading. It is the closest thing
+ * to a crest this product has, and unlike a crest it needs no asset, no licence
+ * and no network request.
+ */
+export function TeamTag({
+  abbreviation,
+  emphasis = false,
+  tone,
+}: {
+  abbreviation: string;
+  emphasis?: boolean;
+  tone?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className="t-micro inline-flex h-6 w-[2.875rem] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border font-mono"
+      style={{
+        letterSpacing: "0.04em",
+        fontWeight: 620,
+        color: emphasis && tone ? tone : "var(--text-muted)",
+        borderColor:
+          emphasis && tone
+            ? `color-mix(in srgb, ${tone} 34%, transparent)`
+            : "var(--border)",
+        background:
+          emphasis && tone
+            ? `color-mix(in srgb, ${tone} 10%, transparent)`
+            : "var(--surface-inset)",
+      }}
+    >
+      {abbreviation}
     </span>
   );
 }

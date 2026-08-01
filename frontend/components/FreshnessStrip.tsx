@@ -14,8 +14,8 @@ const TONE = {
 export function FreshnessStrip({ entries }: { entries: FreshnessEntry[] }) {
   if (!entries.length) return null;
   return (
-    <div className="scroll-x -mx-1 px-1">
-      <ul className="flex min-w-max items-center gap-x-4 gap-y-1.5 text-[0.7rem]">
+    <div className="scroll-x no-bar fade-edges -mx-4 px-4 sm:-mx-6 sm:px-6">
+      <ul className="t-micro flex min-w-max items-center gap-x-4 gap-y-1.5">
         {entries.map((entry) => (
           <li key={entry.category} className="flex items-center gap-1.5 whitespace-nowrap">
             <Dot tone={TONE[entry.freshness] ?? "off"} />

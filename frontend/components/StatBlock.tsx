@@ -21,11 +21,14 @@ export function StatBlock({
           : undefined;
   return (
     <div className="min-w-0">
-      <dt className="text-[0.7rem] uppercase tracking-wide subtle">{label}</dt>
-      <dd className="tnum mt-1 text-base font-semibold sm:text-lg" style={{ color }}>
+      <dt className="eyebrow">{label}</dt>
+      <dd
+        className="numeral-lg mt-1.5 text-[1.25rem] leading-none sm:text-[1.4375rem]"
+        style={{ color }}
+      >
         {value}
       </dd>
-      {sub ? <p className="mt-0.5 text-xs muted">{sub}</p> : null}
+      {sub ? <p className="t-micro mt-1.5 muted">{sub}</p> : null}
     </div>
   );
 }
@@ -46,14 +49,12 @@ export function Section({
     // text block is a flex item, and both default to min-width:auto. Without
     // them a single long heading sets the grid track's minimum and pushes the
     // whole page sideways on a phone instead of wrapping.
-    <section className="surface min-w-0 p-4 sm:p-5">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+    <section className="card min-w-0 p-4 sm:p-5">
+      <div className="mb-3.5 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{title}</h2>
+          <h2 className="t-heading">{title}</h2>
           {description ? (
-            <p className="mt-0.5 max-w-prose text-xs leading-relaxed muted">
-              {description}
-            </p>
+            <p className="t-small mt-1 max-w-prose muted">{description}</p>
           ) : null}
         </div>
         {actions}

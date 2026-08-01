@@ -52,7 +52,7 @@ export function UnavailableNotice({
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="surface p-10 text-center">
+    <div className="card p-10 text-center">
       <p className="text-sm font-medium">{title}</p>
       {children ? <div className="mt-2 text-xs muted">{children}</div> : null}
     </div>
