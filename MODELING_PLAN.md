@@ -734,11 +734,10 @@ would ever have noticed.
   win prediction in either season — see *The run model's park and starting
   pitcher* below. The run model stays crude because the refined versions are not
   better, which is a different statement from never having tried.
-* **Nothing is served yet.** The served probability is still the logistic
-  model's alone. Promoting the blend is a separate change with its own
-  before-and-after, and MODELING_PLAN.md §4 requires ensemble weights to be fit
-  on out-of-sample predictions only — which this measurement respects but a
-  production path has to institutionalise.
+* ~~**Nothing is served yet.**~~ Closed: the blend is what the product now
+  shows. See *Serving the blend* below for the before-and-after that promotion
+  required, and for the one place the served path genuinely differs from the
+  path measured here.
 
 ---
 
@@ -870,6 +869,124 @@ quickly as adding columns to the feature set did.
 
 The run model stays crude. Not because refining it was never tried, but because
 the refined versions were measured against it and were not better.
+
+---
+
+## Serving the blend: the promotion, and what it cost to check
+
+The simulation beat the served model on both seasons and was still not served.
+That gap was deliberate — §4 requires ensemble weights fitted on out-of-sample
+predictions only, and a measurement is not a promotion — but leaving it open
+meant the best thing in the repository was not the thing on the screen. It is
+now. The served probability is
+
+    logit(p) = (1 − w)·logit(logistic) + w·logit(simulation),   w = 0.5
+
+Reproduce with:
+
+```
+python -m app.cli simulate-check --seasons 2024,2025 --start 2025-04-01 --asof-dispersion
+python -m app.cli simulate-check --seasons 2024 --asof-dispersion
+```
+
+`--asof-dispersion` is the difference between measuring the model and measuring
+*the product*. See below.
+
+**2025, 2,363 games:**
+
+| | Log loss | Brier | Calibration error | Accuracy |
+|---|---|---|---|---|
+| logistic (previous incumbent) | 0.68682 | 0.24677 | 2.11% | **55.56%** |
+| simulation alone | 0.68362 | 0.24536 | 2.68% | 54.38% |
+| **blend at 0.5 — served** | **0.68219** | **0.24461** | **1.13%** | 55.18% |
+
+Δ log loss **+0.004622**, paired 95% CI [+0.00149, +0.00772]. Brier +0.002164
+[+0.00064, +0.00365].
+
+**2024, 1,741 games:**
+
+| | Log loss | Brier | Calibration error | Accuracy |
+|---|---|---|---|---|
+| logistic (previous incumbent) | 0.68882 | 0.24743 | 3.27% | 56.58% |
+| simulation alone | **0.68066** | **0.24386** | 1.43% | 55.94% |
+| **blend at 0.5 — served** | 0.68230 | 0.24460 | 1.47% | **56.92%** |
+
+Δ log loss **+0.006523**, paired 95% CI [+0.00317, +0.00998]. Brier +0.002832
+[+0.00137, +0.00433].
+
+Same sign both seasons, both intervals excluding zero, on both metrics. That is
+the standard this repository set for itself when it believed the simulation, and
+the blend meets it.
+
+**Calibration is the gain that holds everywhere.** 3.27% → 1.47% and 2.11% →
+1.13%; roughly halved in both seasons. Accuracy moves in opposite directions
+(+0.34pp and −0.38pp) and nothing is selected on it, which is the correct
+treatment of a metric that discards the probability it is derived from.
+
+### Why the served weight is 0.5 when neither season chose 0.5
+
+The grid picks **1.0 on 2024 and 0.7 on 2025**. Those are not the same answer,
+and neither is the one being served.
+
+That is the argument, not an embarrassment. A weight chosen by scoring a grid on
+the games it is then evaluated on is fitted on the evaluation set, and this pair
+of results shows why it matters here rather than in principle: on 2024 the
+argmax discards the logistic model **entirely**, and on 2025 it keeps almost a
+third of it. A weight that swings that far between two adjacent seasons is
+estimated far too noisily to serve, and 0.5 is the obvious a priori split rather
+than anything that won a search.
+
+What that costs is small and measurable. On 2025 the pre-registered weight gives
+up 0.00016 of log loss against the argmax — the grid is nearly flat between 0.4
+and 0.7. On 2024 it gives up 0.00164, which is real but is the price of not
+selecting on the test set.
+
+| Weight on the simulation | 0.0 | 0.3 | 0.4 | **0.5** | 0.7 | 1.0 |
+|---|---|---|---|---|---|---|
+| 2025 log loss | 0.68682 | 0.68332 | 0.68264 | **0.68219** | *0.68204* | 0.68362 |
+
+### Measuring the product rather than the model
+
+The two-season result above was produced with dispersion fitted **once on the
+training side**. Serving cannot do that — at serving time there is no training
+side, only a moment — so the run dispersion is re-fitted as-of each slate. Those
+are two different numbers, and quietly assuming they are interchangeable would
+have made the headline describe a model nobody runs.
+
+Measured rather than assumed, the difference is nil:
+
+| Season | Training-side fit | As-of fit | Moved by |
+|---|---|---|---|
+| 2024 | +0.006431 | +0.006523 | +0.000092 |
+| 2025 | +0.004717 | +0.004622 | −0.000095 |
+
+Two ten-thousandths, in opposite directions. The serving-time fit is not quietly
+a different model.
+
+The fit uses **all history rather than the season in progress**, and that is a
+correction to the first version of this change rather than a preference. Season
+-restricted, the parameter is 2.201 in 2024 and 2.179 in 2025 — it does not move
+— while the restriction would have withheld the simulation from every card in
+the opening fortnight of a season, which is precisely when a reader has least
+other information. It is a shape parameter, not a rate.
+
+### What the promotion does not do
+
+* **It does not blend against a number that is not there.** A game that cannot
+  be simulated — a team without enough games on record — serves the logistic
+  model alone and records why in `feature_snapshot["blend"]`. The simulation key
+  is *absent* from `component_probs` rather than null, so an absence can never
+  render as a probability.
+* **It does not re-simulate on read.** The Monte Carlo result is persisted per
+  prediction and the Simulation tab reads it back. Re-running it inside a GET
+  would be a second opinion on the same game — seeded identically, so usually
+  the same number, but not necessarily the one that was served.
+* **It does not change the feature set.** `fs_v1` is still what the logistic
+  half is fitted on, and the four rejected groups are still rejected.
+* **It is still two seasons.** The blend now has four intervals across two
+  seasons rather than two, and every one excludes zero. It does not have a third
+  season, and the optimal weight moving between the two it does have is the
+  clearest single argument for getting one.
 
 ---
 
