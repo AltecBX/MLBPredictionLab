@@ -40,7 +40,9 @@ from app.features.aggregates import team_aggregate
 from app.features.asof import AsOfStore, season_start_utc
 from app.features.builder import FeatureBuilder
 from app.features.context import GameContext
+from app.features.park import ParkFactors
 from app.modeling.dataset import Dataset
+from app.modeling.run_inputs import BASE, RunComponents, RunModel, pitching_split
 from app.modeling.runs import DEFAULT_SIMULATIONS, fit_dispersion, simulate_game
 
 log = get_logger(__name__)
@@ -131,38 +133,107 @@ def expected_runs(
     )
 
 
+def run_components(
+    store: AsOfStore,
+    builder: FeatureBuilder,
+    ctx: GameContext,
+    as_of: datetime,
+    parks: ParkFactors | None = None,
+) -> RunComponents | None:
+    """The base means plus every refinement, computed once for one game.
+
+    The variants in an ablation must differ only in what they claim to differ in.
+    Computing each one by a separate pass over the as-of store would leave that to
+    trust; computing the pieces once and combining them arithmetically makes it
+    structural.
+    """
+    means = expected_runs(store, builder, ctx, as_of)
+    if means is None or not means.is_usable:
+        return None
+
+    season_start = season_start_utc(ctx.season)
+    park_factor, home_exposure, away_exposure, park_measured = 1.0, 1.0, 1.0, False
+    if parks is not None and parks.is_available:
+        factor = parks.for_game(ctx.home_team_id, ctx.venue_id, as_of)
+        if factor.is_measured:
+            park_factor = factor.value
+            park_measured = True
+            home_exposure = parks.exposure(
+                ctx.home_team_id,
+                store.team_games_asof(ctx.home_team_id, as_of, season_start),
+                as_of,
+            )
+            away_exposure = parks.exposure(
+                ctx.away_team_id,
+                store.team_games_asof(ctx.away_team_id, as_of, season_start),
+                as_of,
+            )
+
+    return RunComponents(
+        home=means.home,
+        away=means.away,
+        league=means.league,
+        home_games=means.home_games,
+        away_games=means.away_games,
+        park_factor=park_factor,
+        home_exposure=home_exposure,
+        away_exposure=away_exposure,
+        park_measured=park_measured,
+        home_pitching=pitching_split(
+            store, ctx.home_team_id, ctx.home_starter_id, as_of, season_start
+        ),
+        away_pitching=pitching_split(
+            store, ctx.away_team_id, ctx.away_starter_id, as_of, season_start
+        ),
+    )
+
+
 def simulate_slate(
     store: AsOfStore,
     builder: FeatureBuilder,
     frame: pd.DataFrame,
     size: float,
     simulations: int = DEFAULT_SIMULATIONS,
+    models: tuple[RunModel, ...] = (BASE,),
+    parks: ParkFactors | None = None,
 ) -> pd.DataFrame:
-    """Simulated home win probability for every game in ``frame``.
+    """Simulated home win probability for every game in ``frame``, per variant.
 
     Games whose run means cannot be established are returned with a null
     probability rather than a guess, and the caller drops them from the
     comparison — a model that silently emits 0.5 for a game it cannot model
     would be scored as if it had an opinion.
+
+    One column per variant, named ``sim_<variant>``, plus ``sim_prob`` for the
+    base so the existing comparison is unchanged. Every variant sees the same
+    game on the same seed, so a difference between two columns is a difference
+    between two models and never between two draw sequences.
     """
+    by_id = store.games.set_index("id", drop=False)
     rows: list[dict[str, Any]] = []
     for record in frame.itertuples():
         as_of = pd.Timestamp(record.as_of).to_pydatetime()
-        game_row = store.games[store.games["id"] == record.game_id]
-        if game_row.empty:
+        if record.game_id not in by_id.index:
             continue
-        ctx = GameContext.from_row(game_row.iloc[0].to_dict())
-        means = expected_runs(store, builder, ctx, as_of)
-        if means is None or not means.is_usable:
-            rows.append({"game_id": record.game_id, "sim_prob": None})
+        ctx = GameContext.from_row(by_id.loc[record.game_id].to_dict())
+        row: dict[str, Any] = {"game_id": record.game_id}
+        components = run_components(store, builder, ctx, as_of, parks)
+        if components is None:
+            rows.append(row | {f"sim_{m.name}": None for m in models} | {"sim_prob": None})
             continue
-        # Seeded from the game id, so a rerun reproduces exactly and two games
-        # never share a draw sequence.
-        sim = simulate_game(
-            means.home, means.away, size,
-            simulations=simulations, seed=int(record.game_id) % (2**31),
+        # Seeded from the game id, so a rerun reproduces exactly, two games never
+        # share a draw sequence, and two variants of the same game do.
+        seed = int(record.game_id) % (2**31)
+        for model in models:
+            home, away = components.means(model)
+            sim = simulate_game(home, away, size, simulations=simulations, seed=seed)
+            row[f"sim_{model.name}"] = sim.home_win_prob
+        row["sim_prob"] = row.get(f"sim_{BASE.name}")
+        row["park_measured"] = components.park_measured
+        row["pitching_measured"] = (
+            components.home_pitching.is_measured and components.away_pitching.is_measured
         )
-        rows.append({"game_id": record.game_id, "sim_prob": sim.home_win_prob})
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
