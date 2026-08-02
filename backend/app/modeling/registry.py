@@ -38,7 +38,16 @@ def _artifact_path(name: str, version: str) -> Path:
     return directory / "model.pkl"
 
 
-def save_artifact(model: LogisticWinModel, name: str, version: str) -> tuple[str, str]:
+def save_artifact(
+    model: LogisticWinModel, name: str, version: str
+) -> tuple[str, str, bytes]:
+    """Write the artifact to disk and hand back its bytes as well as its path.
+
+    The bytes are what actually travels. A path is only meaningful on the
+    machine that wrote it, and the registry is read by processes that never ran
+    the training — see `ModelVersion.artifact_blob`. The file is still written
+    because it is convenient to inspect locally and costs nothing.
+    """
     path = _artifact_path(name, version)
     payload = pickle.dumps(model, protocol=pickle.HIGHEST_PROTOCOL)
     path.write_bytes(payload)
@@ -56,12 +65,31 @@ def save_artifact(model: LogisticWinModel, name: str, version: str) -> tuple[str
             default=str,
         )
     )
-    return str(path), digest
+    return str(path), digest, payload
 
 
 def load_artifact(path: str) -> LogisticWinModel:
     data = Path(path).read_bytes()
     return pickle.loads(data)  # noqa: S301 - artifact written by this application
+
+
+def load_artifact_bytes(payload: bytes, expected_sha256: str | None) -> LogisticWinModel:
+    """Unpickle a stored artifact, checking it is the one that was registered.
+
+    The digest is not decoration. Unpickling executes whatever the payload says
+    to execute, so a row that has been altered since it was written must not be
+    loaded — and the registry has recorded the hash since it was first written,
+    which makes the check free.
+    """
+    if expected_sha256:
+        actual = hashlib.sha256(payload).hexdigest()
+        if actual != expected_sha256:
+            raise ModelNotFoundError(
+                f"Stored artifact does not match its recorded digest "
+                f"(expected {expected_sha256[:12]}…, got {actual[:12]}…). "
+                f"Refusing to load it."
+            )
+    return pickle.loads(payload)  # noqa: S301 - digest-checked, written by this app
 
 
 def register_model(
@@ -78,7 +106,7 @@ def register_model(
     notes: str | None = None,
     activate: bool = False,
 ) -> ModelVersion:
-    path, digest = save_artifact(model, name, version)
+    path, digest, payload = save_artifact(model, name, version)
 
     existing = session.scalar(
         select(ModelVersion).where(
@@ -102,6 +130,7 @@ def register_model(
         metrics=metrics,
         feature_names=list(model.feature_names),
         artifact_path=path,
+        artifact_blob=payload,
         artifact_sha256=digest,
         git_sha=settings.git_sha,
         is_active=False,
@@ -145,11 +174,38 @@ def get_active_version(session: Session, name: str | None = None) -> ModelVersio
     return row
 
 
+def _load_registered(version: ModelVersion) -> LogisticWinModel:
+    """The stored bytes first, the path only as a fallback.
+
+    Order matters. The blob is portable and the path is not, so a process that
+    did not do the training gets a working model instead of a `FileNotFoundError`
+    naming a directory it has never had. The path is kept as a fallback so rows
+    registered before the column existed still load on the machine that trained
+    them, and the error when neither works says which of the two is missing
+    rather than surfacing a bare filesystem error.
+    """
+    if version.artifact_blob:
+        return load_artifact_bytes(version.artifact_blob, version.artifact_sha256)
+
+    if not version.artifact_path:
+        raise ModelNotFoundError(
+            f"Model version {version.name}:{version.version} has neither stored "
+            f"artifact bytes nor a path. Run `make train` to register one."
+        )
+    try:
+        return load_artifact(version.artifact_path)
+    except FileNotFoundError as exc:
+        raise ModelNotFoundError(
+            f"Model version {version.name}:{version.version} was registered "
+            f"before artifacts were stored in the database, and its file "
+            f"{version.artifact_path!r} is not on this machine. Retrain to "
+            f"register a portable artifact."
+        ) from exc
+
+
 def load_active_model(session: Session, name: str | None = None) -> tuple[ModelVersion, LogisticWinModel]:
     version = get_active_version(session, name)
-    if not version.artifact_path:
-        raise ModelNotFoundError(f"Model version {version.id} has no artifact path.")
-    model = load_artifact(version.artifact_path)
+    model = _load_registered(version)
     if list(model.feature_names) != list(version.feature_names):
         raise ModelNotFoundError(
             f"Artifact for {version.name}:{version.version} does not match its "
