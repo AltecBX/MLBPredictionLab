@@ -64,26 +64,39 @@ name of the required source. They are **not** filled with placeholder numbers:
 1. **Statcast provider** — pitch-level ingestion into `pitches` and
    `batted_ball_events`; derived `xwOBA`, exit velocity, hard-hit rate, barrel
    rate, spin, movement, pitch usage, velocity trend.
-2. **Pregame lineup poller** — 5-minute cadence from T−3h, writing append-only
-   `lineups` snapshots with correct `knowledge_time`; lineup status transitions
-   surfaced in the UI and in completeness.
+2. **Pregame lineup poller** — *Done.* Hourly rather than five-minutely: posted
+   lineups appear an hour or two out, and `generate_prediction` declines to
+   write an unchanged snapshot, so a tighter cadence would be cost without
+   information. Rows are stamped with the moment observed, so a poll can never
+   make a past game's lineup retroactively knowable. **The data starts from the
+   first run** — a confirmed-lineup feature is not measurable on 2024 or 2025.
 3. **Bullpen availability provider** — per-pitcher availability, closer/setup
    status, consecutive-day tracking.
-4. **Injury/transaction provider** — bitemporal `injuries` rows.
-5. **Weather provider** — forecast at first pitch, wind converted to
-   field-relative using venue azimuth, air density computed.
+4. **Injury/transaction provider** — *Done.* 8,156 injured-list placements and
+   6,458 activations from the transactions feed, bitemporal, with
+   `knowledge_time` at the end of the transaction's date because the feed
+   carries no time of day. No injury feature is registered yet.
+5. **Weather provider** — *Done.* Open-Meteo, no API key required, so this was
+   never actually blocked. Forecast at first pitch, wind converted to
+   field-relative where venue azimuth exists (34 of the ballparks) and null
+   where it does not, air density from the ideal gas law. The feature group
+   built on it was **measured and rejected**.
 6. **Park factors** — multi-year regressed run/HR factors with handedness
    splits, stored with `method` and `sample_games`.
 7. **LightGBM model** — Optuna tuning under a chronological split, registered
    alongside Model 1.
-8. **Calibration selection** — isotonic vs. Platt chosen on validation data.
+8. **Calibration selection** — *Done.* Chosen by measurement on a chronological
+   holdout rather than by counting rows, and isotonic must beat Platt beyond the
+   paired-bootstrap noise band rather than merely beat it.
 9. **SHAP explanations** — translated into the existing probability-point
    vocabulary so the UI is unchanged.
 
 ### Acceptance criteria
 
 * Ablation shows Statcast, lineup and weather groups each measurably improve or
-  are removed.
+  are removed. **Met — all three removed.** Statcast (`fs_v2`), lineups
+  (`fs_v3`) and weather (`fs_v6`) were each built, measured on two seasons and
+  rejected; the active set is still `fs_v1`.
 * Lineup-confirmed vs. unconfirmed backtest slice is populated.
 * GBDT is promoted only if walk-forward log loss improves without worsening ECE.
 
@@ -213,7 +226,7 @@ Ordered so each step is usable on its own and the next one depends on it.
 | 3 | Expected lineup features | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 4 | Pitch arsenal matchup engine | Built, **measured and rejected** — best standalone signal per feature in the model, still redundant |
 | 5 | Individual bullpen availability | Built, **measured and rejected** — and the sign flips between seasons at every regularisation setting. The method warning it produced is in MODELING_PLAN.md |
-| 6 | Weather and empirical park factors | **Park factors built and measured** — no effect on the win target, and inert by construction (MODELING_PLAN.md). Weather blocked: no forecast provider |
+| 6 | Weather and empirical park factors | **Both built, both measured, both rejected.** Park is inert by construction; weather is negative in both seasons and measurably hurts on the larger one — on archived forecasts that are *better* than production's (MODELING_PLAN.md) |
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 8 | Run scoring model and simulation | **Built, measured, and it works** — +0.0047 to +0.0065 log loss across two seasons, both intervals excluding zero. MODELING_PLAN.md |
 | 9 | Stacked ensemble and calibration | **Served.** The blend is what the product now shows; the simulation is persisted per prediction and surfaced on the Simulation tab |

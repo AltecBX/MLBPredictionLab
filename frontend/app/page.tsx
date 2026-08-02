@@ -6,6 +6,7 @@ import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
 import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
+import { WakeRetry } from "@/components/WakeRetry";
 import {
   longDate,
   mediumDate,
@@ -266,11 +267,12 @@ export default async function GameCenterPage({
                     retryBudgetSeconds() > 0
                       ? ` It was retried for ${retryBudgetSeconds()} seconds and had not answered yet;`
                       : ""
-                  } reloading in a moment usually works.`
+                  }`
                 : result.message
             }
             requiredSource="backend at API_BASE_URL"
           />
+          {looksLikeColdStart(result.status) ? <WakeRetry /> : null}
         </div>
       )}
     </div>

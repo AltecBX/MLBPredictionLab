@@ -743,6 +743,29 @@ BULLPEN_AVAILABILITY: list[FeatureSpec] = [
 # Both shapes are registered so the ablation can separate them rather than
 # reporting their average — which is the mistake the fs_v3 measurement caught
 # and had to be re-run to undo.
+# BUILT, MEASURED, REJECTED. Negative in both seasons, and on the larger one the
+# interval excludes zero -- the group measurably hurts. Both arms drew the same
+# regularisation in both seasons, so unlike the bullpen group there is no C
+# confound to unpick: this is the features.
+#
+# The park measurement predicted it and the interaction did not rescue it. A
+# condition both teams share moves the total, not the margin, and the fly-ball
+# exposure gap between two staffs is apparently too small a lever to recover
+# what the shared part cannot say.
+#
+# The strongest part of this result is the data it failed on. Backfilled
+# forecasts come from an archive that does not expose which model run produced
+# each value, so they are probably BETTER than what was available at T-3h. The
+# group failed with better information than production would ever have.
+WEATHER_REJECTION = (
+    "Walk-forward on two seasons, coverage 99.9% on carry and 99.6% on the "
+    "interaction. 2024: delta log loss -0.002244, paired 95% CI "
+    "[-0.00537, +0.00088], n=1,741. 2025: -0.000151, CI [-0.00027, -0.00003], "
+    "zero excluded, REJECT, n=2,363. Negative in both, same regularisation in "
+    "both arms, and measured on optimistically-biased archived forecasts. "
+    "Rejected. See MODELING_PLAN.md, Forecast weather."
+)
+
 WEATHER: list[FeatureSpec] = [
     FeatureSpec(
         "wx_carry_index", "Ball carry conditions",
@@ -752,6 +775,7 @@ WEATHER: list[FeatureSpec] = [
         "by both teams, so it is a totals input against a win target.",
         unit="index", window="game", min_sample=1, phase=2, is_absolute=True,
         source_category="weather",
+        available=False, measurement=WEATHER_REJECTION,
         narrative="is playing in air that carries the ball further",
     ),
     FeatureSpec(
@@ -762,6 +786,7 @@ WEATHER: list[FeatureSpec] = [
         "way weather can move a margin rather than a total.",
         unit="index", window="season", min_sample=300, phase=2,
         source_category="weather",
+        available=False, measurement=WEATHER_REJECTION,
         narrative="has the staff better suited to tonight's air",
     ),
     FeatureSpec(
@@ -772,6 +797,7 @@ WEATHER: list[FeatureSpec] = [
         "stands rather than who is better.",
         unit="probability", window="game", min_sample=1, phase=2, is_absolute=True,
         source_category="weather",
+        available=False, measurement=WEATHER_REJECTION,
         narrative="faces a higher chance of rain",
     ),
 ]

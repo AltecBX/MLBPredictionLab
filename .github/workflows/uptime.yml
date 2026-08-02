@@ -19,9 +19,15 @@ name: Uptime
 # unreachable; the readiness check below is what distinguishes "running" from
 # "actually able to serve data".
 #
-# Set API_URL and WEB_URL as repository variables (Settings → Secrets and
-# variables → Actions → Variables). Without them the workflow skips rather than
-# failing, so a fork does not inherit a red badge for a service it does not have.
+# WEB_URL defaults to this repository's own deployment, because a keep-warm that
+# only works once somebody sets a variable does not keep anything warm — which is
+# exactly how the first version of this failed. Override either URL with a
+# repository variable (Settings → Secrets and variables → Actions → Variables).
+#
+# Pinging the web app is what matters most: every page is server-rendered and
+# fetches the API, so one request to the front page wakes BOTH services. API_URL
+# is optional and only adds the readiness check, which is the one that can tell
+# a running API from one whose database has gone.
 
 on:
   schedule:
@@ -39,20 +45,36 @@ jobs:
     timeout-minutes: 10
     env:
       API_URL: ${{ vars.API_URL }}
-      WEB_URL: ${{ vars.WEB_URL }}
+      WEB_URL: ${{ vars.WEB_URL || 'https://jerry-web.onrender.com' }}
     steps:
-      - name: Skip when the URLs are not configured
+      - name: Report what will be checked
         id: guard
         run: |
-          if [ -z "$API_URL" ] && [ -z "$WEB_URL" ]; then
-            echo "::notice::API_URL and WEB_URL are unset; nothing to check."
+          echo "WEB_URL=$WEB_URL"
+          echo "API_URL=${API_URL:-(unset; readiness check skipped)}"
+          if [ -z "$WEB_URL" ] && [ -z "$API_URL" ]; then
+            echo "::notice::Both URLs are empty; nothing to check."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Generous timeout and retries on purpose: waking IS the normal case here,
-      # and a wake that takes fifty seconds is a healthy service, not an outage.
+      # First, and with a generous timeout: waking IS the normal case here, and
+      # a wake taking fifty seconds is a healthy free-tier service rather than an
+      # outage. This request also wakes the API, because the page it renders
+      # fetches it server-side.
+      - name: Wake the web app
+        if: steps.guard.outputs.configured == 'true' && env.WEB_URL != ''
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                   --max-time 120 --retry 4 --retry-delay 10 --retry-all-errors \
+                   "${WEB_URL%/}/" || echo 000)
+          echo "GET / -> $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::The web app did not answer (status $code)."
+            exit 1
+          fi
+
       - name: Wake the API
         if: steps.guard.outputs.configured == 'true' && env.API_URL != ''
         run: |
@@ -97,14 +119,3 @@ jobs:
             exit 1
           fi
 
-      - name: Wake the web app
-        if: steps.guard.outputs.configured == 'true' && env.WEB_URL != ''
-        run: |
-          code=$(curl -sS -o /dev/null -w '%{http_code}' \
-                   --max-time 90 --retry 3 --retry-delay 5 --retry-all-errors \
-                   "${WEB_URL%/}/" || echo 000)
-          echo "GET / -> $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::The web app did not answer (status $code)."
-            exit 1
-          fi

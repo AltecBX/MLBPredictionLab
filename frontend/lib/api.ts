@@ -101,21 +101,29 @@ export type ApiResult<T> =
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 /**
- * Delays between attempts. Totals about 21 seconds, which covers a cold start.
+ * Delays between attempts, totalling about four seconds.
  *
- * `API_RETRY_ATTEMPTS` trims the list, and 0 disables retrying entirely. That
- * exists for the end-to-end suite, which points at a closed port on purpose to
- * exercise the unavailable states: there, every request fails instantly by
- * design and waiting 21 seconds to re-establish that proves nothing while
- * turning a three-minute job into a timeout. It is not a production knob.
+ * Deliberately short. This layer hides a brief blip; it does not sit out a cold
+ * start. The deployment can take the better part of a minute to wake, and
+ * blocking the response for that long replaces a broken page with a blank one.
+ * `WakeRetry` handles the long case from the browser, so the page paints fast,
+ * explains itself, and fills in when the API answers.
+ *
+ * `API_RETRY_ATTEMPTS` trims the list, and 0 disables retrying entirely. That is
+ * for the end-to-end suite, which points at a closed port on purpose: there
+ * every request fails instantly by design and retrying proves nothing. It is
+ * not a production knob.
  */
-const ALL_RETRY_DELAYS_MS = [1_000, 4_000, 7_000, 9_000];
+const ALL_RETRY_DELAYS_MS = [500, 1_500, 2_000];
 
 const RETRY_DELAYS_MS = (() => {
   const configured = Number.parseInt(process.env.API_RETRY_ATTEMPTS ?? "", 10);
   if (Number.isNaN(configured)) return ALL_RETRY_DELAYS_MS;
   return ALL_RETRY_DELAYS_MS.slice(0, Math.max(0, configured));
 })();
+
+/** How many retries are configured. Exported so tests assert the real budget. */
+export const retryAttemptCount = () => RETRY_DELAYS_MS.length;
 
 /** Total seconds spent retrying, so user-facing copy can state it truthfully. */
 export const retryBudgetSeconds = () =>
