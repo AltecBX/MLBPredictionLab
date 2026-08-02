@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.api.v1 import api_router
 from app.core.config import settings
@@ -87,6 +88,37 @@ async def data_unavailable_handler(
     request: Request, exc: DataUnavailableError
 ) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc), "code": "DATA_UNAVAILABLE"})
+
+
+@app.exception_handler(OperationalError)
+@app.exception_handler(DBAPIError)
+async def database_unavailable_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """A database that is unreachable is an unavailable state, not a crash.
+
+    Without this the failure escaped as a bare 500 with a plain-text body, and
+    the web app could only render "500 Internal Server Error" — which tells a
+    reader nothing and, worse, reads as a bug in the product rather than a
+    dependency being down.
+
+    503 is also the honest status: the service is temporarily unable to handle
+    the request. The web client treats it as retryable, so a database that is
+    merely waking is ridden out rather than reported as broken.
+    """
+    log.error("api.database_unavailable", error=str(exc)[:300], path=request.url.path)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "The prediction database is not reachable right now, so no "
+                "stored predictions can be read. This is a dependency being "
+                "unavailable rather than a failed request; it usually clears "
+                "on its own."
+            ),
+            "code": "DATABASE_UNAVAILABLE",
+        },
+    )
 
 
 @app.exception_handler(JerryError)

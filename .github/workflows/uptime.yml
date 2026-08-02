@@ -1,0 +1,110 @@
+name: Uptime
+
+# Keeps the deployment warm, and makes a real outage visible.
+#
+# Two separate problems, one workflow.
+#
+# **The cold start.** Render's free plan sleeps a service after fifteen minutes
+# idle and takes about a minute to wake. For a site read a few times a day that
+# means almost every visit is a cold start, and a cold start returns 502 while
+# it happens — which is exactly what a reader reported seeing. The client now
+# retries through it, but not waking in the first place is better than waking
+# gracefully. A request every ten minutes keeps the fifteen-minute idle timer
+# from ever expiring.
+#
+# **The real outage.** When the API is genuinely down — an expired free
+# database, a failed deploy — this fails and says so, rather than the first
+# notice being somebody opening the site and finding nothing. The API's health
+# endpoint is process liveness, so it answers even when the database is
+# unreachable; the readiness check below is what distinguishes "running" from
+# "actually able to serve data".
+#
+# Set API_URL and WEB_URL as repository variables (Settings → Secrets and
+# variables → Actions → Variables). Without them the workflow skips rather than
+# failing, so a fork does not inherit a red badge for a service it does not have.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Keep warm and check health
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      API_URL: ${{ vars.API_URL }}
+      WEB_URL: ${{ vars.WEB_URL }}
+    steps:
+      - name: Skip when the URLs are not configured
+        id: guard
+        run: |
+          if [ -z "$API_URL" ] && [ -z "$WEB_URL" ]; then
+            echo "::notice::API_URL and WEB_URL are unset; nothing to check."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Generous timeout and retries on purpose: waking IS the normal case here,
+      # and a wake that takes fifty seconds is a healthy service, not an outage.
+      - name: Wake the API
+        if: steps.guard.outputs.configured == 'true' && env.API_URL != ''
+        run: |
+          code=$(curl -sS -o /tmp/health.txt -w '%{http_code}' \
+                   --max-time 90 --retry 3 --retry-delay 5 --retry-all-errors \
+                   "${API_URL%/}/health" || echo 000)
+          echo "GET /health -> $code"
+          head -c 300 /tmp/health.txt || true
+          if [ "$code" != "200" ]; then
+            echo "::error::The API did not answer /health (status $code). The" \
+                 "service is not running: check the Render dashboard for a" \
+                 "failed deploy, and DEPLOYMENT.md for the free-database" \
+                 "expiry, which is the usual cause."
+            exit 1
+          fi
+
+      # /health is liveness and answers with no database at all. This one asks
+      # whether the API can actually serve, so a database that has expired or
+      # gone unreachable surfaces here rather than on the reader's screen.
+      - name: Check the API can reach its data
+        if: steps.guard.outputs.configured == 'true' && env.API_URL != ''
+        run: |
+          code=$(curl -sS -o /tmp/ready.json -w '%{http_code}' \
+                   --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors \
+                   "${API_URL%/}/api/v1/diagnostics/health" || echo 000)
+          echo "GET /api/v1/diagnostics/health -> $code"
+          head -c 500 /tmp/ready.json || true
+          if [ "$code" != "200" ]; then
+            echo "::error::The API is running but cannot serve data (status" \
+                 "$code). The process is up and its database is not."
+            exit 1
+          fi
+          # Specifically the database. The cache reports reachable=false too
+          # whenever REDIS_URL is blank, which render.yaml does on purpose --
+          # matching on the bare field would fail every run of a healthy
+          # deployment.
+          if [ "$(jq -r '.database.reachable' /tmp/ready.json)" != "true" ]; then
+            echo "::error::The API is up but reports its database as" \
+                 "unreachable. Predictions cannot be read. DEPLOYMENT.md" \
+                 "§ Sizing covers the free-database expiry, which is the" \
+                 "usual cause."
+            exit 1
+          fi
+
+      - name: Wake the web app
+        if: steps.guard.outputs.configured == 'true' && env.WEB_URL != ''
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                   --max-time 90 --retry 3 --retry-delay 5 --retry-all-errors \
+                   "${WEB_URL%/}/" || echo 000)
+          echo "GET / -> $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::The web app did not answer (status $code)."
+            exit 1
+          fi

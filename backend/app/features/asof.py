@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -25,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import LeakageError
 from app.core.logging import get_logger
-from app.db.models import Ballpark, Game, Player, PlayerGameStat, TeamGameStat
+from app.db.models import Ballpark, Game, Player, PlayerGameStat, TeamGameStat, Weather
 from app.features.batter_agg import (
     load_batter_statcast,
     load_batting_orders,
@@ -96,6 +97,7 @@ class AsOfStore:
         batter_statcast: pd.DataFrame | None = None,
         pitcher_arsenal: pd.DataFrame | None = None,
         batting_orders: pd.DataFrame | None = None,
+        weather: pd.DataFrame | None = None,
     ) -> None:
         self.games = games
         self.pitcher_games = pitcher_games
@@ -115,6 +117,9 @@ class AsOfStore:
         self.batting_orders = (
             pd.DataFrame() if batting_orders is None else batting_orders
         )
+        # Forecast weather. Append-only snapshots keyed by knowledge_time, so a
+        # prediction reads whichever forecast existed when it was made.
+        self.weather = pd.DataFrame() if weather is None else weather
         self.team_games = self._attach_opponent_starter_hand(
             team_games, pitcher_games, players
         )
@@ -132,6 +137,14 @@ class AsOfStore:
         self._orders_index = self._build_index(self.batting_orders, "team_id")
         self._team_pitchers_index = self._build_index(pitcher_games, "team_id")
         self._schedule_index = self._build_schedule_index(games)
+        self._weather_index = (
+            {}
+            if self.weather.empty
+            else {
+                int(gid): frame.sort_values("knowledge_time")
+                for gid, frame in self.weather.groupby("game_id")
+            }
+        )
         self._player_hand = dict(zip(players["id"], players["pitch_hand"], strict=False))
         self._park = ballparks.set_index("id") if not ballparks.empty else ballparks
 
@@ -203,6 +216,22 @@ class AsOfStore:
                 batting_orders["game_id"].isin(keep)
             ].reset_index(drop=True)
 
+        weather = pd.read_sql(
+            select(
+                Weather.game_id, Weather.temperature_f, Weather.wind_speed_mph,
+                Weather.wind_field_relative, Weather.air_density_kg_m3,
+                Weather.precipitation_prob, Weather.roof_status,
+                Weather.knowledge_time,
+            ).where(Weather.observation_type == "FORECAST"),
+            session.bind,
+        )
+        if seasons and not weather.empty and not games.empty:
+            weather = weather[
+                weather["game_id"].isin(set(games["id"].tolist()))
+            ].reset_index(drop=True)
+        if not weather.empty:
+            weather = cls._to_utc(weather, "knowledge_time")
+
         return cls(
             cls._prepare_games(games),
             cls._prepare_team_games(team_games, games),
@@ -213,6 +242,7 @@ class AsOfStore:
             batter_statcast,
             pitcher_arsenal,
             batting_orders,
+            weather,
         )
 
     # -- preparation -------------------------------------------------------
@@ -486,6 +516,25 @@ class AsOfStore:
         if start is not None:
             mask &= window["game_date_utc"] >= start
         return window[mask]
+
+
+    def weather_asof(self, game_id: int, as_of: datetime) -> dict[str, Any] | None:
+        """The latest forecast for one game that was knowable at ``as_of``.
+
+        Latest rather than first: forecasts are append-only, so a game may have
+        several, and the one a prediction should use is the most recent that
+        existed when the prediction was made. Returning the earliest would
+        answer a question nobody asked.
+        """
+        if self.weather.empty:
+            return None
+        rows = self._weather_index.get(int(game_id))
+        if rows is None or rows.empty:
+            return None
+        usable = rows[_ns_array(rows["knowledge_time"]) <= _ns(as_of)]
+        if usable.empty:
+            return None
+        return usable.iloc[-1].to_dict()
 
     SCHEDULE_COLUMNS = [
         "id", "game_date_utc", "official_date", "venue_id", "day_night",

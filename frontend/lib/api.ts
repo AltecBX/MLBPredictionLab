@@ -90,9 +90,34 @@ export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; status: number; message: string };
 
-async function request<T>(
+/**
+ * Statuses worth trying again. A free-tier service that has been idle for
+ * fifteen minutes returns these while it wakes, and it wakes in about a
+ * minute — so treating the first one as final is what turns "the app is
+ * starting" into "the app is broken" on the reader's screen.
+ *
+ * 404 and 422 are deliberately absent: those are answers, not outages.
+ */
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+/** Delays between attempts. Totals about 21 seconds, which covers a cold start. */
+const RETRY_DELAYS_MS = [1_000, 4_000, 7_000, 9_000];
+
+const isRetryable = (status: number) => status === 0 || RETRYABLE_STATUSES.has(status);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * True when a failure looks like a service that is still coming up rather than
+ * one that is genuinely broken. Used to tell the reader to wait rather than
+ * leaving them staring at a bare status code.
+ */
+export const looksLikeColdStart = (status: number) =>
+  status === 0 || status === 502 || status === 503 || status === 504;
+
+async function attempt<T>(
   path: string,
-  init?: RequestInit & { revalidate?: number },
+  init: (RequestInit & { revalidate?: number }) | undefined,
 ): Promise<ApiResult<T>> {
   const { revalidate = 30, ...rest } = init ?? {};
   try {
@@ -122,6 +147,31 @@ async function request<T>(
           : "Cannot reach the prediction API.",
     };
   }
+}
+
+/**
+ * Fetch, retrying while the API looks like it is waking rather than failing.
+ *
+ * The deployment this runs on sleeps after fifteen minutes idle and takes about
+ * a minute to come back, so the *first* request after a quiet spell reliably
+ * fails. Without retries that is indistinguishable, on screen, from the backend
+ * being down — which is what a reader saw.
+ *
+ * A slow first paint is the right trade against a blank one. When every attempt
+ * fails the honest unavailable state is still what renders; it just is not
+ * reached on a wake-up that was always going to succeed.
+ */
+async function request<T>(
+  path: string,
+  init?: RequestInit & { revalidate?: number },
+): Promise<ApiResult<T>> {
+  let result = await attempt<T>(path, init);
+  for (let i = 0; i < RETRY_DELAYS_MS.length && !result.ok; i += 1) {
+    if (!isRetryable(result.status)) return result;
+    await sleep(RETRY_DELAYS_MS[i]);
+    result = await attempt<T>(path, init);
+  }
+  return result;
 }
 
 export const api = {

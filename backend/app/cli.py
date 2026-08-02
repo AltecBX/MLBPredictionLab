@@ -138,6 +138,18 @@ def cmd_ingest_injuries(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def cmd_poll_lineups(args: argparse.Namespace) -> int:
+    """Capture posted lineups for games that have not started yet."""
+    from app.db.session import session_scope
+    from app.ingestion.lineup_poller import poll_lineups
+
+    with session_scope() as session:
+        rows = poll_lineups(session, args.date)
+    print(json.dumps({"rows_written": rows}))
+    return 0
+
+
 def cmd_ingest_statcast(args: argparse.Namespace) -> int:
     """Backfill Statcast for a date range, or for whole seasons.
 
@@ -458,6 +470,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--end", type=_parse_date)
     p.add_argument("--seasons", default=None, help="e.g. 2024,2025")
     p.set_defaults(func=cmd_ingest_injuries)
+
+    p = sub.add_parser(
+        "poll-lineups",
+        help="Capture posted lineups pregame, stamped with the moment observed",
+    )
+    p.add_argument("--date", type=_parse_date, default=None)
+    p.set_defaults(func=cmd_poll_lineups)
 
     p = sub.add_parser("ingest-statcast", help="Backfill Statcast pitches for a range")
     p.add_argument("--start", type=_parse_date)

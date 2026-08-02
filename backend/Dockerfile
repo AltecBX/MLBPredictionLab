@@ -28,5 +28,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/health" || exit 1
 
-# Migrations run at start so a deploy is a single step.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers"]
+# Migrations run at start so a deploy is a single step -- but they are attempted
+# rather than required. See entrypoint.sh: a database that wakes slower than the
+# web service must not be able to keep the API from existing.
+COPY entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+CMD ["./entrypoint.sh"]
