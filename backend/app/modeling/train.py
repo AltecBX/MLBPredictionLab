@@ -19,7 +19,8 @@ from app.ingestion.status import job_run
 from app.modeling.calibration import select_method
 from app.modeling.dataset import LABEL_COLUMN, Dataset, build_dataset
 from app.modeling.logistic import C_GRID, LogisticWinModel
-from app.modeling.registry import next_version, register_model
+from app.modeling.promotion import decide_promotion
+from app.modeling.registry import get_active_version, next_version, register_model
 
 log = get_logger(__name__)
 
@@ -116,6 +117,25 @@ def train_model(
         oos = collect_predictions(results)
         metrics = evaluate(oos["actual"].to_numpy(), oos["prob"].to_numpy()) if not oos.empty else None
 
+        # Whether this replaces what is being served is a separate question
+        # from whether it trains. A nightly refit that always activates means a
+        # configuration that got worse by chance becomes the product.
+        incumbent = None
+        if activate:
+            try:
+                incumbent = get_active_version(session, name)
+            except Exception:  # noqa: BLE001 - no active model is the first-run case
+                incumbent = None
+        decision = decide_promotion(dataset, steps, C, incumbent)
+        log.info(
+            "model.promotion",
+            verdict=decision.verdict,
+            activate=decision.should_activate,
+            candidate_C=C,
+            incumbent_C=decision.incumbent_C,
+        )
+        should_activate = activate and decision.should_activate
+
         model = fit_final_model(dataset, C)
         version = next_version(session, name)
         labelled = dataset.labelled
@@ -133,6 +153,7 @@ def train_model(
                 "hyperparameter_search": search,
                 "n_walk_forward_steps": len([r for r in results if not r.skipped]),
                 "n_steps_skipped": len([r for r in results if r.skipped]),
+                "promotion": decision.to_dict(),
             },
             hyperparameters={
                 "C": C,
@@ -148,7 +169,7 @@ def train_model(
                 if metrics and metrics.log_loss is not None
                 else "Registered without out-of-sample metrics (insufficient history)."
             ),
-            activate=activate,
+            activate=should_activate,
         )
         run.rows_written = model.train_rows
 
@@ -167,7 +188,8 @@ def train_model(
             "accuracy": metrics.accuracy if metrics else None,
             "roc_auc": metrics.roc_auc if metrics else None,
         },
-        "activated": activate,
+        "activated": should_activate,
+        "promotion": decision.to_dict(),
     }
 
 

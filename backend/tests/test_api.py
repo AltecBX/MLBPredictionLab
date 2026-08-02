@@ -430,7 +430,17 @@ def test_diagnostics_snapshot(client):
     for key in ("sources", "jobs", "missing_data", "model", "predictions",
                 "backtest", "api_usage", "feature_set", "drift"):
         assert key in body
-    assert body["drift"]["available"] is False
+
+    # Drift is real now rather than a Phase 4 placeholder. The fixture has an
+    # active model, so the report is available; what it must never do is claim
+    # a PSI or a calibration reading it did not have the sample to compute.
+    drift = body["drift"]
+    assert drift["available"] is True
+    assert drift["model_version"]
+    assert "note" in drift["bands"]
+    assert drift["calibration"]["available"] is False
+    assert "are needed" in drift["calibration"]["reason"]
+    assert drift["importance_stability"]["available"] is False
 
 
 def test_openapi_schema_is_generated(client):

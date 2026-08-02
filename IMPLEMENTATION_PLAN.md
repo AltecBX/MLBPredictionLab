@@ -128,12 +128,21 @@ name of the required source. They are **not** filled with placeholder numbers:
 
 ### Deliverables
 
-1. **Automated retraining** — nightly walk-forward refit; activation gated on
-   out-of-sample improvement beyond the noise band.
-2. **Drift monitoring** — feature PSI, calibration drift, importance stability,
-   with alerts on the diagnostics screen.
-3. **Advanced diagnostics** — job failure history, missing-data inventory, stale
-   source list, prediction generation failures, API usage, database health.
+1. **Automated retraining** — *Gate done.* `train_model` no longer activates
+   unconditionally. A refit at the same `C` and feature set is a **refresh** and
+   activates; a changed configuration is a **challenger** and must beat the
+   incumbent on paired out-of-sample evidence over the same games. A tie holds
+   the incumbent — a tie is not a reason to swap the served model. The nightly
+   schedule itself is still `refresh.yml`'s single daily run.
+2. **Drift monitoring** — *Done.* Feature PSI against the training window and
+   calibration drift against finished games, on the diagnostics screen. Every
+   unavailable branch carries its reason rather than a zero. **Importance
+   stability is not built**: it needs each version's standardized coefficients
+   stored side by side and only the active artifact is loadable.
+3. **Advanced diagnostics** — *Done in Phase 1 and extended here.* Job failure
+   history, missing-data inventory, stale source list, prediction generation
+   failures, API usage and database health were already present; drift is the
+   addition.
 4. **Performance** — query plans reviewed for the as-of aggregates, materialized
    rollups where justified, cache warming before the daily slate.
 5. **Production deployment** — container images, migrations on start, health and

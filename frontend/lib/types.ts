@@ -289,6 +289,43 @@ export interface SideDetail {
   team_strength: Record<string, FeatureCell>;
 }
 
+export interface FeatureDriftRow {
+  feature_key: string;
+  psi: number;
+  band: "STABLE" | "MODERATE" | "SHIFTED";
+  n_reference: number;
+  n_recent: number;
+  reference_mean: number | null;
+  recent_mean: number | null;
+}
+
+/**
+ * Drift is reported, never used as a gate. `available: false` carries the
+ * reason — a drift monitor that reports a comfortable zero for something it
+ * never compared is worse than one that says nothing.
+ */
+export interface DriftReport {
+  available: boolean;
+  reason?: string;
+  model_version?: string;
+  bands?: { stable_below: number; shifted_above: number; note: string };
+  recent_window_days?: number;
+  features?: FeatureDriftRow[];
+  n_features_compared?: number;
+  n_features_shifted?: number;
+  calibration?: {
+    available: boolean;
+    reason?: string;
+    n_finished?: number;
+    registered_calibration_error?: number | null;
+    observed_calibration_error?: number;
+    drift?: number | null;
+    mean_predicted?: number;
+    observed_rate?: number;
+  };
+  importance_stability?: { available: boolean; reason: string };
+}
+
 export interface ChangeDriver {
   feature_key: string;
   display_name: string;
@@ -515,5 +552,5 @@ export interface DiagnosticsSnapshot {
   backtest: Record<string, unknown>;
   api_usage: Record<string, unknown>;
   feature_set: Record<string, unknown>;
-  drift: { available: boolean; reason: string };
+  drift: DriftReport;
 }
