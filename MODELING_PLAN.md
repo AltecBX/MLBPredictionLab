@@ -729,15 +729,147 @@ would ever have noticed.
 * **Two seasons, not five.** Both agree, but the optimal weight moved between
   them, and a third season would say whether 0.5 is genuinely the stable choice
   or merely between the two answers so far.
-* **The run model is deliberately crude.** No park factor, no starter, no
-  bullpen, no weather. Every one of those is a run-scoring input the feature
-  layer already computes and the run model currently ignores, which is the
-  clearest remaining lead in this repository.
+* ~~**The run model is deliberately crude.**~~ Followed, and it closed: the park
+  and the named starter were both built and both measured. Neither improves the
+  win prediction in either season — see *The run model's park and starting
+  pitcher* below. The run model stays crude because the refined versions are not
+  better, which is a different statement from never having tried.
 * **Nothing is served yet.** The served probability is still the logistic
   model's alone. Promoting the blend is a separate change with its own
   before-and-after, and MODELING_PLAN.md §4 requires ensemble weights to be fit
   on out-of-sample predictions only — which this measurement respects but a
   production path has to institutionalise.
+
+---
+
+## The run model's park and starting pitcher: measured, and rejected
+
+The fourth negative result, and the first one aimed at the *run* model rather
+than the feature set. The section above named this the clearest remaining lead
+in the repository: the run model is two teams' season rates and nothing else,
+when the feature layer already knows where the game is played and who is
+throwing it. Both were built. Neither earns a place.
+
+Reproduce with:
+
+```
+python -m app.cli run-model-check --seasons 2024,2025 --start 2025-04-01
+python -m app.cli run-model-check --seasons 2024
+```
+
+Four variants, scored on identical games with identical seeds — the only thing
+that varies is the model. Δ is against the **base run model**, not against the
+logistic one: a refinement has to beat the crude version it refines.
+
+**2025, 2,363 games** (park applied on 93.3%, pitching on 94.0%):
+
+| Run model | Log loss | Brier | Calibration error | Accuracy | Δ vs base, paired 95% CI |
+|---|---|---|---|---|---|
+| **base** (incumbent) | **0.68348** | **0.24530** | 2.98% | 54.55% | — |
+| park | 0.68366 | 0.24537 | **2.81%** | 54.51% | −0.000176 [−0.00047, +0.00011] |
+| pitching | 0.68466 | 0.24586 | 3.57% | 54.21% | −0.00118 [−0.00483, +0.00265] |
+| park+pitching | 0.68463 | 0.24584 | 3.85% | 54.08% | −0.00115 [−0.00485, +0.00276] |
+
+**2024, 1,741 games** (park 99.8%, pitching 94.0%):
+
+| Run model | Log loss | Brier | Calibration error | Accuracy | Δ vs base, paired 95% CI |
+|---|---|---|---|---|---|
+| **base** (incumbent) | 0.68081 | 0.24394 | 1.35% | 55.49% | — |
+| park | **0.68080** | **0.24393** | **1.23%** | **56.29%** | +0.000008 [−0.00033, +0.00035] |
+| pitching | 0.67973 | 0.24344 | 1.99% | 55.31% | +0.00108 [−0.00329, +0.00523] |
+| park+pitching | 0.67985 | 0.24349 | 1.46% | 55.54% | +0.00096 [−0.00335, +0.00520] |
+
+Every interval spans zero in both seasons, and **the point estimates flip sign
+between them** — pitching is nominally +0.0011 in 2024 and −0.0012 in 2025. That
+is the disqualifier this repository already committed to. The simulation itself
+was believed because it held its sign across both seasons and both intervals
+excluded zero; this does neither. Coverage is not the excuse either, at 93–99.8%.
+
+Blended with the logistic model at the pre-registered 0.5, every variant lands
+where the base already was — 2025 Δ vs logistic +0.0047 for base against +0.0046
+for both refined versions, 2024 +0.0064 against +0.0069. The refinements neither
+add to the merged result nor damage it.
+
+### The two refinements fail for opposite reasons
+
+Their intervals are not the same width, and that is the finding rather than an
+artefact. Measured per game on the 2025 slate, against the base model's own
+probability for the same game on the same seed:
+
+| Refinement | median \|Δp\| | max \|Δp\| | games moved >0.01 | side flipped |
+|---|---|---|---|---|
+| park | 0.0022 | 0.0144 | 1.0% | 1.3% |
+| pitching | 0.0298 | 0.1880 | 83.0% | **17.8%** |
+
+**The park is inert on this target by construction, not by measurement.** A park
+factor multiplies both teams' expected runs by the same scalar. It moves the
+expected *total* and leaves the *margin* almost exactly where it was, and a win
+probability is a margin question. Even Coors Field at 1.27 — the largest factor
+in the database — never moves a win probability by more than 1.5 points, and the
+paired interval is ±0.0003 because there is almost nothing there to measure. This
+is not a null result that a larger sample would overturn. It is the arithmetic of
+applying one scalar to both sides.
+
+That has a corollary worth keeping: the park work is not wasted, it is aimed at
+the wrong target. `ParkFactors` is the input a **totals** model would need, and
+the run model already emits a full distribution over total runs. Nothing in this
+repository scores totals yet.
+
+**The starter is the opposite case: it changed its mind, and was no better for
+it.** The pitching multiplier acts asymmetrically — each team's starter suppresses
+the *opponent's* runs — so it does move the margin, and it moves it hard. It
+shifts 83% of games by more than a point of win probability and **flips which
+team it favours on 17.8% of them, nearly one game in five.** That is a large
+change of opinion, and it bought a log-loss delta indistinguishable from zero in
+both seasons. The value of that measurement is precisely that the change was
+large: this is not "the refinement did nothing", it is "the refinement disagreed
+with the base model about one game in five and was not the more accurate of the
+two."
+
+The reason is the identity the split was built on. `R_team = s·R_sp + (1−s)·R_pen`
+holds within one window, so replacing the average starter with the named one is a
+genuine redistribution of a fixed total — and the team's own season rate already
+contains that starter's contribution to it. Over a season each rotation slot comes
+up about the same number of times, so the team rate is close to an average over
+the same pitchers the split is redistributing.
+
+### What this null does and does not cover
+
+Being honest about the power, because the two refinements are not equally settled:
+
+* **Park: settled.** Half-width ±0.0003 in both seasons. An effect this test
+  could not see would have to be smaller than a third of a thousandth of a nat,
+  and the per-game movement above explains why there is none.
+* **Pitching: bounded, not settled.** Half-width ±0.004. For scale, `fs_v1`'s
+  entire edge over a coin flip is 0.0063. This rules out a refinement worth more
+  than about two thirds of the whole model's edge; it cannot see one worth
+  +0.001, which would still be worth having. Two seasons of ~2,000 games is what
+  is available, so the honest claim is an upper bound on the effect, not proof of
+  its absence.
+* **Calibration moved, in one direction only.** Park improves calibration error
+  in both seasons (2.98%→2.81%, 1.35%→1.23%) while pitching worsens it in both
+  (→3.57%, →1.99%). Neither is a large enough or well-enough-powered move to act
+  on, but the signs are at least consistent, which is more than the log loss can
+  say.
+* **Weather is not in this comparison, and cannot be.** The only weather in the
+  database sits on the `games` row, whose `knowledge_time` is first pitch plus
+  three and a half hours. Not one final game is knowable before it starts, the
+  `weather` table is empty, and the registry marks every weather feature
+  `available=False`. A weather feature at T−3h would be reading the game it is
+  predicting. This stays UNAVAILABLE until a forecast provider is enabled — the
+  leakage rule working, not a gap in the ablation.
+
+### Four rejections in a row, and what changed about the fourth
+
+The first three rejections were all the same shape: a group of team-level
+features, redundant with team strength. This one is not. It is a refinement of a
+different model, on a different quantity, and it still lands in the same place —
+which sharpens the earlier diagnosis rather than repeating it. The ceiling is not
+where the *columns* run out. Adding structure to the run model reaches it just as
+quickly as adding columns to the feature set did.
+
+The run model stays crude. Not because refining it was never tried, but because
+the refined versions were measured against it and were not better.
 
 ---
 
