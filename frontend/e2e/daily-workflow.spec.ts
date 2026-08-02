@@ -82,13 +82,17 @@ test.describe("daily game workflow", () => {
     // click here would measure the client router's timing under whatever load
     // the rest of the suite is putting on the server, not the navigation
     // contract this test is about.
+    // The trailing slash is optional on purpose. `trailingSlash` is only set
+    // for the static export, so the same href renders as `/d/2026-07-31/` in
+    // the published build and `/d/2026-07-31` in the server build this suite
+    // runs against. Both resolve; pinning either one would fail the other.
     await expect(page.getByRole("link", { name: "← Prev" })).toHaveAttribute(
       "href",
-      /\/d\/2026-07-31\//,
+      /\/d\/2026-07-31\/?$/,
     );
     await expect(page.getByRole("link", { name: "Next →" })).toHaveAttribute(
       "href",
-      /\/d\/2026-08-02\//,
+      /\/d\/2026-08-02\/?$/,
     );
 
     await page.goto("/d/2026-07-31/");
