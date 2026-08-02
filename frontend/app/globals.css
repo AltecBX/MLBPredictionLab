@@ -47,10 +47,14 @@
   --color-ink-900: #161c28;
   --color-ink-950: #0b0f17;
 
+  /* Accent, tuned to the iOS system blue family. The product's stated goal is
+     to feel native on an iPhone, and the fastest way for an interactive tint to
+     read as "the OS, not a website" is to be the tint the OS itself uses —
+     nudged only as far as contrast on our own surfaces demands. */
   --color-accent-300: #7cc7ff;
-  --color-accent-400: #3ea8f5;
-  --color-accent-500: #1a86dd;
-  --color-accent-600: #0f68b4;
+  --color-accent-400: #409cff;
+  --color-accent-500: #0a84ff;
+  --color-accent-600: #0b6fd1;
 
   --color-home-500: #0f9268;
   --color-home-400: #24b586;
@@ -77,12 +81,12 @@
   /* Type. Each step carries its own line-height and tracking, because a scale
      that only changes size is a scale that looks wrong at both ends: large text
      needs tighter tracking and shorter leading, small text needs the reverse. */
-  --text-display: 1.5rem;
-  --text-display-lh: 1.08;
-  --text-display-ls: -0.025em;
-  --text-title: 1.3125rem;
-  --text-title-lh: 1.2;
-  --text-title-ls: -0.019em;
+  --text-display: 1.75rem;
+  --text-display-lh: 1.06;
+  --text-display-ls: -0.03em;
+  --text-title: 1.375rem;
+  --text-title-lh: 1.18;
+  --text-title-ls: -0.021em;
   --text-heading: 1.0625rem;
   --text-heading-lh: 1.32;
   --text-heading-ls: -0.013em;
@@ -99,10 +103,14 @@
   --text-micro-lh: 1.3;
   --text-micro-ls: 0.02em;
 
-  --radius-sm: 7px;
-  --radius-md: 11px;
-  --radius-lg: 15px;
-  --radius-xl: 21px;
+  /* Larger radii than a website would carry, deliberately: on iOS every
+     surface — sheets, cells, widgets — turns on a generous continuous curve,
+     and radius is the single cheapest signal of which world a screen belongs
+     to. Small elements stay modest so chips do not read as lozenges. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
 
   /* Motion. `--ease-out` is the workhorse; `--ease-spring` overshoots very
      slightly, which is what makes a bar filling read as physical rather than
@@ -116,9 +124,9 @@
 
 @media (min-width: 640px) {
   :root {
-    --header-h: 60px;
-    --text-display: 2.125rem;
-    --text-title: 1.5rem;
+    --header-h: 62px;
+    --text-display: 2.375rem;
+    --text-title: 1.625rem;
     --text-heading: 1.125rem;
   }
 }
@@ -147,19 +155,33 @@
   --text-subtle: #78829a;
 
   /* Shadows are tinted with the page's own hue. A neutral-black shadow on a
-     cool-grey page reads as dirt; a hue-matched one reads as depth. */
-  --shadow-1: 0 1px 2px -1px rgb(16 21 31 / 0.09), 0 1px 3px rgb(16 21 31 / 0.05);
+     cool-grey page reads as dirt; a hue-matched one reads as depth. Three
+     layers each, long and soft — the diffuse ambient shadow is what makes a
+     card look lifted rather than outlined. */
+  --shadow-1: 0 1px 2px -1px rgb(16 21 31 / 0.08), 0 2px 6px -1px rgb(16 21 31 / 0.05);
   --shadow-2:
-    0 2px 4px -2px rgb(16 21 31 / 0.1), 0 6px 14px -4px rgb(16 21 31 / 0.09);
+    0 1px 2px -1px rgb(16 21 31 / 0.07), 0 6px 16px -6px rgb(16 21 31 / 0.09),
+    0 16px 32px -16px rgb(16 21 31 / 0.09);
   --shadow-3:
-    0 8px 20px -6px rgb(16 21 31 / 0.16), 0 20px 44px -12px rgb(16 21 31 / 0.14);
+    0 2px 6px -2px rgb(16 21 31 / 0.1), 0 14px 32px -10px rgb(16 21 31 / 0.16),
+    0 32px 72px -18px rgb(16 21 31 / 0.18);
 
   --home: #0c7d59;
   --away: #b25617;
-  --accent: #0f6dbb;
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
-  --track: #e7eaf1;
+  --home-hi: #12996e;
+  --away-hi: #cf6a22;
+  --accent: #0b6fd1;
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, transparent);
+  --track: #e9ecf2;
   --glow: transparent;
+  /* Ambient field behind the whole page: one accent-hued pool of light at the
+     top, falling off fast. Barely there on paper; the page just feels lit. */
+  --ambient:
+    radial-gradient(
+      120% 44rem at 50% -18rem,
+      color-mix(in srgb, var(--accent) 5.5%, transparent),
+      transparent 62%
+    );
   color-scheme: light;
 }
 
@@ -185,16 +207,33 @@
     --text-muted: #a2adc2;
     --text-subtle: #7a8499;
 
-    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
-    --shadow-2: 0 2px 6px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.55);
-    --shadow-3: 0 10px 30px -8px rgb(0 0 0 / 0.7), 0 24px 60px -16px rgb(0 0 0 / 0.6);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.45), 0 2px 8px -2px rgb(0 0 0 / 0.35);
+    --shadow-2:
+      0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -8px rgb(0 0 0 / 0.55),
+      0 20px 40px -16px rgb(0 0 0 / 0.5);
+    --shadow-3:
+      0 2px 6px rgb(0 0 0 / 0.5), 0 16px 40px -10px rgb(0 0 0 / 0.65),
+      0 32px 80px -16px rgb(0 0 0 / 0.55);
 
-    --home: #2fc294;
-    --away: #f0964e;
-    --accent: #4aa9f2;
-    --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
-    --track: #1e2634;
-    --glow: rgb(255 255 255 / 0.05);
+    --home: #30d09a;
+    --away: #f59a52;
+    --home-hi: #52e0b2;
+    --away-hi: #ffb26e;
+    --accent: #0a84ff;
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+    --track: #1d2534;
+    --glow: rgb(255 255 255 / 0.055);
+    --ambient:
+      radial-gradient(
+        110% 40rem at 50% -16rem,
+        color-mix(in srgb, var(--accent) 9%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        80% 34rem at 88% 110%,
+        color-mix(in srgb, var(--accent) 4%, transparent),
+        transparent 58%
+      );
     color-scheme: dark;
   }
 }
@@ -214,16 +253,33 @@
   --text-muted: #a2adc2;
   --text-subtle: #7a8499;
 
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
-  --shadow-2: 0 2px 6px rgb(0 0 0 / 0.5), 0 10px 24px -8px rgb(0 0 0 / 0.55);
-  --shadow-3: 0 10px 30px -8px rgb(0 0 0 / 0.7), 0 24px 60px -16px rgb(0 0 0 / 0.6);
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.45), 0 2px 8px -2px rgb(0 0 0 / 0.35);
+  --shadow-2:
+    0 1px 2px rgb(0 0 0 / 0.4), 0 8px 20px -8px rgb(0 0 0 / 0.55),
+    0 20px 40px -16px rgb(0 0 0 / 0.5);
+  --shadow-3:
+    0 2px 6px rgb(0 0 0 / 0.5), 0 16px 40px -10px rgb(0 0 0 / 0.65),
+    0 32px 80px -16px rgb(0 0 0 / 0.55);
 
-  --home: #2fc294;
-  --away: #f0964e;
-  --accent: #4aa9f2;
-  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
-  --track: #1e2634;
-  --glow: rgb(255 255 255 / 0.05);
+  --home: #30d09a;
+  --away: #f59a52;
+  --home-hi: #52e0b2;
+  --away-hi: #ffb26e;
+  --accent: #0a84ff;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --track: #1d2534;
+  --glow: rgb(255 255 255 / 0.055);
+  --ambient:
+    radial-gradient(
+      110% 40rem at 50% -16rem,
+      color-mix(in srgb, var(--accent) 9%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      80% 34rem at 88% 110%,
+      color-mix(in srgb, var(--accent) 4%, transparent),
+      transparent 58%
+    );
   color-scheme: dark;
 }
 
@@ -233,6 +289,21 @@ html,
 body {
   background: var(--surface-sunken);
   color: var(--text);
+}
+
+/*
+ * The ambient field. One fixed, non-scrolling wash of the accent hue behind
+ * everything — the difference between a page that is coloured and a page that
+ * is lit. It lives on a pseudo-element so it costs no DOM, paints once, and
+ * respects each theme's own --ambient recipe.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--ambient);
 }
 
 html {
@@ -428,10 +499,36 @@ body {
     }
   }
 
+  /* The press state — the half of "native" that hover can never carry. A card
+     under a thumb compresses slightly, like a physical cell. */
+  .card-interactive:active {
+    transform: scale(0.988);
+    transition-duration: var(--dur-fast);
+  }
+
   .inset {
     background: var(--surface-inset);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
+  }
+
+  /*
+   * Frosted chrome, shared by every floating layer: the header, the date bar,
+   * the tab strip, the bottom tab bar. One recipe rather than four inline
+   * copies, so the product's glass is one material everywhere.
+   */
+  .glass {
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    backdrop-filter: blur(20px) saturate(1.8);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  }
+
+  /* Where backdrop-filter is unsupported the glass must fall back to nearly
+     opaque, or the chrome floats illegibly over the cards behind it. */
+  @supports not (backdrop-filter: blur(1px)) {
+    .glass {
+      background: color-mix(in srgb, var(--surface) 97%, transparent);
+    }
   }
 
   .hairline {
@@ -633,13 +730,61 @@ body {
     animation: pulse-dot 2s var(--ease-out) infinite;
   }
 
+  /*
+   * Skeleton shimmer. A static grey block reads as broken; a slow sheen moving
+   * through it reads as "on its way". The sheen is a background-position sweep
+   * on a wide gradient — compositor-only, no layout work.
+   */
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      100deg,
+      var(--track) 42%,
+      color-mix(in srgb, var(--surface-raised) 70%, var(--track)) 50%,
+      var(--track) 58%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.9s var(--ease-out) infinite;
+  }
+
+  /* ------------------------------------------------------------- the meter --
+   *
+   * The probability bar is the product's signature element, so it gets its own
+   * material rather than two flat rectangles. Each side fills with a subtle
+   * along-axis gradient toward its brighter tone at the seam — the two forces
+   * press against each other where they meet — and a hairline inner highlight
+   * gives the bar the same lit top edge the cards have. This is a data
+   * gradient, not a decorative one: it encodes direction toward the seam.
+   */
+  .meter-track {
+    background: var(--track);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.07);
+  }
+
+  .meter-away {
+    background: linear-gradient(to right, var(--away), var(--away-hi));
+  }
+
+  .meter-home {
+    background: linear-gradient(to left, var(--home), var(--home-hi));
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .rise,
     .fade-in,
     .stagger > *,
     .meter-fill,
     .meter-fill-right,
-    .live-dot {
+    .live-dot,
+    .shimmer {
       animation: none !important;
     }
     *,
@@ -717,9 +862,11 @@ body {
     }
   }
 
-  /* Room for the fixed bottom tab bar so the last card is never trapped under it. */
+  /* Room for the fixed bottom tab bar so the last card is never trapped under
+     it. The bar now floats as a capsule with its own inset, so the clearance
+     covers capsule + inset + home indicator. */
   .pad-bottom-nav {
-    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
   }
 
   @media (min-width: 640px) {
@@ -731,7 +878,7 @@ body {
   /* Tooltip panel offset. Authored here rather than inline so the sm: popover
      position still wins — an inline `bottom` would beat every utility class. */
   .tip-sheet {
-    bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(6.25rem + env(safe-area-inset-bottom, 0px));
   }
 
   @media (min-width: 640px) {

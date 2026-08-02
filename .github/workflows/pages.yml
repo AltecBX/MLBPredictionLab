@@ -40,10 +40,15 @@ permissions:
   id-token: write
 
 concurrency:
-  # Never two deploys at once, and skip queued ones: only the newest build is
-  # worth publishing.
+  # One deployment at a time, and queued runs are skipped rather than stacked --
+  # only the newest build is worth publishing.
+  #
+  # `cancel-in-progress` is false on purpose, and it is GitHub's own requirement
+  # for Pages rather than a preference: cancelling a deployment mid-flight can
+  # leave the Pages environment holding a half-finished deployment, and the next
+  # run then fails against it.
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:

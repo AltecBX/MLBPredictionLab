@@ -51,13 +51,10 @@ export async function GameCenter({ date }: { date: string }) {
        * numeric part carries the rest, so both fit on a single baseline.
        */}
       <header
-        className="sticky z-20 -mx-4 border-b px-4 py-2 sm:-mx-6 sm:px-6"
+        className="glass sticky z-20 -mx-4 border-b px-4 py-2 sm:-mx-6 sm:px-6"
         style={{
           top: "calc(var(--header-h) - 1px)",
-          borderColor: "var(--border)",
-          background: "color-mix(in srgb, var(--surface-sunken) 82%, transparent)",
-          backdropFilter: "blur(14px) saturate(1.6)",
-          WebkitBackdropFilter: "blur(14px) saturate(1.6)",
+          borderColor: "color-mix(in srgb, var(--border) 78%, transparent)",
         }}
       >
         <nav
