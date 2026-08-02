@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -78,6 +79,20 @@ class ModelVersion(Base):
     metrics: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     feature_names: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     artifact_path: Mapped[str | None] = mapped_column(Text)
+    # The artifact itself, not merely where it was written.
+    #
+    # `artifact_path` is a path on the filesystem of whichever machine ran the
+    # training, and nothing else can read it. That is not a theoretical
+    # limitation: the hourly pregame job reissues predictions WITHOUT
+    # retraining, runs on a fresh GitHub runner, and failed every hour with
+    # `FileNotFoundError: artifacts/models/jerry_logistic/v1/model.pkl` — a
+    # registry row pointing at a file that only ever existed somewhere else.
+    #
+    # The database is the one durable store every process here can reach: the
+    # API on Render, the daily refresh, the pregame job. A logistic model over
+    # forty-odd features pickles to a few kilobytes, so this costs nothing
+    # worth measuring.
+    artifact_blob: Mapped[bytes | None] = mapped_column(LargeBinary)
     artifact_sha256: Mapped[str | None] = mapped_column(String(64))
     git_sha: Mapped[str | None] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
