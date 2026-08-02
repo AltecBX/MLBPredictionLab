@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 
+import { asset } from "@/lib/asset";
+
 /**
  * Installable web app.
  *
@@ -17,18 +19,21 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Jerry MLB",
     description:
       "Calibrated MLB win probabilities with the reasoning, the sample sizes and the measured historical reliability behind every number.",
-    start_url: "/",
-    scope: "/",
+    // Prefixed too, or a home-screen launch opens the domain root
+    // rather than the app, and the installed shortcut treats every
+    // page as off-scope and hands it back to the browser.
+    start_url: asset("/"),
+    scope: asset("/"),
     display: "standalone",
     orientation: "portrait-primary",
     background_color: "#f6f7f9",
     theme_color: "#11151f",
     categories: ["sports", "utilities"],
     icons: [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: asset("/icon-192.png"), sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: asset("/icon-512.png"), sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        src: "/icon-maskable-512.png",
+        src: asset("/icon-maskable-512.png"),
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

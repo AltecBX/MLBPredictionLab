@@ -1,6 +1,9 @@
-import Image from "next/image";
 import { existsSync } from "node:fs";
 import path from "node:path";
+
+import Image from "next/image";
+
+import { asset } from "@/lib/asset";
 
 /**
  * The mark, in the header and the footer.
@@ -21,7 +24,7 @@ export function BrandMark({ size = 22 }: { size?: number }) {
   if (HAS_LOGO) {
     return (
       <Image
-        src="/logo.png"
+        src={asset("/logo.png")}
         alt=""
         width={size}
         height={size}
