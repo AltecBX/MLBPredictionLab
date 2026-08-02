@@ -10,7 +10,8 @@ import { MatchupSummary } from "@/components/MatchupSummary";
 import { TeamStandingBlock } from "@/components/TeamStandingBlock";
 import { ProbabilityBar } from "@/components/ProbabilityBar";
 import { Section, StatBlock } from "@/components/StatBlock";
-import { Tabs, type TabDef } from "@/components/Tabs";
+import { TabPanels } from "@/components/TabPanels";
+import type { TabDef } from "@/components/Tabs";
 import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
@@ -28,8 +29,31 @@ import {
   timestamp,
 } from "@/lib/format";
 import type { ChangeAttribution, GameDetail } from "@/lib/types";
+import { buildDates } from "@/lib/window";
 
-export const dynamic = "force-dynamic";
+/**
+ * A page per game in the published window.
+ *
+ * These ids come from the same slates the date pages are built from, so a card
+ * on a built date always has a detail page behind it. `dynamicParams = false`
+ * makes that a build error rather than a runtime 404 if the two ever disagree.
+ *
+ * Slates are fetched in parallel: fifteen dates fetched one after another is
+ * fifteen round trips to a service that may be waking up, and the build waits
+ * for all of them either way.
+ */
+export async function generateStaticParams() {
+  const slates = await Promise.all(buildDates().map((date) => api.games(date)));
+  const ids = new Set<number>();
+  for (const slate of slates) {
+    if (!slate.ok) continue;
+    for (const game of slate.data.games) ids.add(game.game_id);
+  }
+  return [...ids].map((id) => ({ id: String(id) }));
+}
+
+export const dynamicParams = false;
+
 
 const TABS: TabDef[] = [
   { key: "prediction", label: "Prediction", shortLabel: "Prediction" },
@@ -58,14 +82,10 @@ export async function generateMetadata({
 
 export default async function GameDetailPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
-  const { tab: rawTab } = await searchParams;
-  const tab = TABS.some((t) => t.key === rawTab) ? rawTab! : "prediction";
 
   const result = await api.game(id);
   if (!result.ok) {
@@ -88,7 +108,7 @@ export default async function GameDetailPage({
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
       <Link
-        href={`/?date=${card.official_date}`}
+        href={`/d/${card.official_date}/`}
         className="pill tap t-small group -my-1 gap-1.5 self-start px-3"
       >
         <span
@@ -200,18 +220,22 @@ export default async function GameDetailPage({
         )}
       </header>
 
-      <Tabs tabs={TABS} active={tab} basePath={`/game/${card.game_id}`} />
-
-      {tab === "prediction" ? <PredictionTab detail={detail} /> : null}
-      {tab === "pitchers" ? <PitchersTab detail={detail} /> : null}
-      {tab === "lineups" ? <LineupsTab detail={detail} /> : null}
-      {tab === "bullpens" ? <BullpensTab detail={detail} /> : null}
-      {tab === "history" ? <HistoryTab detail={detail} /> : null}
-      {tab === "environment" ? <EnvironmentTab detail={detail} /> : null}
-      {tab === "explanation" ? <ExplanationTab detail={detail} /> : null}
-      {tab === "simulation" ? <SimulationTab detail={detail} /> : null}
-      {tab === "market" ? <MarketTab detail={detail} /> : null}
-      {tab === "backtest" ? <BacktestTab detail={detail} /> : null}
+      <TabPanels
+        tabs={TABS}
+        basePath={`/game/${card.game_id}`}
+        panels={{
+          prediction: <PredictionTab detail={detail} />,
+          pitchers: <PitchersTab detail={detail} />,
+          lineups: <LineupsTab detail={detail} />,
+          bullpens: <BullpensTab detail={detail} />,
+          history: <HistoryTab detail={detail} />,
+          environment: <EnvironmentTab detail={detail} />,
+          explanation: <ExplanationTab detail={detail} />,
+          simulation: <SimulationTab detail={detail} />,
+          market: <MarketTab detail={detail} />,
+          backtest: <BacktestTab detail={detail} />,
+        }}
+      />
 
       <section className="surface px-4 py-3" aria-label="Data freshness">
         <p className="mb-2 text-xs font-medium">Data freshness by source</p>

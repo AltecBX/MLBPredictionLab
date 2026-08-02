@@ -7,6 +7,10 @@ import type { MetadataRoute } from "next";
  * Safari's chrome, which is worth roughly 120px of vertical space on a phone —
  * the difference between seeing two game cards and seeing one.
  */
+// A manifest is a file, not a request. Static export needs that said
+// explicitly for a route handler, or the build refuses it.
+export const dynamic = "force-static";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Jerry MLB Prediction Lab",

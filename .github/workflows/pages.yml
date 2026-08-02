@@ -1,0 +1,165 @@
+name: Publish
+
+# Build the site to files and serve it from a CDN, so nothing in the read path
+# can be asleep.
+#
+# The problem this replaces. Render's free plan sleeps a service after fifteen
+# minutes idle and takes about a minute to wake, and the wake returns 502 while
+# it happens. The keep-warm workflow was set to every ten minutes, which would
+# have covered it — except GitHub throttles scheduled workflows regardless of
+# what the cron says. Measured on this repository, that ten-minute schedule
+# produced runs at 14:28, 15:40, 16:39, 17:44 and 18:44. Hourly. A ping that
+# lands once an hour cannot hold open a fifteen-minute timer, so a reader
+# arriving in any of those gaps met an empty page. Retrying in the client made
+# it recover sometimes; it did not make it work.
+#
+# There was never a reason to serve this from a running process. One slate a
+# day, written by a scheduled job, every number tracing to a stored timestamped
+# record — that is publishing.
+#
+# **The API runs inside this job, not on Render.** uvicorn is started here
+# against the same DATABASE_URL the other workflows use, the site is built
+# against localhost, and the process is thrown away. So the published site has
+# no dependency on any hosted service being awake — including its own API. That
+# is the whole point: this runs from GitHub.
+
+on:
+  # After the jobs that change what there is to publish. `workflow_run` fires on
+  # completion, so a refreshed slate is on the site within a build rather than
+  # at the next fixed hour.
+  workflow_run:
+    workflows: ["Daily refresh", "Pregame refresh"]
+    types: [completed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  # Never two deploys at once, and skip queued ones: only the newest build is
+  # worth publishing.
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the static site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ENVIRONMENT: production
+      LOG_FORMAT: console
+      REDIS_URL: ""
+      # Match the other workflows, so what the Diagnostics page reports here is
+      # what it reports everywhere.
+      LINEUP_PROVIDER: mlb_statsapi
+      INJURY_PROVIDER: mlb_statsapi
+      WEATHER_PROVIDER: open_meteo
+    steps:
+      - name: Check the database secret is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set. See DEPLOYMENT.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install the backend
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      # Read-only for the duration of a build, but it reads through the same
+      # code path the deployed API does, so what is published is what the API
+      # would have served.
+      - name: Start the API locally
+        working-directory: backend
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 \
+            > /tmp/api.log 2>&1 &
+          for i in $(seq 1 45); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 \
+                     http://127.0.0.1:8000/health 2>/dev/null || echo 000)
+            if [ "$code" = "200" ]; then echo "API up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "::error::The API did not start. Log follows."
+          tail -40 /tmp/api.log
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install the frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Export the site
+        working-directory: frontend
+        env:
+          NEXT_STATIC_EXPORT: "1"
+          API_BASE_URL: http://127.0.0.1:8000/api/v1
+          # A project Pages site lives under /<repo>/. Derived rather than
+          # written down, so a rename or a move to a custom domain does not
+          # silently break every asset URL.
+          NEXT_BASE_PATH: /${{ github.event.repository.name }}
+        run: |
+          # Pinned once for the whole build so pages generated either side of
+          # midnight UTC agree on which day is "today" — otherwise the Today
+          # pill can point at a date that has no page.
+          export BUILD_DATE=$(date -u +%F)
+          echo "Building for $BUILD_DATE"
+          # Retries are generous here and nowhere else: nobody is watching a
+          # build, and a slow first query is not a reason to publish nothing.
+          API_RETRY_ATTEMPTS=6 npm run build
+          # Next writes _next/, and Jekyll drops any path beginning with an
+          # underscore. Without this the site deploys with no CSS or JS.
+          touch out/.nojekyll
+
+      - name: Check the export actually contains a slate
+        working-directory: frontend
+        run: |
+          pages=$(find out -name '*.html' | wc -l)
+          echo "$pages HTML files"
+          if [ "$pages" -lt 5 ]; then
+            echo "::error::Only $pages pages exported; something did not render."
+            exit 1
+          fi
+          # A build that succeeds while every game says "not predicted" is the
+          # failure mode worth catching: the site would look alive and say
+          # nothing. Warn rather than fail, because an empty slate is legitimate
+          # on an off day.
+          if grep -qr "Not predicted" out/index.html; then
+            echo "::warning::The front page has unpredicted games."
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/out
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

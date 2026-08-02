@@ -5,7 +5,6 @@ import { api } from "@/lib/api";
 import { num, relativeAge, timestamp } from "@/lib/format";
 import type { DriftReport } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
 export const metadata = { title: "Diagnostics" };
 
 const FRESHNESS_TONE = {

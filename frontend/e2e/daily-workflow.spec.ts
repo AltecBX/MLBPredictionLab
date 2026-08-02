@@ -39,7 +39,7 @@ async function backendIsReachable(page: Page) {
  * does not auto-wait and every route here is server-rendered on demand.
  */
 async function openFirstGame(page: Page, date = "2026-08-01"): Promise<string> {
-  await page.goto(`/?date=${date}`);
+  await page.goto(`/d/${date}/`);
   const link = page.getByRole("link", { name: /Full breakdown/ }).first();
   try {
     await link.waitFor({ state: "visible", timeout: 15_000 });
@@ -75,7 +75,7 @@ test.describe("daily game workflow", () => {
   test("date navigation targets the adjacent dates and renders them", async ({
     page,
   }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     await expect(page.getByText("August 1, 2026")).toBeVisible();
 
     // Assert the links point where they should, then follow them by URL. A
@@ -91,11 +91,11 @@ test.describe("daily game workflow", () => {
       /date=2026-08-02/,
     );
 
-    await page.goto("/?date=2026-07-31");
+    await page.goto("/d/2026-07-31/");
     await expect(page.getByText("July 31, 2026").first()).toBeVisible();
 
     // A date with nothing ingested must say so rather than rendering blank.
-    await page.goto("/?date=2026-08-02");
+    await page.goto("/d/2026-08-02/");
     await expect(page.getByText("August 2, 2026").first()).toBeVisible();
   });
 
@@ -137,7 +137,7 @@ test.describe("daily game workflow", () => {
   test("cards carry the role-specific record and the current streak", async ({
     page,
   }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     const card = page.locator("article").first();
     try {
       await card.waitFor({ state: "visible", timeout: 15_000 });
@@ -152,7 +152,7 @@ test.describe("daily game workflow", () => {
   });
 
   test("the slate is separated by status", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     const headings = page.getByRole("heading", {
       name: /^(Live|Upcoming|Final|Postponed)/,
     });
@@ -206,7 +206,7 @@ test.describe("daily game workflow", () => {
   });
 
   test("no page promises a guaranteed outcome", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     const body = (await page.textContent("body")) ?? "";
     for (const phrase of ["guaranteed win", "sure thing", "lock of the day", "can't lose"]) {
       expect(body.toLowerCase()).not.toContain(phrase);
@@ -245,7 +245,7 @@ test.describe("daily game workflow", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     await expect(page.getByRole("heading", { name: "Daily Game Center" })).toBeVisible();
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
