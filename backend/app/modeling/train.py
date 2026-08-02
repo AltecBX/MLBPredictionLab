@@ -16,7 +16,7 @@ from app.backtest.walkforward import collect_predictions, make_steps, run_walk_f
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.ingestion.status import job_run
-from app.modeling.calibration import select_method
+from app.modeling.calibration import choose_calibration
 from app.modeling.dataset import LABEL_COLUMN, Dataset, build_dataset
 from app.modeling.logistic import C_GRID, LogisticWinModel
 from app.modeling.promotion import decide_promotion
@@ -76,9 +76,14 @@ def fit_final_model(dataset: Dataset, C: float) -> LogisticWinModel:
     calibrated = LogisticWinModel(feature_names=list(dataset.feature_names), C=C)
     calibrated.fit(core, LABEL_COLUMN)
     fitted_calibrator = None
+    choice = None
     if not validation.empty:
-        method = select_method(len(validation))
-        calibrated.fit_calibration(validation, LABEL_COLUMN, method=method)
+        # Which calibrator, measured rather than assumed from the row count.
+        # Both are fitted on the earlier part of the validation window and
+        # scored on the later part, chronologically.
+        raw = calibrated.predict_raw(validation)
+        choice = choose_calibration(raw, validation[LABEL_COLUMN].astype(int).to_numpy())
+        calibrated.fit_calibration(validation, LABEL_COLUMN, method=choice.method)
         fitted_calibrator = calibrated.calibrator
 
     final = LogisticWinModel(feature_names=list(dataset.feature_names), C=C)
@@ -87,6 +92,7 @@ def fit_final_model(dataset: Dataset, C: float) -> LogisticWinModel:
     final.extra = {
         "calibration_rows": int(len(validation)),
         "calibration_cutoff": cutoff.isoformat() if not validation.empty else None,
+        "calibration_choice": None if choice is None else choice.to_dict(),
     }
     return final
 

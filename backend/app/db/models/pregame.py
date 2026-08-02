@@ -103,6 +103,10 @@ class Weather(Base, SourcedMixin):
     __tablename__ = "weather"
     __table_args__ = (
         Index("ix_weather_game", "game_id", "observation_type"),
+        UniqueConstraint(
+            "game_id", "observation_type", "knowledge_time",
+            name="uq_weather_game_type_knowledge",
+        ),
         CheckConstraint(
             "observation_type IN ('FORECAST','OBSERVED')", name="ck_weather_obs_type"
         ),
