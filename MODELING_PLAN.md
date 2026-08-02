@@ -535,6 +535,212 @@ not the number of columns:
 
 ---
 
+## Simulating runs: measured, and it works
+
+The first thing in this repository to beat the served model. Three feature
+groups were measured against the binary win target and rejected, each with the
+same diagnosis — the signal is real but already inside team strength by the time
+it reaches one bit of outcome. This changed the target instead of the inputs, and
+that is what moved.
+
+Reproduce. Two commands, because one cannot produce both rows — `--start` is the
+lower bound on the *test* windows, so the 2025 invocation scores no 2024 game:
+
+```
+# 2025, trained from 2024
+python -m app.cli simulate-check --seasons 2024,2025 --start 2025-04-01
+# 2024, trained from its own opening weeks
+python -m app.cli simulate-check --seasons 2024
+```
+
+**2025 — 2,363 scored games**
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| Logistic (served), 42 features | 0.68682 | 0.24677 | 2.11% | **55.56%** | 0.5562 |
+| Simulation alone, **0 fitted parameters** | 0.68348 | 0.24530 | 2.98% | 54.55% | 0.5637 |
+| **Blend at the pre-registered weight 0.5** | **0.68210** | **0.24456** | **1.28%** | 55.06% | 0.5654 |
+| Blend at the searched weight 0.7 | 0.68192 | 0.24449 | 1.15% | 55.69% | 0.5659 |
+
+**2024 — 1,741 scored games**
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| Logistic (served), 42 features | 0.68882 | 0.24743 | 3.27% | 56.58% | 0.5682 |
+| Simulation alone, **0 fitted parameters** | **0.68081** | **0.24394** | **1.35%** | 55.49% | **0.5803** |
+| Blend at the pre-registered weight 0.5 | 0.68239 | 0.24465 | 1.52% | **56.86%** | 0.5762 |
+
+**Both seasons, same sign, both intervals excluding zero:**
+
+| Season | n | Δ log loss @ 0.5 | Paired 95% CI | Δ Brier | Searched weight |
+|---|---|---|---|---|---|
+| 2024 | 1,741 | **+0.00643** | [+0.00307, +0.00985] | +0.00278 | 1.0 |
+| 2025 | 2,363 | **+0.00472** | [+0.00156, +0.00784] | +0.00221 | 0.7 |
+
+For scale, the three rejected feature groups moved log loss by −0.0004, +0.0004
+and −0.0004, with every interval spanning zero and the sign flipping between
+seasons. This is an order of magnitude larger, holds its sign across both
+seasons, and both intervals exclude zero — which is exactly the standard the
+rejections were held to and failed.
+
+**The searched weight is unstable and the pre-registered one is not.** 2024
+wanted 1.0 — the simulation alone, no logistic at all — and 2025 wanted 0.7. A
+weight chosen on one season would have been wrong on the other. The even split
+improves on both, which is the better reason to use it than the one it was
+chosen for.
+
+**In 2024 the simulation alone beat everything**, including the blend, at a
+calibration error of 1.35% against the logistic model's 3.27% and an AUC of
+0.5803 against 0.5682. In 2025 it did not — the blend won there. The two
+seasons disagree about whether the logistic model is worth any weight at all,
+and that disagreement is the reason for a fixed weight rather than a fitted one.
+
+**The weight is pre-registered, not searched.** The grid picks whichever weight
+scores best on the games it is scored on, and reporting that number would be
+reporting the selection. The headline is an even split, chosen in advance because
+it is the obvious a priori answer. The searched weight of 0.7 is worth
+0.00018 more — which is to say the selection bought almost nothing, and the
+result is not a knife edge. Every weight from 0.1 to 1.0 improves on the
+logistic model alone.
+
+**What it does to the model's edge.** A win probability model is only worth the
+distance between it and a coin flip, which scores 0.69315. Measured that way:
+
+| | Logistic edge | Blend edge | Multiple |
+|---|---|---|---|
+| 2024 | 0.00433 | 0.01076 | 2.5× |
+| 2025 | 0.00633 | 0.01105 | 1.7× |
+
+That is not a refinement of what the model knows. In 2025 it is close to
+doubling it, and in 2024 rather more than doubling it.
+
+**Calibration is the one place the blend beats the simulation in both seasons.**
+Expected calibration error against the logistic model:
+
+| | Logistic | Simulation alone | Blend @ 0.5 |
+|---|---|---|---|
+| 2024 | 3.27% | 1.35% | 1.52% |
+| 2025 | 2.11% | **2.98%** | 1.28% |
+
+The blend is better calibrated than the logistic model in both seasons. The
+simulation alone is not: in 2025 it is *worse* calibrated while scoring better on
+log loss and AUC, which is to say it is sharper rather than better behaved.
+
+That asymmetry is the argument for blending rather than replacing, and it is a
+stronger one than "the blend happens to score best". Two models that are wrong in
+the same places gain nothing from being averaged. These two are wrong in
+different places — the logistic model is over-confident in 2024 and the
+simulation is over-confident in 2025 — and a log-odds average cancels part of
+each. BACKTEST_PLAN.md § Phase 2A says reliability wins when metrics disagree;
+they disagree for the simulation alone and agree for the blend, which is what
+makes the blend the result rather than the simulation, despite 2024 preferring
+the simulation on log loss.
+
+### Why a parameter-free model beat a fitted one
+
+The simulation has nothing to fit. Each side's expected runs are the classic
+multiplicative combination of own scoring rate, opponent's rate of allowing and
+the league rate, all as-of and shrunk by existing rules. What it adds is not
+information — it is **structure**:
+
+* **Runs are overdispersed and the model now says so.** Measured over 16,314
+  nine-inning team-games: mean 4.463, variance 10.592. Refitted inside each
+  backtest it comes out at 2.18 in the 2025 window and 2.20 in the 2024 one, so
+  it is a property of the sport rather than of a sample. A logistic regression on
+  rate differences has no way to express that the same run differential means
+  different things at different scoring levels. A negative binomial does.
+* **The scoring floor is a hard zero.** Nothing can score −1 runs, and the
+  asymmetry that creates near the tails is exactly where win probability is
+  decided. A linear model in log-odds space cannot represent it.
+* **The innings structure is real.** The home side bats in the ninth only when it
+  needs to. That is a genuine, mechanical piece of home advantage which the
+  simulation gets for free and a coefficient can only approximate.
+
+The two are complementary rather than competing, which is why the blend beats
+both: the logistic model knows about starters, bullpens, rest and travel, and the
+simulation knows the shape of a baseball game.
+
+### Rates the simulation was never fitted to
+
+A run distribution and an innings structure imply a great deal more than a win
+probability, and none of it was tuned. Two evenly matched teams at the league
+scoring rate, 200,000 draws, against 8,934 regular-season games in this
+database:
+
+| | Simulated | Observed | |
+|---|---|---|---|
+| Extra innings | 9.8% | 8.6% | over |
+| One-run games | 26.7% | 28.1% | under |
+| Home team shut out | 5.3% | 5.9% | under |
+| Away team shut out | 5.8% | 7.1% | under |
+| Home win rate | 51.6% | 52.7% | under |
+
+Read this for order of magnitude and direction, not for agreement to the decimal.
+The simulated column is two *identical* teams; the observed column is a league
+with real home advantage and a real spread of team strength, so the two are not
+strictly like for like — the observed away-shutout rate is higher than the
+home-shutout rate precisely because of an asymmetry the equal-teams simulation
+does not contain.
+
+What the table does establish is that nothing is wildly wrong. Every rate lands
+within about a point and a half of a quantity no part of the model was pointed
+at, and the residual gap in home win rate — 51.6% against 52.7% — is genuine home
+advantage that this model's inputs do not carry. There are tests on the first
+three.
+
+The stronger version of this check aggregates the simulated rates over the actual
+slate rather than a synthetic even matchup. That needs a full walk-forward to
+produce and is a follow-up, not a blocker.
+
+### Two bugs the structure created, and what caught them
+
+Modelling the innings rather than the game buys the realism above at the price of
+two failure modes a single whole-game draw cannot have. Both were live, both
+biased every game on every slate, and neither would have shown up in a win-rate
+sanity check.
+
+**The home rate was discounted twice.** `home_mean` is a per-game rate measured
+from box scores in which the home side had *already* skipped the ninth whenever
+it led. Feeding that in and then skipping the ninth again applied the discount a
+second time: simulated home teams scored 4.36 against an input of 4.46. The fix
+is exact rather than a fudge — expected home runs are `r·(8 + P(needs ninth))`,
+so P is measured on a first pass and `r` follows. Caught by asserting that the
+simulation reproduces its own input, which is a cheap test to write and was not
+there until it failed.
+
+**The innings split gave the home team less variance.** A negative binomial adds
+only when both draws share `p`, and `p = size/(size + mean)`. Splitting the mean
+across eight innings plus a conditional ninth while reusing the game-level size
+therefore does not reconstruct the game-level distribution. The home side came
+out with **11.7% less variance at an identical mean** — a distributional edge
+handed out by which dugout a team occupied, worth more on close games than most
+features are worth at all. Scaling the size with the mean holds `p` fixed and
+closes the gap to 0.21%. Caught by code review, not by a test; the test exists
+now, and so does one asserting the unscaled version really would have been wrong,
+so a silent reversion cannot pass.
+
+The second is the more interesting failure. The first shifted a mean, which is
+the kind of thing a summary statistic catches. The second left every mean correct
+and changed only the shape, which no mean-based check anywhere in this repository
+would ever have noticed.
+
+### What is not yet established
+
+* **Two seasons, not five.** Both agree, but the optimal weight moved between
+  them, and a third season would say whether 0.5 is genuinely the stable choice
+  or merely between the two answers so far.
+* **The run model is deliberately crude.** No park factor, no starter, no
+  bullpen, no weather. Every one of those is a run-scoring input the feature
+  layer already computes and the run model currently ignores, which is the
+  clearest remaining lead in this repository.
+* **Nothing is served yet.** The served probability is still the logistic
+  model's alone. Promoting the blend is a separate change with its own
+  before-and-after, and MODELING_PLAN.md §4 requires ensemble weights to be fit
+  on out-of-sample predictions only — which this measurement respects but a
+  production path has to institutionalise.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
