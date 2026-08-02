@@ -44,13 +44,10 @@ export function Tabs({
       // Sticky directly under the header: ten tabs on a phone means the strip
       // is the primary way around this page, and scrolling a long panel should
       // not strand it at the top.
-      className="scroll-x no-bar snap-x-strip sticky z-20 -mx-4 border-b px-4 sm:-mx-6 sm:px-6"
+      className="glass scroll-x no-bar snap-x-strip sticky z-20 -mx-4 border-b px-4 sm:-mx-6 sm:px-6"
       style={{
         top: "calc(var(--header-h) - 1px)",
-        borderColor: "var(--border)",
-        background: "color-mix(in srgb, var(--surface-sunken) 82%, transparent)",
-        backdropFilter: "blur(14px) saturate(1.6)",
-        WebkitBackdropFilter: "blur(14px) saturate(1.6)",
+        borderColor: "color-mix(in srgb, var(--border) 78%, transparent)",
       }}
     >
       <ul className="flex min-w-max items-center gap-0.5">

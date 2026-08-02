@@ -2,22 +2,27 @@ import { pct } from "@/lib/format";
 
 /**
  * The single most important element on a card: which team is favored and by how
- * much, readable in under five seconds.
+ * much, readable in under five seconds. It is set as the card's hero — the
+ * leading percentage is the largest thing on the card by design, because it is
+ * the product's entire answer.
  *
  * Three deliberate choices.
  *
  * **The favoured side is stated, not inferred.** The larger number is set at a
- * bigger optical size in its own colour; the other recedes. A reader scanning
- * fifteen cards should never have to compare two equal-looking numbers.
+ * much bigger optical size in its own colour; the other recedes. A reader
+ * scanning fifteen cards should never have to compare two equal-looking
+ * numbers.
  *
  * **The midpoint is marked.** A 52/48 game and an 80/20 game look alike at a
- * glance without a reference line, and the difference between them is the entire
- * product. The tick sits at exactly 50% and is the only thing on the bar that
- * does not move.
+ * glance without a reference line, and the difference between them is the
+ * entire product. The notch sits at exactly 50% and is the only thing on the
+ * bar that does not move.
  *
- * **Both halves grow from the outside in.** Each fills from its own edge, so the
- * seam lands where the probability is rather than sweeping past it — the motion
- * reads as two forces meeting, which is what the number means.
+ * **Both halves grow from the outside in.** Each fills from its own edge, so
+ * the seam lands where the probability is rather than sweeping past it — and
+ * each side's fill brightens toward the seam, so the meeting point reads as
+ * two forces pressing rather than two blocks abutting. That gradient encodes
+ * direction; it is data, not decoration.
  */
 export function ProbabilityBar({
   homeProb,
@@ -69,36 +74,34 @@ export function ProbabilityBar({
       </div>
 
       <div
-        className={`relative mt-2 flex overflow-hidden rounded-full ${
-          compact ? "h-1.5" : "h-2.5"
+        className={`meter-track relative mt-2 flex overflow-hidden rounded-full ${
+          compact ? "h-2" : "h-3"
         }`}
-        style={{ background: "var(--track)" }}
         role="img"
         aria-label={`${awayLabel} ${pct(away)}, ${homeLabel} ${pct(home)}. ${
           leader.label
         } favoured by ${Math.round(Math.abs(home - away) * 100)} points.`}
       >
         <div
-          className={animate ? "meter-fill h-full" : "h-full"}
+          className={`meter-away ${animate ? "meter-fill" : ""} h-full`}
           style={{
             width: `${away * 100}%`,
-            background: "var(--away)",
             transition: "width var(--dur-slow) var(--ease-spring)",
           }}
         />
         <div
-          className={animate ? "meter-fill-right h-full" : "h-full"}
+          className={`meter-home ${animate ? "meter-fill-right" : ""} h-full`}
           style={{
             width: `${home * 100}%`,
-            background: "var(--home)",
             transition: "width var(--dur-slow) var(--ease-spring)",
           }}
         />
-        {/* The even mark. Drawn over both halves so it reads at any split. */}
+        {/* The even mark. A notch through the full height, drawn over both
+            halves so it reads at any split. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2"
-          style={{ background: "var(--surface-raised)", opacity: 0.85 }}
+          className="pointer-events-none absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full"
+          style={{ background: "var(--surface-raised)", opacity: 0.9 }}
         />
       </div>
 
@@ -108,7 +111,7 @@ export function ProbabilityBar({
             "Effectively even"
           ) : (
             <>
-              <span style={{ color: leader.color, fontWeight: 580 }}>
+              <span style={{ color: leader.color, fontWeight: 600 }}>
                 {leader.label}
               </span>{" "}
               by {Math.round((leader.pct - trailer.pct) * 100)} points
@@ -145,8 +148,8 @@ function Side({
         className="t-micro font-mono uppercase"
         style={{
           color: leading ? color : "var(--text-subtle)",
-          fontWeight: leading ? 620 : 500,
-          letterSpacing: "0.06em",
+          fontWeight: leading ? 640 : 500,
+          letterSpacing: "0.07em",
         }}
       >
         {label}
@@ -155,16 +158,18 @@ function Side({
         className="numeral-lg leading-none"
         style={{
           color: leading ? color : "var(--text-subtle)",
+          // The leader is the hero of the card; the trailer keeps its
+          // baseline with it rather than floating.
           fontSize: leading
             ? compact
-              ? "1.0625rem"
-              : "1.375rem"
+              ? "1.1875rem"
+              : "1.75rem"
             : compact
               ? "0.8125rem"
-              : "0.9375rem",
-          // The trailing side keeps its baseline with the leader rather than
-          // floating, so the pair reads as one comparison.
-          marginTop: leading ? "0.0625rem" : compact ? "0.1875rem" : "0.3125rem",
+              : "1rem",
+          letterSpacing: leading ? "-0.045em" : undefined,
+          fontWeight: leading ? 700 : undefined,
+          marginTop: leading ? "0.125rem" : compact ? "0.25rem" : "0.5625rem",
         }}
       >
         {pct(value)}

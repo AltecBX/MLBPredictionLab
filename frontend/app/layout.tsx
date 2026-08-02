@@ -79,16 +79,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to content
         </a>
 
+        {/* The chrome is one glass material everywhere — header, date bar,
+            tab strip, bottom bar all share the .glass recipe, so the product
+            reads as one object rather than four toolbars. The border fades
+            rather than cutting: a softened hairline under glass is how iOS
+            separates a bar from content. */}
         <header
-          className="sticky top-0 z-30 border-b"
+          className="glass sticky top-0 z-30 border-b"
           style={{
-            borderColor: "var(--border)",
-            // A saturating blur is what keeps the header legible over a scrolling
-            // card grid without resorting to an opaque bar, which would cut the
-            // page in two.
-            background: "color-mix(in srgb, var(--surface) 78%, transparent)",
-            backdropFilter: "blur(14px) saturate(1.6)",
-            WebkitBackdropFilter: "blur(14px) saturate(1.6)",
+            borderColor: "color-mix(in srgb, var(--border) 78%, transparent)",
           }}
         >
           {/* One row on every screen. On a phone the four destinations move to
@@ -96,11 +95,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="safe-x mx-auto flex h-[calc(var(--header-h)-1px)] max-w-[1240px] items-center gap-3">
             <Link
               href="/"
-              className="tap min-w-0 shrink items-center gap-2"
+              className="tap min-w-0 shrink items-center gap-2.5"
               aria-label="Jerry MLB Prediction Lab, home"
             >
               <BrandMark />
-              <span className="t-heading min-w-0 truncate" style={{ fontWeight: 640 }}>
+              <span
+                className="t-heading min-w-0 truncate"
+                style={{ fontWeight: 680, letterSpacing: "-0.02em" }}
+              >
                 <span className="sm:hidden">Jerry MLB</span>
                 <span className="hidden sm:inline">Jerry MLB Prediction Lab</span>
               </span>

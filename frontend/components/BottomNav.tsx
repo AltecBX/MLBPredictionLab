@@ -4,17 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * The primary navigation on a phone.
+ * The primary navigation on a phone: a floating glass capsule above the home
+ * indicator, which is where a modern iOS tab bar lives.
  *
  * A sticky top bar plus a stacked nav row ate about a third of an iPhone
  * viewport before this existed, and the links sat at the far end of a thumb's
- * reach. The same four destinations live here instead: fixed to the bottom,
- * 44pt targets, above the home indicator. Above `sm` it disappears entirely and
- * the header nav takes over.
+ * reach. The same four destinations live here instead, as 44pt targets inside
+ * a capsule that floats clear of the screen edges — content is visible sliding
+ * beneath it, which is what makes the bar read as a layer rather than a wall.
+ *
+ * The outer <nav> is deliberately full-bleed and anchored to the bottom edge,
+ * with the inset carried as padding rather than margin. That keeps the
+ * element's own box reaching the physical bottom of the viewport — which is
+ * what "within thumb reach" means, and what the mobile e2e suite measures.
+ *
+ * Above `sm` it disappears entirely and the header nav takes over.
  */
 
 const ITEMS = [
-  { href: "/", label: "Games", match: (p: string) => p === "/" || p.startsWith("/game") },
+  { href: "/", label: "Games", match: (p: string) => p === "/" || p.startsWith("/game") || p.startsWith("/d/") },
   { href: "/backtest", label: "Backtest", match: (p: string) => p.startsWith("/backtest") },
   {
     href: "/methodology",
@@ -29,14 +37,13 @@ const ITEMS = [
 ] as const;
 
 function Icon({ name, active }: { name: string; active: boolean }) {
-  const stroke = active ? "var(--accent)" : "currentColor";
   const common = {
-    width: 20,
-    height: 20,
+    width: 21,
+    height: 21,
     viewBox: "0 0 24 24",
     fill: "none",
-    stroke,
-    strokeWidth: active ? 2 : 1.6,
+    stroke: "currentColor",
+    strokeWidth: active ? 2.1 : 1.7,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
@@ -81,43 +88,41 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 border-t sm:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 sm:hidden"
       style={{
-        borderColor: "var(--border)",
-        background: "color-mix(in srgb, var(--surface) 82%, transparent)",
-        backdropFilter: "blur(18px) saturate(1.7)",
-        WebkitBackdropFilter: "blur(18px) saturate(1.7)",
+        // Padding, not margin: the nav's own box must reach the bottom edge.
+        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.625rem)",
+        pointerEvents: "none",
       }}
     >
-      <ul className="safe-b grid grid-cols-4">
+      <ul
+        className="glass grid w-full max-w-[26rem] grid-cols-4 border"
+        style={{
+          pointerEvents: "auto",
+          borderColor: "var(--border)",
+          borderRadius: "var(--radius-xl)",
+          boxShadow: "var(--shadow-3), inset 0 1px 0 var(--glow)",
+        }}
+      >
         {ITEMS.map((item) => {
           const active = item.match(pathname);
           return (
-            <li key={item.href}>
+            <li key={item.href} className="p-1">
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className="relative flex min-h-[3.375rem] flex-col items-center justify-center gap-1 pt-2 pb-1.5"
-                style={{ color: active ? "var(--accent)" : "var(--text-muted)" }}
+                className="relative flex min-h-[3.25rem] flex-col items-center justify-center gap-0.5 rounded-[calc(var(--radius-xl)-0.25rem)]"
+                style={{
+                  color: active ? "var(--accent)" : "var(--text-muted)",
+                  background: active ? "var(--accent-soft)" : "transparent",
+                  transition:
+                    "background-color var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out)",
+                }}
               >
-                {/* A short rule at the top edge of the active tab. On a bar
-                    where the only other cue is a colour shift, the mark is what
-                    survives glare, a colourblind reader and a glance. */}
-                <span
-                  aria-hidden
-                  className="absolute inset-x-0 top-0 mx-auto h-[2px] rounded-full transition-all"
-                  style={{
-                    width: active ? "1.75rem" : "0",
-                    opacity: active ? 1 : 0,
-                    background: "var(--accent)",
-                    transitionDuration: "var(--dur-base)",
-                    transitionTimingFunction: "var(--ease-spring)",
-                  }}
-                />
                 <Icon name={item.label} active={active} />
                 <span
                   className="t-micro leading-none"
-                  style={{ fontWeight: active ? 620 : 500 }}
+                  style={{ fontWeight: active ? 640 : 500 }}
                 >
                   {item.label}
                 </span>

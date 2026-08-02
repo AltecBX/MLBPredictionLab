@@ -126,10 +126,10 @@ export function GameCardView({ game }: { game: GameCardType }) {
 
   return (
     <article className="card card-interactive flex min-w-0 flex-col overflow-hidden">
-      <header
-        className="flex items-center justify-between gap-2 px-4 py-2.5"
-        style={{ background: "var(--surface-inset)" }}
-      >
+      {/* An open header — time and venue as a quiet line, status chips right.
+          The old full-width tinted band read as web furniture; a native cell
+          separates with space and a hairline, not with panels. */}
+      <header className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
         {/* The time never wraps; a long ballpark name truncates instead. */}
         <div className="t-micro flex min-w-0 items-center gap-1.5 muted">
           <span className="tnum whitespace-nowrap" style={{ fontWeight: 580 }}>
@@ -160,7 +160,7 @@ export function GameCardView({ game }: { game: GameCardType }) {
         </div>
       </header>
 
-      <div className="flex flex-col gap-3.5 p-4">
+      <div className="flex flex-col gap-3.5 px-4 pt-2.5 pb-4">
         <div className="flex flex-col gap-3">
           <TeamRow
             team={game.away}
@@ -199,7 +199,10 @@ export function GameCardView({ game }: { game: GameCardType }) {
               animate={false}
             />
 
-            <dl className="inset grid grid-cols-3 gap-3 px-3 py-2.5">
+            <dl
+              className="grid grid-cols-3 gap-3 rounded-[var(--radius-md)] px-3.5 py-2.5"
+              style={{ background: "var(--surface-inset)" }}
+            >
               <Stat
                 label="Projected"
                 value={
@@ -293,8 +296,10 @@ export function GameCardView({ game }: { game: GameCardType }) {
       </div>
 
       <footer
-        className="t-micro mt-auto flex min-w-0 items-center justify-between gap-2 border-t px-4 py-2 subtle"
-        style={{ borderColor: "var(--border)", background: "var(--surface-inset)" }}
+        className="t-micro mt-auto flex min-w-0 items-center justify-between gap-2 border-t px-4 py-1.5 subtle"
+        style={{
+          borderColor: "color-mix(in srgb, var(--border) 72%, transparent)",
+        }}
       >
         <span className="min-w-0 truncate">
           {prediction ? `Updated ${timestamp(prediction.created_at)}` : "Not predicted"}
@@ -302,13 +307,14 @@ export function GameCardView({ game }: { game: GameCardType }) {
         {/* The one action on a card, sized for a thumb rather than a cursor. */}
         <Link
           href={`/game/${game.game_id}`}
-          className="tap group shrink-0 gap-1 pl-3"
-          style={{ color: "var(--accent)", fontWeight: 580 }}
+          className="tap group shrink-0 gap-1.5 pl-3"
+          style={{ color: "var(--accent)", fontWeight: 600 }}
         >
           Full breakdown
           <span
             aria-hidden
-            className="inline-block transition-transform group-hover:translate-x-0.5"
+            className="inline-flex size-[1.125rem] items-center justify-center rounded-full transition-transform group-hover:translate-x-0.5"
+            style={{ background: "var(--accent-soft)", fontSize: "0.6875rem" }}
           >
             →
           </span>
