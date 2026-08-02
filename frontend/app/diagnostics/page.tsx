@@ -3,6 +3,7 @@ import { Section, StatBlock } from "@/components/StatBlock";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
 import { num, relativeAge, timestamp } from "@/lib/format";
+import type { DriftReport } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Diagnostics" };
@@ -13,6 +14,107 @@ const FRESHNESS_TONE = {
   STALE: "bad",
   UNAVAILABLE: "off",
 } as const;
+
+
+/**
+ * Feature and calibration drift.
+ *
+ * Every unavailable branch carries its reason. A drift monitor that shows a
+ * comfortable zero for a feature it never compared is worse than one that says
+ * nothing — the number would read as reassurance it has not earned.
+ */
+function DriftPanel({ drift }: { drift: DriftReport }) {
+  if (!drift.available) {
+    return (
+      <UnavailableNotice
+        compact
+        title="Drift monitoring is not available"
+        reason={drift.reason ?? "No active model version."}
+      />
+    );
+  }
+  const features = drift.features ?? [];
+  const calibration = drift.calibration;
+  const shifted = drift.n_features_shifted ?? 0;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatBlock
+          label="Features compared"
+          value={drift.n_features_compared ?? 0}
+          sub={`last ${drift.recent_window_days ?? 30} days vs training window`}
+        />
+        <StatBlock
+          label="Shifted"
+          value={shifted}
+          sub={shifted ? "above the stable band" : "all inside the stable band"}
+          tone={shifted ? "away" : "home"}
+        />
+        {calibration?.available ? (
+          <>
+            <StatBlock
+              label="Observed calibration"
+              value={num(calibration.observed_calibration_error, 4)}
+              sub={`${calibration.n_finished} finished games`}
+            />
+            <StatBlock
+              label="Registered"
+              value={num(calibration.registered_calibration_error ?? null, 4)}
+              sub="out-of-sample at training time"
+            />
+          </>
+        ) : null}
+      </dl>
+
+      {!calibration?.available && calibration?.reason ? (
+        <p className="t-small muted">{calibration.reason}</p>
+      ) : null}
+
+      {features.length ? (
+        <div className="scroll-x edge-cue">
+          <table className="data sticky-label min-w-[340px]">
+            <thead>
+              <tr>
+                <th scope="col">Feature</th>
+                <th scope="col" className="num">PSI</th>
+                <th scope="col" className="num">Training mean</th>
+                <th scope="col" className="num">Recent mean</th>
+              </tr>
+            </thead>
+            <tbody>
+              {features.slice(0, 10).map((row) => (
+                <tr key={row.feature_key}>
+                  <th scope="row" className="font-normal">
+                    {row.feature_key}
+                    {row.band !== "STABLE" ? (
+                      <Badge tone="muted">{row.band}</Badge>
+                    ) : null}
+                  </th>
+                  <td className="num tnum">{num(row.psi, 3)}</td>
+                  <td className="num tnum">{num(row.reference_mean, 3)}</td>
+                  <td className="num tnum">{num(row.recent_mean, 3)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="t-small muted">
+          Not enough predictions from this model version yet to compare
+          distributions.
+        </p>
+      )}
+
+      {drift.bands?.note ? (
+        <p className="text-xs muted">{drift.bands.note}</p>
+      ) : null}
+      {drift.importance_stability && !drift.importance_stability.available ? (
+        <p className="text-xs muted">{drift.importance_stability.reason}</p>
+      ) : null}
+    </div>
+  );
+}
 
 export default async function DiagnosticsPage() {
   const result = await api.diagnostics();
@@ -314,12 +416,7 @@ export default async function DiagnosticsPage() {
           <p className="text-sm muted">{String(backtest["reason"] ?? "No backtest yet.")}</p>
         )}
         <div className="mt-4">
-          <UnavailableNotice
-            compact
-            title="Drift monitoring is not available"
-            reason={d.drift.reason}
-            phase={4}
-          />
+          <DriftPanel drift={d.drift} />
         </div>
       </Section>
 

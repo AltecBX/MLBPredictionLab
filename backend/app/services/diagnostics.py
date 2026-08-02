@@ -30,6 +30,7 @@ from app.db.models import (
 from app.db.session import db_health
 from app.features.registry import DEFERRED, FS_V1
 from app.providers.registry import configured_categories
+from app.services.drift import drift_report
 from app.services.freshness import freshness_report, refresh_freshness
 
 __all__ = ["refresh_freshness", "diagnostics_snapshot"]
@@ -250,6 +251,7 @@ def diagnostics_snapshot(session: Session) -> dict[str, Any]:
         "failed_jobs": [j for j in _recent_jobs(session, limit=100) if j["status"] == "FAILED"][:15],
         "missing_data": _missing_data(session),
         "model": _model_health(session),
+        "drift": drift_report(session),
         "predictions": _prediction_health(session),
         "backtest": _backtest_health(session),
         "api_usage": _api_usage(session),
@@ -261,10 +263,5 @@ def diagnostics_snapshot(session: Session) -> dict[str, Any]:
                 str(phase): len([f for f in DEFERRED if f.phase == phase])
                 for phase in sorted({f.phase for f in DEFERRED})
             },
-        },
-        "drift": {
-            "available": False,
-            "reason": "Feature distribution drift and calibration drift monitoring "
-                      "arrive in Phase 4 alongside automated retraining.",
         },
     }
