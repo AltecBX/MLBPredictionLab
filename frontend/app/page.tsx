@@ -5,7 +5,7 @@ import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
-import { api, looksLikeColdStart } from "@/lib/api";
+import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
 import {
   longDate,
   mediumDate,
@@ -262,7 +262,11 @@ export default async function GameCenterPage({
             }
             reason={
               looksLikeColdStart(result.status)
-                ? `${result.message} — this deployment sleeps when idle and takes about a minute to come back. It was retried for 21 seconds and had not answered yet; reloading in a moment usually works.`
+                ? `${result.message} — this deployment sleeps when idle and takes about a minute to come back.${
+                    retryBudgetSeconds() > 0
+                      ? ` It was retried for ${retryBudgetSeconds()} seconds and had not answered yet;`
+                      : ""
+                  } reloading in a moment usually works.`
                 : result.message
             }
             requiredSource="backend at API_BASE_URL"

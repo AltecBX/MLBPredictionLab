@@ -117,6 +117,10 @@ const RETRY_DELAYS_MS = (() => {
   return ALL_RETRY_DELAYS_MS.slice(0, Math.max(0, configured));
 })();
 
+/** Total seconds spent retrying, so user-facing copy can state it truthfully. */
+export const retryBudgetSeconds = () =>
+  Math.round(RETRY_DELAYS_MS.reduce((a, b) => a + b, 0) / 1000);
+
 const isRetryable = (status: number) => status === 0 || RETRYABLE_STATUSES.has(status);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

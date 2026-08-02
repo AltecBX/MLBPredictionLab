@@ -20,7 +20,11 @@ type Page = import("@playwright/test").Page;
  */
 async function backendIsReachable(page: Page) {
   await page.goto("/");
-  const down = page.getByText(/prediction API is unavailable/i);
+  // Must match every wording the unavailable state can use. When this fell out
+  // of step with the app it did not fail loudly — it silently decided the
+  // backend was UP, and the tests went on to assert against a slate that was
+  // never there.
+  const down = page.getByText(/prediction API is (unavailable|still waking up)/i);
   const up = page.getByLabel("Data freshness");
   await Promise.race([
     down.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {}),
@@ -54,7 +58,13 @@ test.describe("daily game workflow", () => {
     await expect(page.getByRole("navigation", { name: "Date" })).toBeVisible();
 
     if (!(await backendIsReachable(page))) {
-      await expect(page.getByText(/prediction API is unavailable/i)).toBeVisible();
+      // Either wording is a correct explicit unavailable state: the app now
+      // distinguishes a service that is still waking from one that is down,
+      // and with no API at all it cannot tell which. The contract is that it
+      // says so plainly, not which of the two sentences it picks.
+      await expect(
+        page.getByText(/prediction API is (unavailable|still waking up)/i),
+      ).toBeVisible();
       return;
     }
 
