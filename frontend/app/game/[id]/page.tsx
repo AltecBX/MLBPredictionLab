@@ -27,7 +27,7 @@ import {
   signedPp,
   timestamp,
 } from "@/lib/format";
-import type { GameDetail } from "@/lib/types";
+import type { ChangeAttribution, GameDetail } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -330,6 +330,99 @@ function PredictionTab({ detail }: { detail: GameDetail }) {
   );
 }
 
+/**
+ * Why the number moved, split three ways.
+ *
+ * The split is exact rather than attributed — the logistic model and the blend
+ * are both linear in log-odds, so these three terms *are* the move rather than
+ * an estimate of it. The share bar uses absolute magnitudes because two stages
+ * can pull in opposite directions and a signed bar would show one of them as
+ * negative width.
+ */
+function ChangeAttributionPanel({
+  attribution,
+}: {
+  attribution: ChangeAttribution | null;
+}) {
+  if (!attribution || !attribution.has_previous) return null;
+  const { stages, drivers } = attribution;
+  const parts = [
+    { key: "features", label: "Team form", value: stages.features },
+    { key: "calibration", label: "Calibration", value: stages.calibration },
+    { key: "simulation", label: "Run simulation", value: stages.simulation },
+  ];
+  const magnitude = parts.reduce((sum, p) => sum + Math.abs(p.value), 0);
+  if (magnitude < 1e-9) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <p className="eyebrow mb-2">What moved it</p>
+        <div
+          className="flex h-2.5 w-full overflow-hidden rounded-full"
+          style={{ background: "var(--surface-sunken)" }}
+        >
+          {parts.map((part, index) => (
+            <div
+              key={part.key}
+              style={{
+                width: `${(Math.abs(part.value) / magnitude) * 100}%`,
+                background:
+                  index === 0
+                    ? "var(--accent)"
+                    : index === 1
+                      ? "var(--border-strong)"
+                      : "var(--home)",
+              }}
+            />
+          ))}
+        </div>
+        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+          {parts.map((part) => (
+            <div key={part.key} className="flex items-baseline gap-1.5">
+              <dt className="text-xs muted">{part.label}</dt>
+              <dd className="numeral text-xs">
+                {((Math.abs(part.value) / magnitude) * 100).toFixed(0)}%
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      {attribution.simulation_note ? (
+        <p className="t-small muted">{attribution.simulation_note}</p>
+      ) : null}
+
+      {drivers.length ? (
+        <div>
+          <p className="eyebrow mb-2">Inputs that moved it most</p>
+          <ul className="flex flex-col gap-1.5">
+            {drivers.slice(0, 6).map((driver) => (
+              <li
+                key={driver.feature_key}
+                className="flex items-center justify-between gap-3"
+              >
+                <span className="min-w-0 truncate text-sm">
+                  {driver.display_name}
+                </span>
+                <span
+                  className="numeral shrink-0 text-sm"
+                  style={{
+                    color:
+                      driver.favors === "H" ? "var(--home)" : "var(--away)",
+                  }}
+                >
+                  {signedPp(driver.contribution_pp)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ChangeSummary({ detail }: { detail: GameDetail }) {
   const change = detail.change_since_previous;
   if (!change.has_previous) {
@@ -360,6 +453,7 @@ function ChangeSummary({ detail }: { detail: GameDetail }) {
           sub={`as of ${timestamp(change.current_as_of)}`}
         />
       </dl>
+      <ChangeAttributionPanel attribution={change.attribution ?? null} />
       {change.changed_features.length ? (
         <div className="scroll-x edge-cue">
           <table className="data sticky-label min-w-[320px]">

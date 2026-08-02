@@ -165,6 +165,10 @@ class PredictionChange(ApiModel):
     completeness_current: float | None = None
     n_changed_features: int | None = None
     changed_features: list[dict[str, Any]] = []
+    #: Exact decomposition of the move: which features moved it, and how much
+    #: belongs to the calibrator and to the run simulation rather than to any
+    #: feature. Absent when the model that issued both snapshots is unavailable.
+    attribution: dict[str, Any] | None = None
 
 
 class BacktestEvidence(ApiModel):

@@ -155,6 +155,27 @@ class LogisticWinModel:
             )
         return out
 
+    def log_odds_terms(self, frame: pd.DataFrame) -> dict[str, float]:
+        """Each feature's additive contribution to the log-odds: ``beta_i * z_i``.
+
+        Distinct from `contributions`, which is a leave-one-out reading in
+        probability points at a single moment. These terms are what a *change*
+        between two moments decomposes into, and they do so exactly: the log-odds
+        is linear in them, so the differences sum to the total move with no
+        residual and no approximation. Probability points cannot do that — the
+        sigmoid is not additive — which is why the attribution is computed here
+        and converted afterwards.
+        """
+        if self.pipeline is None:
+            raise RuntimeError("Model is not fitted.")
+        z = self.transformed_row(frame)[0]
+        clf: LogisticRegression = self.pipeline.named_steps["clf"]
+        beta = clf.coef_[0]
+        return {
+            name: float(b * value)
+            for name, b, value in zip(self.feature_names, beta, z, strict=True)
+        }
+
     def standardized_importance(self) -> dict[str, float]:
         """Absolute standardized coefficient — comparable across features."""
         return {k: abs(v) for k, v in self.coefficients.items()}
