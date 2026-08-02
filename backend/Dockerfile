@@ -17,6 +17,10 @@ RUN pip install --upgrade pip && pip install .
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+# Copied here, before the USER switch, and never chmod-ed: the repository stores
+# it executable, COPY preserves that, and a chmod after dropping to an unprivileged
+# user fails with "Operation not permitted" — which CI caught.
+COPY entrypoint.sh ./
 
 RUN useradd --create-home --uid 10001 jerry && chown -R jerry /srv
 USER jerry
@@ -31,6 +35,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # Migrations run at start so a deploy is a single step -- but they are attempted
 # rather than required. See entrypoint.sh: a database that wakes slower than the
 # web service must not be able to keep the API from existing.
-COPY entrypoint.sh ./
-RUN chmod +x entrypoint.sh
 CMD ["./entrypoint.sh"]
