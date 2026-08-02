@@ -277,6 +277,42 @@ def cmd_simulate_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run_model_check(args: argparse.Namespace) -> int:
+    """Ablate the run model's refinements against the crude version they refine.
+
+    Exits 0 whatever the verdict. A refinement that does not earn its place is a
+    measurement, and this repository keeps those.
+    """
+    from app.backtest.walkforward import make_steps
+    from app.db.session import session_scope
+    from app.features.asof import AsOfStore
+    from app.modeling.dataset import build_dataset
+    from app.modeling.registry import get_active_version
+    from app.modeling.run_model_compare import compare_run_models
+
+    seasons = [int(s) for s in args.seasons.split(",")] if args.seasons else None
+    with session_scope() as session:
+        try:
+            version = get_active_version(session)
+            C = float((version.hyperparameters or {}).get("C", 0.001))
+        except Exception:  # noqa: BLE001 - no active model is not fatal here
+            C = 0.001
+        store = AsOfStore.load(session, seasons)
+        dataset = build_dataset(session, seasons=seasons, store=store)
+        steps = make_steps(
+            dataset.labelled, start=args.start, end=args.end, step_days=args.step_days
+        )
+        comparison = compare_run_models(
+            store, dataset, steps, C=C, simulations=args.simulations
+        )
+
+    if comparison is None:
+        print(json.dumps({"error": "walk-forward produced no comparable games"}))
+        return 1
+    print(json.dumps(comparison.to_dict(), indent=2, default=str))
+    return 0
+
+
 def cmd_compare_feature_sets(args: argparse.Namespace) -> int:
     """Walk-forward comparison of two feature sets, on the same games.
 
@@ -423,6 +459,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--step-days", type=int, default=30)
     p.add_argument("--simulations", type=int, default=20000)
     p.set_defaults(func=cmd_simulate_check)
+
+    p = sub.add_parser(
+        "run-model-check",
+        help="Ablate the run model's park and starting-pitcher refinements",
+    )
+    p.add_argument("--seasons", default=None, help="e.g. 2024,2025")
+    p.add_argument("--start", type=_parse_date, default=None)
+    p.add_argument("--end", type=_parse_date, default=None)
+    p.add_argument("--step-days", type=int, default=30)
+    p.add_argument("--simulations", type=int, default=20000)
+    p.set_defaults(func=cmd_run_model_check)
 
     sub.add_parser("check-sources", help="Recompute freshness").set_defaults(
         func=cmd_check_sources
