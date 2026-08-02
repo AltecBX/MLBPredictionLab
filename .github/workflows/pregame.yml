@@ -53,6 +53,12 @@ jobs:
       # Open-Meteo needs no key, so the forecast provider is on by default here
       # rather than waiting for a secret that does not exist.
       WEATHER_PROVIDER: open_meteo
+      # Named for the same reason as in `refresh.yml`: these decide what the
+      # Diagnostics source table *reports*, and the two workflows disagreeing
+      # about them is how the site came to describe working ingests as
+      # unavailable. The pollers do not read them.
+      LINEUP_PROVIDER: mlb_statsapi
+      INJURY_PROVIDER: mlb_statsapi
     steps:
       - name: Check the database secret is set
         run: |

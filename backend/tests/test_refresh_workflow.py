@@ -92,6 +92,47 @@ def test_the_flag_actually_skips_predicting(monkeypatch):
     assert cli.cmd_daily(args) == 0
 
 
+def test_both_workflows_agree_on_which_providers_exist():
+    """A category cannot be configured in one job and absent in the other.
+
+    `check-sources` runs in `refresh.yml` and rewrites every row of the
+    Diagnostics source table from `configured_categories()`, which reads these
+    variables. `pregame.yml` sets them and `refresh.yml` did not, so the daily
+    job overwrote working categories with "No provider configured": the
+    deployed site reported lineups and weather as UNAVAILABLE on the same
+    screen whose job log showed `poll_lineups` writing 180 rows and
+    `ingest_weather` writing 15.
+
+    UNAVAILABLE means "not measured". Claiming it for something measured is the
+    same lie as the reverse, and it is the one this product rules out first.
+    """
+    root = WORKFLOW.parent
+    keys = ("LINEUP_PROVIDER", "INJURY_PROVIDER", "WEATHER_PROVIDER")
+    envs = {}
+    for name in ("refresh.yml", "pregame.yml"):
+        spec = yaml.safe_load((root / name).read_text(encoding="utf-8"))
+        job = next(iter(spec["jobs"].values()))
+        envs[name] = {k: v for k, v in (job.get("env") or {}).items() if k in keys}
+
+    assert envs["refresh.yml"] == envs["pregame.yml"], (
+        "refresh.yml runs check-sources, which recomputes every source row from "
+        f"these variables. Disagreeing with pregame.yml makes the site report "
+        f"working ingests as UNAVAILABLE. {envs}"
+    )
+    assert set(envs["refresh.yml"]) == set(keys), (
+        f"Every provider the pollers actually use must be named: {envs['refresh.yml']}"
+    )
+
+
+def test_injuries_are_actually_ingested_somewhere(steps):
+    """The table was empty because nothing fetched it, not because of a bug.
+
+    "Injuries unavailable" was honest, and honest about the wrong thing: no
+    workflow ran `ingest-injuries` at all.
+    """
+    _index_of(steps, "app.cli ingest-injuries")
+
+
 def test_omitting_the_flag_still_predicts():
     """The default must not quietly become "never predict"."""
     import inspect
