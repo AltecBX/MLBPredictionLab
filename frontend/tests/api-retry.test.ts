@@ -12,7 +12,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { looksLikeColdStart } from "@/lib/api";
+import { looksLikeColdStart, retryAttemptCount } from "@/lib/api";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -75,8 +75,12 @@ describe("request retries", () => {
     await vi.runAllTimersAsync();
     const result = await pending;
 
-    // One initial attempt plus the four backoff delays, and no more.
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    // One initial attempt plus one per configured delay, and no more. Asserted
+    // against the exported budget rather than a literal, so shortening the
+    // delays (the server layer now hides only a blip; WakeRetry covers the cold
+    // start) does not silently turn this into a test of nothing.
+    expect(fetchMock).toHaveBeenCalledTimes(retryAttemptCount() + 1);
+    expect(retryAttemptCount()).toBeGreaterThan(0);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(502);
   });
