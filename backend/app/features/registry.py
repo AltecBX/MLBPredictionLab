@@ -670,6 +670,33 @@ ARSENAL_ONLY: list[FeatureSpec] = [
 # about to be scored on is how a feature group manufactures its own
 # significance, and the four rejections on record are honest partly because
 # nothing like that happened.
+#
+# BUILT, MEASURED, REJECTED — and the way it failed is worth more than the
+# result. Six comparisons were run: two seasons by three regularisation
+# settings. One returned ADOPT, one returned REJECT, four returned NO_EFFECT,
+# and the sign of the difference flips between seasons at EVERY setting.
+#
+# The ADOPT is the instructive one. At C=0.01 on 2024 the group clears the bar
+# outright — +0.001932, interval [+0.00035, +0.00358], zero excluded. At C=0.03
+# on the same season, same features, same games, it is +0.000578 and nothing.
+# Run the same C=0.01 comparison on 2025 and the difference is NEGATIVE.
+#
+# That is the whole hazard of this protocol in one group: a verdict reachable by
+# choosing a nuisance constant nobody has a principled reason to set either way.
+# The per-set C selection made it worse rather than better — on 2024 it handed
+# the baseline C=0.03 and the candidate C=0.01, crediting the candidate with
+# 0.00050 of the baseline being worse at its own C plus 0.00085 of itself being
+# better, neither of which is a feature effect.
+BULLPEN_REJECTION = (
+    "Walk-forward on two seasons at three regularisation settings, coverage 100% "
+    "on all three features. 2024: +0.001434 (C selected), +0.000578 (C=0.03), "
+    "+0.001932 (C=0.01, interval excluding zero). 2025: -0.000013 (C selected), "
+    "-0.000621 (C=0.03, interval excluding zero, REJECT), -0.000395 (C=0.01). "
+    "The sign flips between seasons at every setting, and the one ADOPT does not "
+    "replicate at its own C on the larger season. Rejected. See MODELING_PLAN.md, "
+    "Individual bullpen availability."
+)
+
 BULLPEN_AVAILABILITY: list[FeatureSpec] = [
     FeatureSpec(
         "bp_available_count_diff", "Available relievers",
@@ -678,6 +705,7 @@ BULLPEN_AVAILABILITY: list[FeatureSpec] = [
         "straight days nor coming off a heavy outing.",
         unit="count", window="3d", min_sample=3, phase=2,
         source_category="bullpen_availability",
+        available=False, measurement=BULLPEN_REJECTION,
         narrative="has more of its bullpen available tonight",
     ),
     FeatureSpec(
@@ -687,6 +715,7 @@ BULLPEN_AVAILABILITY: list[FeatureSpec] = [
         "league relief rate. Unavailable arms are excluded rather than zeroed.",
         unit="%", window="season", min_sample=3, phase=2,
         source_category="bullpen_availability",
+        available=False, measurement=BULLPEN_REJECTION,
         narrative="can call on the better relievers tonight",
     ),
     FeatureSpec(
@@ -698,6 +727,7 @@ BULLPEN_AVAILABILITY: list[FeatureSpec] = [
         "a guess presented as a fact.",
         unit="0-1", window="3d", min_sample=3, phase=2,
         source_category="bullpen_availability",
+        available=False, measurement=BULLPEN_REJECTION,
         narrative="has its best reliever available tonight",
     ),
 ]
@@ -723,6 +753,11 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # fs_v1 + individual bullpen availability. On fs_v1 rather than fs_v4 for
     # the same reason fs_v3 was: fs_v4 did not clear the bar either, and
     # stacking on a group that failed measures the pair, not the group.
+    #
+    # Kept after rejection so the six-way measurement can be reproduced rather
+    # than taken on trust — the same reason fs_v2, fs_v3 and fs_v4 are still
+    # here. Reproduce with `--C 0.01` and `--C 0.03` as well as the default, or
+    # the sensitivity that decided this is invisible.
     "fs_v5": [s.key for s in FS_V1 + BULLPEN_AVAILABILITY],
 }
 

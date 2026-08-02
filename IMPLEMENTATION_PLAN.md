@@ -102,9 +102,10 @@ name of the required source. They are **not** filled with placeholder numbers:
    already covers a material change.
 3. **Ensemble** — *Done, and served.* The blend weight is **pre-registered at
    0.5 rather than fitted**, which is a deliberate departure from this line: the
-   grid argmax disagreed between the two measured seasons (1.0 and 0.3), so
-   fitting it would have been selection on the evaluation set. Measured at the
-   fixed weight it still beats the logistic model in both seasons.
+   grid argmax disagreed between the two measured seasons (1.0 on 2024, 0.7 on
+   2025 — on one the search discards the logistic model entirely), so fitting it
+   would have been selection on the evaluation set. Measured at the fixed weight
+   it still beats the logistic model in both seasons.
 4. **Advanced matchup features** — arsenal-vs-lineup and projected lineups built
    and **rejected on measurement** (MODELING_PLAN.md). Times-through-order and
    batter-vs-pitcher not started.
@@ -202,7 +203,7 @@ Ordered so each step is usable on its own and the next one depends on it.
 | 2 | Starting-pitcher Statcast features | **Built, measured, rejected** — MODELING_PLAN.md |
 | 3 | Expected lineup features | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 4 | Pitch arsenal matchup engine | Built, **measured and rejected** — best standalone signal per feature in the model, still redundant |
-| 5 | Individual bullpen availability | Not started |
+| 5 | Individual bullpen availability | Built, **measured and rejected** — and the sign flips between seasons at every regularisation setting. The method warning it produced is in MODELING_PLAN.md |
 | 6 | Weather and empirical park factors | **Park factors built and measured** — no effect on the win target, and inert by construction (MODELING_PLAN.md). Weather blocked: no forecast provider |
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 8 | Run scoring model and simulation | **Built, measured, and it works** — +0.0047 to +0.0065 log loss across two seasons, both intervals excluding zero. MODELING_PLAN.md |
