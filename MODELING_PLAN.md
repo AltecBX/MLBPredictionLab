@@ -557,10 +557,10 @@ python -m app.cli simulate-check --seasons 2024
 
 | | Log loss | Brier | Calibration error | Accuracy | AUC |
 |---|---|---|---|---|---|
-| Logistic (served), 42 features | 0.68682 | 0.24677 | 2.11% | 55.56% | 0.5562 |
-| Simulation alone, **0 fitted parameters** | 0.68321 | 0.24517 | 2.60% | 54.46% | 0.5636 |
-| **Blend at the pre-registered weight 0.5** | **0.68217** | **0.24460** | **0.91%** | **55.65%** | 0.5650 |
-| Blend at the searched weight 0.7 | 0.68190 | 0.24449 | 0.96% | 55.61% | 0.5656 |
+| Logistic (served), 42 features | 0.68682 | 0.24677 | 2.11% | **55.56%** | 0.5562 |
+| Simulation alone, **0 fitted parameters** | 0.68348 | 0.24530 | 2.98% | 54.55% | 0.5637 |
+| **Blend at the pre-registered weight 0.5** | **0.68210** | **0.24456** | **1.28%** | 55.06% | 0.5654 |
+| Blend at the searched weight 0.7 | 0.68192 | 0.24449 | 1.15% | 55.69% | 0.5659 |
 
 **2024 — 1,741 scored games**
 
@@ -596,18 +596,23 @@ calibration error of 0.94% against the logistic model's 3.27%.
 scores best on the games it is scored on, and reporting that number would be
 reporting the selection. The headline is an even split, chosen in advance because
 it is the obvious a priori answer. The searched weight of 0.7 is worth
-0.00027 more — which is to say the selection bought almost nothing, and the
+0.00018 more — which is to say the selection bought almost nothing, and the
 result is not a knife edge. Every weight from 0.1 to 1.0 improves on the
 logistic model alone.
 
 **What it does to the model's edge.** Against a coin flip at 0.69315, the served
-logistic model is worth 0.00633. The blend is worth 0.01098. That is not a
+logistic model is worth 0.00633. The blend is worth 0.01105. That is not a
 refinement; it is close to doubling everything the model knows.
 
-**Calibration is where it shows most.** Expected calibration error falls from
-2.11% to 0.91%, a 57% reduction. BACKTEST_PLAN.md § Phase 2A says reliability
-wins when metrics disagree; here they do not disagree, which is rarer and
-better.
+**Calibration improves, but only in the blend.** Expected calibration error
+falls from 2.11% to 1.28%, a 39% reduction. The simulation *alone* is worse
+calibrated than the logistic model in 2025 (2.98%) while scoring better on log
+loss and AUC — it is sharper, not better behaved. That is the honest reading and
+it is also the argument for blending rather than replacing: the two models are
+wrong in different places, and averaging them in log-odds cancels part of both.
+BACKTEST_PLAN.md § Phase 2A says reliability wins when metrics disagree; here
+they disagree for the simulation alone and agree for the blend, which is what
+makes the blend the result rather than the simulation.
 
 ### Why a parameter-free model beat a fitted one
 
