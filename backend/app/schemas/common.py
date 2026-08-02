@@ -87,6 +87,11 @@ class BallparkRef(ApiModel):
     turf_type: str | None = None
     capacity: int | None = None
     timezone: str | None = None
+    # Venue coordinates, for the client-side current-conditions readout. The
+    # published site is static files, so anything live at view time has to be
+    # fetched by the browser -- and the browser needs to know where the park is.
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class PitcherRef(ApiModel):

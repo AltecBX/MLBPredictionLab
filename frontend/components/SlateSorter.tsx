@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { GameCardView } from "@/components/GameCard";
+import { useLiveScores } from "@/components/useLiveScores";
 import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { EmptyState } from "@/components/UnavailableNotice";
 import { longDate } from "@/lib/format";
@@ -100,7 +101,33 @@ function compareBy(key: SortKey) {
 
 export function SlateSorter({ games, date }: { games: GameCard[]; date: string }) {
   const [sort, setSort] = useState<SortKey>("game_time");
-  const sorted = [...games].sort(compareBy(sort));
+
+  /*
+   * Live overlay. The HTML is built on the hour; the reader may be watching in
+   * the sixth inning. States fetched from MLB's own feed are merged over the
+   * built cards so a game that has started moves itself into the Live group
+   * and carries its current score — the page stays truthful between builds.
+   */
+  const live = useLiveScores(date, games);
+  const merged = games.map((game) => {
+    const state = live.get(game.game_id);
+    if (!state) return game;
+    return {
+      ...game,
+      status:
+        state.status === "Live"
+          ? "Live"
+          : state.status === "Final"
+            ? "Final"
+            : game.status,
+      status_detail: state.detail ?? game.status_detail,
+      home_score: state.homeRuns ?? game.home_score,
+      away_score: state.awayRuns ?? game.away_score,
+      is_final: game.is_final || state.status === "Final",
+    };
+  });
+
+  const sorted = [...merged].sort(compareBy(sort));
 
   return (
     <>
@@ -177,7 +204,7 @@ export function SlateSorter({ games, date }: { games: GameCard[]; date: string }
                     // still waiting when the reader has scrolled to it.
                     style={{ ["--i" as string]: Math.min(i, 9) }}
                   >
-                    <GameCardView game={game} />
+                    <GameCardView game={game} live={live.get(game.game_id)} />
                   </div>
                 ))}
               </div>

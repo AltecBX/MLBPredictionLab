@@ -68,6 +68,7 @@ export const gameCard = (over: Partial<GameCard> = {}): GameCard => ({
     id: 1, name: "Test Park", city: "Testville", state: "TS", roof_type: "Open",
     elevation_ft: 30, lf_line: 330, center: 400, rf_line: 330, turf_type: "Grass",
     capacity: 42000, timezone: "America/New_York",
+    latitude: 40.75, longitude: -73.85,
   },
   home_pitcher: { id: 101, full_name: "Home Starter", pitch_hand: "R", status: "PROBABLE" },
   away_pitcher: { id: 201, full_name: "Away Starter", pitch_hand: "L", status: "PROBABLE" },

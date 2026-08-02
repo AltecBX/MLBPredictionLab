@@ -31,7 +31,21 @@ on:
     workflows: ["Daily refresh", "Pregame refresh"]
     types: [completed]
   push:
-    branches: [main]
+    # The repository's DEFAULT branch is the claude working branch, not main —
+    # and that fact decides everything here. GitHub created the github-pages
+    # environment restricted to the default branch, so a deploy triggered from
+    # main is rejected before its job starts: a one-second failure with no
+    # logs, which is exactly how the redesign merge silently failed to ship
+    # while a queued pre-merge build deployed and looked like success.
+    # Scheduled workflows and workflow_run triggers also execute on the
+    # default branch. Publishing therefore follows the default branch, where
+    # deploys are allowed and where every other automated job already runs.
+    #
+    # To make main-driven deploys work instead, one Settings toggle does it:
+    # Settings -> Environments -> github-pages -> Deployment branches -> add
+    # main (or change the default branch itself). Until then, main stays the
+    # review record and this branch is what ships.
+    branches: ["claude/jerry-mlb-prediction-lab-f22lok"]
   workflow_dispatch:
 
 permissions:

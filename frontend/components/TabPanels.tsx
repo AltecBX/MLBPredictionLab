@@ -66,7 +66,14 @@ export function TabPanels({
     <>
       <Tabs tabs={tabs} active={active} basePath={basePath} onSelect={select} />
       {tabs.map((t) => (
-        <div key={t.key} hidden={t.key !== active}>
+        <div
+          key={t.key}
+          hidden={t.key !== active}
+          // Re-keyed per activation so the entrance runs on every switch, not
+          // only the first. The panels themselves stay mounted (hidden), so
+          // find-in-page and scroll positions survive; only the veil animates.
+          className={t.key === active ? "fade-in" : undefined}
+        >
           {panels[t.key]}
         </div>
       ))}

@@ -12,6 +12,7 @@ import {
   record,
   timestamp,
 } from "@/lib/format";
+import type { LiveState } from "@/lib/live";
 import type { GameCard as GameCardType, TeamRef as TeamRefType } from "@/lib/types";
 
 const RECOMMENDATION_TONE: Record<string, "home" | "accent" | "neutral" | "warn"> = {
@@ -120,9 +121,19 @@ function Stat({
   );
 }
 
-export function GameCardView({ game }: { game: GameCardType }) {
+export function GameCardView({
+  game,
+  live,
+}: {
+  game: GameCardType;
+  /** Present only while the reader's browser has fresher state than the build. */
+  live?: LiveState;
+}) {
   const prediction = game.prediction;
   const homeFavored = prediction ? prediction.predicted_winner === "HOME" : false;
+  const isLive = live?.status === "Live" || (!live && game.status === "Live");
+  const showScore =
+    game.is_final || (isLive && (game.home_score !== null || game.away_score !== null));
 
   return (
     <article className="card card-interactive flex min-w-0 flex-col overflow-hidden">
@@ -147,6 +158,16 @@ export function GameCardView({ game }: { game: GameCardType }) {
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {isLive ? (
+            <Badge tone="danger" title={live?.detail ?? "In progress"}>
+              <span
+                aria-hidden
+                className="live-dot inline-block size-1.5 rounded-full"
+                style={{ background: "currentColor" }}
+              />
+              {live?.inning ? `Live · ${live.inning}` : "Live"}
+            </Badge>
+          ) : null}
           {game.is_final ? <Badge tone="muted">Final</Badge> : null}
           {game.doubleheader && game.doubleheader !== "N" ? (
             <Badge tone="muted">DH</Badge>
@@ -172,7 +193,7 @@ export function GameCardView({ game }: { game: GameCardType }) {
             pitcher={game.away_pitcher}
             favored={!!prediction && !homeFavored}
             score={game.away_score}
-            showScore={game.is_final}
+            showScore={showScore}
           />
           <TeamRow
             team={game.home}
@@ -184,7 +205,7 @@ export function GameCardView({ game }: { game: GameCardType }) {
             pitcher={game.home_pitcher}
             favored={!!prediction && homeFavored}
             score={game.home_score}
-            showScore={game.is_final}
+            showScore={showScore}
           />
         </div>
 
@@ -302,7 +323,11 @@ export function GameCardView({ game }: { game: GameCardType }) {
         }}
       >
         <span className="min-w-0 truncate">
-          {prediction ? `Updated ${timestamp(prediction.created_at)}` : "Not predicted"}
+          {isLive
+            ? "Live score from MLB — the prediction is the last issued before first pitch"
+            : prediction
+              ? `Updated ${timestamp(prediction.created_at)}`
+              : "Not predicted"}
         </span>
         {/* The one action on a card, sized for a thumb rather than a cursor. */}
         <Link
