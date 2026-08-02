@@ -827,6 +827,30 @@ WEATHER: list[FeatureSpec] = [
 # scored on. See `features/availability.py` for the table. The bullpen group's
 # warning is about a nuisance constant tuned on the target; this is deliberately
 # the other thing.
+#
+# BUILT, MEASURED, NOT ADOPTED — and it is the first candidate group whose sign
+# does not flip. Four comparisons, two seasons by two regularisation settings,
+# and log loss and Brier are POSITIVE in all four. Every previous group either
+# flipped between seasons (bullpen, at every C) or was negative in both
+# (weather). This one does neither.
+#
+# It is still not adoption, because every interval spans zero. Pooled across
+# both seasons at C=0.03 the estimate is +0.000314 with an interval of
+# [-0.00046, +0.00108] — an effect of about a twentieth of what the whole model
+# is worth, in a sample that would need roughly 24,600 games to resolve it. Ten
+# seasons. The honest verdict is not "measured and absent" but "smaller than two
+# seasons of baseball can see", which is a different sentence and a more useful
+# one.
+AVAILABILITY_NO_EFFECT = (
+    "Walk-forward on two seasons at two regularisation settings, coverage 100% "
+    "on both features in both seasons. 2024: +0.000091 (C=0.03), +0.000034 "
+    "(C=0.01). 2025: +0.000385 (C=0.03), +0.000310 (C=0.01). Positive in all "
+    "four on log loss and Brier -- the first candidate group that does not flip "
+    "sign -- but every interval spans zero. Pooled at C=0.03: +0.000314, "
+    "[-0.00046, +0.00108]; excluding zero would take about 24,600 games. Not "
+    "adopted. See MODELING_PLAN.md, Roster availability."
+)
+
 AVAILABILITY: list[FeatureSpec] = [
     FeatureSpec(
         "il_offense_lost_diff", "Bats on the injured list",
@@ -837,6 +861,7 @@ AVAILABILITY: list[FeatureSpec] = [
         "losing a bench bat are not the same event.",
         unit="share", window="w45", min_sample=200, phase=2,
         source_category="injuries", higher_favors_home=False,
+        available=False, measurement=AVAILABILITY_NO_EFFECT,
         narrative="has lost less of its recent batting to the injured list",
     ),
     FeatureSpec(
@@ -846,6 +871,7 @@ AVAILABILITY: list[FeatureSpec] = [
         "last forty-five days thrown by pitchers now on the injured list.",
         unit="share", window="w45", min_sample=200, phase=2,
         source_category="injuries", higher_favors_home=False,
+        available=False, measurement=AVAILABILITY_NO_EFFECT,
         narrative="has lost less of its recent pitching to the injured list",
     ),
 ]

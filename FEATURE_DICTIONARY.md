@@ -534,7 +534,27 @@ for the later timeline snapshots and evaluated there.
 `lineup_platoon_advantage`, `lineup_vs_arsenal_xwoba`,
 `lineup_confirmed_minus_projected`, `lineup_missing_starter_impact`.
 
-### `il_*` — roster availability (`fs_v7`) — **built**
+### `il_*` — roster availability (`fs_v7`) — **built, measured, not adopted**
+
+**Verdict first.** Four walk-forward comparisons — two seasons by two
+regularisation settings — and log loss and Brier are **positive in all four**.
+This is the first candidate group in the repository whose sign does not flip.
+Every interval still spans zero, so it is not adopted.
+
+| Season | C | n | Δ log loss | Paired 95% CI |
+|---|---|---|---|---|
+| 2024 | 0.03 | 1,741 | +0.000091 | [−0.00145, +0.00167] |
+| 2024 | 0.01 | 1,741 | +0.000034 | [−0.00130, +0.00142] |
+| 2025 | 0.03 | 2,363 | +0.000385 | [−0.00048, +0.00129] |
+| 2025 | 0.01 | 2,363 | +0.000310 | [−0.00055, +0.00124] |
+
+Coverage 100% on both features in both seasons. Pooled at C=0.03: **+0.000314,
+[−0.00046, +0.00108]** — an interval that would need about **24,600 games, ten
+seasons**, to exclude zero. The verdict is therefore not "measured and absent"
+but "smaller than two seasons of baseball can resolve". See MODELING_PLAN.md,
+*Roster availability*, for why that distinction changes what it licenses.
+
+
 
 Registered as feature set **`fs_v7`**, `fs_v1` plus this group, on `fs_v1` for
 the same reason every candidate since `fs_v3` has been: stacking on a rejected
