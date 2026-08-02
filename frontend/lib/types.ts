@@ -289,8 +289,42 @@ export interface SideDetail {
   team_strength: Record<string, FeatureCell>;
 }
 
+export interface ChangeDriver {
+  feature_key: string;
+  display_name: string;
+  category: string;
+  category_label: string;
+  previous: number | null;
+  current: number | null;
+  /** Exact additive contribution to the served log-odds move. */
+  log_odds_delta: number;
+  /** The same split, rescaled to the observed probability move. */
+  contribution_pp: number;
+  favors: string;
+}
+
+/**
+ * An exact decomposition of a probability move. The stages sum to the total
+ * with no residual — the logistic model and the blend are both linear in
+ * log-odds, so this is the split rather than an estimate of it.
+ */
+export interface ChangeAttribution {
+  has_previous: boolean;
+  move_pp: number;
+  stages: {
+    features: number;
+    calibration: number;
+    simulation: number;
+    total: number;
+    residual: number;
+  };
+  drivers: ChangeDriver[];
+  simulation_note: string | null;
+}
+
 export interface PredictionChange {
   has_previous: boolean;
+  attribution?: ChangeAttribution | null;
   message: string | null;
   previous_as_of: string | null;
   current_as_of: string | null;

@@ -208,7 +208,7 @@ Ordered so each step is usable on its own and the next one depends on it.
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 8 | Run scoring model and simulation | **Built, measured, and it works** — +0.0047 to +0.0065 log loss across two seasons, both intervals excluding zero. MODELING_PLAN.md |
 | 9 | Stacked ensemble and calibration | **Served.** The blend is what the product now shows; the simulation is persisted per prediction and surfaced on the Simulation tab |
-| 10 | Prediction timeline and change explanations | Not started |
+| 10 | Prediction timeline and change explanations | **Change explanations done** — the move is decomposed exactly into features, calibration and simulation, with no residual. The multi-snapshot timeline needs the prediction job run more than once a day |
 | 11 | UI context features | Partly done — records, streaks, standings, nine-row summary shipped |
 
 ## Acceptance for step 1 — met

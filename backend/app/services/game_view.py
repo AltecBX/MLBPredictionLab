@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.db.models import (
     BacktestResult,
     BacktestRun,
@@ -28,6 +29,7 @@ from app.db.models import (
     Team,
 )
 from app.features.registry import CATEGORY_LABELS, deferred_by_source
+from app.modeling.registry import load_active_model
 from app.providers.base import DataCategory
 from app.schemas.common import (
     BallparkRef,
@@ -59,6 +61,9 @@ from app.services.freshness import freshness_report
 from app.services.matchup_summary import build_matchup_summary
 from app.services.prediction import diff_predictions, prediction_history
 from app.services.team_context import SeasonResults, TeamContext
+from app.services.timeline import explain_change
+
+log = get_logger(__name__)
 
 # A refresh within this window of the prediction is treated as concurrent.
 STALENESS_GRACE = timedelta(minutes=5)
@@ -547,6 +552,35 @@ def _simulation(
     )
 
 
+def _change(
+    session: Session, prediction: Prediction | None, previous: Prediction | None
+) -> PredictionChange:
+    """What changed since the previous snapshot, and how much each change was worth.
+
+    The attribution needs the model's coefficients, and only the model both
+    snapshots were issued under will do — decomposing against a different
+    version's coefficients would be arithmetic about a model that produced
+    neither number. When the versions disagree, or the artifact is missing, the
+    diff is still returned and the attribution is simply absent.
+    """
+    if prediction is None:
+        return PredictionChange(
+            has_previous=False, message="No prediction issued yet."
+        )
+
+    payload = diff_predictions(prediction, previous)
+    if previous is not None and previous.model_version_id == prediction.model_version_id:
+        try:
+            _, model = load_active_model(session)
+            if model.feature_names:
+                payload["attribution"] = explain_change(
+                    prediction, previous, model
+                ).to_dict()
+        except Exception as exc:  # noqa: BLE001 - an explanation must not break a page
+            log.info("game_view.attribution_unavailable", error=str(exc))
+    return PredictionChange(**payload)
+
+
 def build_game_detail(
     session: Session, game: Game, prediction: Prediction | None
 ) -> GameDetail:
@@ -586,10 +620,7 @@ def build_game_detail(
         if card.prediction
         else MarketComparison(available=False, reason=MARKET_UNAVAILABLE_REASON),
         backtest_evidence=_backtest_evidence(session, prediction),
-        change_since_previous=PredictionChange(
-            **diff_predictions(prediction, previous)
-        ) if prediction else PredictionChange(has_previous=False,
-                                              message="No prediction issued yet."),
+        change_since_previous=_change(session, prediction, previous),
         prediction_history=[
             {
                 "as_of": p.as_of,
