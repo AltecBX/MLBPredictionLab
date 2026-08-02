@@ -1133,6 +1133,130 @@ other information. It is a shape parameter, not a rate.
 
 ---
 
+## Roster availability: measured, not adopted, and the first sign that holds
+
+The seventh candidate group, and the first one that does not flip. It is still
+not adopted, and the reason it is not adopted is more interesting than the
+result.
+
+Reproduce with:
+
+```
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v7 \
+    --seasons 2024 --C 0.03
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v7 \
+    --seasons 2024,2025 --start 2025-04-01 --C 0.03
+```
+
+and again with `--C 0.01`, because a group whose verdict moves with the
+regularisation constant has not been measured — the lesson the bullpen group
+paid for.
+
+| Season | C | n | fs_v1 | fs_v7 | Δ log loss | Paired 95% CI | Δ Brier |
+|---|---|---|---|---|---|---|---|
+| 2024 | 0.03 | 1,741 | 0.68383 | **0.68374** | **+0.000091** | [−0.00145, +0.00167] | +0.000050 |
+| 2024 | 0.01 | 1,741 | 0.68433 | **0.68429** | **+0.000034** | [−0.00130, +0.00142] | +0.000029 |
+| 2025 | 0.03 | 2,363 | 0.69103 | **0.69065** | **+0.000385** | [−0.00048, +0.00129] | +0.000156 |
+| 2025 | 0.01 | 2,363 | 0.69021 | **0.68990** | **+0.000310** | [−0.00055, +0.00124] | +0.000134 |
+
+Coverage is 100% on both features in both seasons, so nothing here is a
+coverage artefact. **Positive in all four on log loss and on Brier**, and AUC
+improves in both 2025 arms (0.5355 → 0.5371). Every previous candidate either
+flipped sign between seasons — the bullpen group did it at every C — or was
+negative in both, as weather was. This one does neither.
+
+It is still not adoption, because every interval spans zero.
+
+### The honest verdict is about the sample, not the feature
+
+Pooling the two seasons by inverse variance at C=0.03 gives **+0.000314, CI
+[−0.00046, +0.00108]** over 4,104 games. Asking what it would take for that
+interval to exclude zero:
+
+| Arm | Point estimate | Games needed |
+|---|---|---|
+| 2025, C=0.03 | +0.000385 | ~12,400 (5 seasons) |
+| 2025, C=0.01 | +0.000310 | ~19,700 (8 seasons) |
+| **Pooled, C=0.03** | **+0.000314** | **~24,600 (10 seasons)** |
+| Pooled, C=0.01 | +0.000227 | ~44,700 (18 seasons) |
+
+So the finding is not "measured and absent". It is **smaller than two seasons of
+baseball can see** — an effect worth roughly a twentieth of what the entire model
+is worth over a coin flip (0.0063), in a sample whose resolution is about
+±0.0009. Those are different sentences and the second one is the true one.
+
+That distinction matters for what happens next. Six previous nulls were all
+diagnosed the same way — redundant with team strength, a ceiling reached by
+*information* — and the correct response to those was to stop adding columns of
+that shape. This null does not license that inference. It licenses only the
+statement that the repository's measuring instrument bottoms out around a
+thousandth of a nat, and that anything genuinely smaller than that cannot be
+adjudicated here at all.
+
+### Why this group was expected to be different, and what the ablation said
+
+Every group before it **decomposes** team strength, and a season rate is a
+sufficient statistic for its own rearrangement. The starting-pitcher split is
+the proof: `R_team = s·R_sp + (1−s)·R_pen` is an identity, it disagreed with the
+base model about one game in five, and it was not the more accurate of the two.
+
+Availability performs a different operation. It reports that the season rate is
+**stale** — accumulated by a roster including somebody who is not playing
+tonight — which cannot be inside the rate, because the rate contains his
+contribution on account of his having made it. And it makes a distinguishing
+prediction: a decomposition averages back to the team rate over a season, since
+each rotation slot comes up about equally often, which is exactly why the
+pitching split was worth nothing in aggregate. An availability loss does not
+average back.
+
+The natural competing explanation was that `fs_v1` already knows about injuries
+through their *effects* — `off_runs_per_game_w30_diff` and
+`off_form_delta_w14_diff` absorb a lost cleanup hitter within a fortnight — which
+would make this group REDUNDANT rather than novel. The 2024 ablation says
+otherwise:
+
+| Group | features | Δ on removal | Group alone, vs a coin flip | Reading |
+|---|---|---|---|---|
+| team_strength | 8 | +0.000863 | **+0.002113** | REDUNDANT |
+| starting_pitcher | 13 | +0.002607 | −0.003226 | UNIQUE SIGNAL |
+| **roster_availability** | **2** | **+0.000120** | **−0.009791** | **NO SIGNAL** |
+
+with one caveat that must travel with that column. Predicting the home base rate
+alone is worth about +0.0024 against a coin flip; `team_strength` solo scores
++0.0021, which is the intercept and no more, and every other group scores
+negative. In this configuration the solo column is dominated by how much a small
+fitted model overfits, so its *level* should not be read as standalone
+information. Its *ranking* can be, and availability is last of the ten testable
+groups.
+
+### What is measured about the data, and what is assumed
+
+`IL_RECENCY_DAYS = 28` is a fitted constant, and the distinction that keeps this
+honest is **what it was fitted against**. The `injuries` table is an event log —
+an `IL` row superseded eventually by an `ACTIVE` one — and roughly 1,700 stints
+across three seasons never received their closing row. Taken at face value it
+marks 1,095 players unavailable on a single midsummer day.
+
+So the flag was checked against what it claims. Eight probe dates across 2024
+and 2025, batters with at least 20 PA in the previous 30 days, asking whether
+the player actually appeared in the following seven:
+
+| Days since the placement was knowable | players | played within 7 days |
+|---|---|---|
+| 0–14 | 161 | **22.4%** |
+| 15–28 | 40 | 35.0% |
+| 46–59 | 8 | 87.5% |
+| 71+ | 146 | 91.1% |
+
+A fresh placement more than halves the chance of appearing; past about six weeks
+the record carries nothing, because those are the stints whose closing row is
+missing. The window is where the signal has gone — and it was chosen against
+**absence**, not against the win outcome the group was then scored on. Nothing
+about who won any game entered it. That is precisely the failure the bullpen
+section documents, avoided deliberately rather than by luck.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is

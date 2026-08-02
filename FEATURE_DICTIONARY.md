@@ -534,6 +534,90 @@ for the later timeline snapshots and evaluated there.
 `lineup_platoon_advantage`, `lineup_vs_arsenal_xwoba`,
 `lineup_confirmed_minus_projected`, `lineup_missing_starter_impact`.
 
+### `il_*` — roster availability (`fs_v7`) — **built, measured, not adopted**
+
+**Verdict first.** Four walk-forward comparisons — two seasons by two
+regularisation settings — and log loss and Brier are **positive in all four**.
+This is the first candidate group in the repository whose sign does not flip.
+Every interval still spans zero, so it is not adopted.
+
+| Season | C | n | Δ log loss | Paired 95% CI |
+|---|---|---|---|---|
+| 2024 | 0.03 | 1,741 | +0.000091 | [−0.00145, +0.00167] |
+| 2024 | 0.01 | 1,741 | +0.000034 | [−0.00130, +0.00142] |
+| 2025 | 0.03 | 2,363 | +0.000385 | [−0.00048, +0.00129] |
+| 2025 | 0.01 | 2,363 | +0.000310 | [−0.00055, +0.00124] |
+
+Coverage 100% on both features in both seasons. Pooled at C=0.03: **+0.000314,
+[−0.00046, +0.00108]** — an interval that would need about **24,600 games, ten
+seasons**, to exclude zero. The verdict is therefore not "measured and absent"
+but "smaller than two seasons of baseball can resolve". See MODELING_PLAN.md,
+*Roster availability*, for why that distinction changes what it licenses.
+
+
+
+Registered as feature set **`fs_v7`**, `fs_v1` plus this group, on `fs_v1` for
+the same reason every candidate since `fs_v3` has been: stacking on a rejected
+group measures the pair.
+
+| Key | What |
+|---|---|
+| `il_offense_lost_diff` | Share of the team's last 45 days of weighted offensive production belonging to players placed on the injured list within the last 28 |
+| `il_pitching_lost_diff` | The same for pitching, weighted by batters faced |
+
+Both are away-minus-home: a smaller loss favours the team.
+
+**Why this is not a seventh decomposition of team strength.** Every group
+measured before it rearranges the players inside a team's season rate, and a
+season rate is a sufficient statistic for its own rearrangement — which is the
+one-line explanation for six rejections. This group does not rearrange the rate,
+it reports that the rate is **stale**: it was accumulated by a roster including
+somebody who is not playing tonight. That fact cannot be inside the team rate,
+because the rate contains his contribution on account of his having made it.
+
+The distinguishing prediction is about aggregation. A decomposition averages back
+to the team rate over a season — each rotation slot comes up about equally often,
+which is exactly why the starting-pitcher split moved 83% of games and was worth
+nothing. An availability loss does not average back: a player lost for the year
+holds the feature away from zero until the window rolls past him.
+
+**A share, not a headcount.** Losing a cleanup hitter and losing a bench bat are
+different events and a count calls them equal. Offensive production uses the same
+linear weights as the team-level `woba_proxy`, so a player's share is taken on
+the team's own scale rather than a second, differently-weighted one.
+
+**`IL_RECENCY_DAYS = 28`, and it is measured.** `injuries` is an event log — an
+`IL` row superseded eventually by an `ACTIVE` one — and roughly 1,700 stints
+across three seasons never received their closing row. Read naively that marks
+1,095 players unavailable on a single midsummer day, which is obviously wrong. So
+the flag was checked against what it claims. Eight probe dates across 2024 and
+2025, batters with at least 20 PA in the previous 30 days, asking whether the
+player actually appeared in the following seven:
+
+| Days since the placement was knowable | players | played within 7 days |
+|---|---|---|
+| 0–14 | 161 | **22.4%** |
+| 15–28 | 40 | 35.0% |
+| 46–59 | 8 | 87.5% |
+| 71+ | 146 | 91.1% |
+
+A fresh placement more than halves the chance of appearing. Past about six weeks
+the record carries nothing, because those are overwhelmingly the stints whose
+closing row is missing. The window is where the signal has gone.
+
+That constant is fitted, and **it is fitted against absence** — whether the
+player subsequently played — not against the win outcome the group is about to be
+scored on. Nothing about who won any game entered it. The bullpen group's warning
+in MODELING_PLAN.md is about the opposite case, a nuisance constant tuned on the
+target, and this is deliberately not that.
+
+**Leakage.** Filtering is on `knowledge_time`, never `effective_from`. An IL
+row's `effective_from` is routinely backdated to the last game the player
+appeared in, days before the transaction was announced, so filtering on it would
+let a Tuesday prediction read a Thursday announcement. `test_availability.py`
+asserts this against the parsed source rather than by behaviour, because the
+failure mode is a column name appearing in a query.
+
 ### Expected plate appearances by batting order — **measured**
 
 Weights used for every lineup aggregate. These are now computed from the

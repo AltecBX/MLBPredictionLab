@@ -331,3 +331,51 @@ def test_recommendation_labels_never_promise_certainty():
         "STRONG_LEAN", "MODERATE_LEAN", "SMALL_LEAN",
         "NO_MEANINGFUL_ADVANTAGE", "INSUFFICIENT_DATA",
     }
+
+
+# --------------------------------------------------------------------------
+# Columns that encode the future
+# --------------------------------------------------------------------------
+
+#: Statcast's export carries two fields that describe when a player's *next*
+#: appearance will be. They are fully populated and sit beside the harmless
+#: `pitcher_days_since_prev_game`, one character apart in meaning and nothing
+#: apart in appearance, so a wildcard column selection would pull them in
+#: without anyone noticing. Nothing may read them.
+FUTURE_LEAKING_STATCAST_FIELDS = (
+    "pitcher_days_until_next_game",
+    "batter_days_until_next_game",
+)
+
+
+def test_no_future_dated_statcast_field_is_ingested():
+    """A column naming the player's NEXT game is the future, by definition.
+
+    Found while surveying Baseball Savant's export rather than by a failure:
+    the mapper happens not to read these today. This asserts that it stays
+    that way, because the safe field and the leaking ones differ only by the
+    words "since prev" versus "until next".
+    """
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "app"
+    offenders = []
+    for path in source.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for field in FUTURE_LEAKING_STATCAST_FIELDS:
+            if field in text:
+                offenders.append(f"{path.relative_to(source)} references {field}")
+    assert not offenders, (
+        "These fields describe a game that has not happened yet:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_the_pitch_model_has_no_forward_looking_column():
+    """The stored schema must not be able to hold the future either."""
+    from app.db.models import Pitch
+
+    columns = {c.name for c in Pitch.__table__.columns}
+    assert not [c for c in columns if "until_next" in c or "days_until" in c]
+    # The backward-looking counterpart is the one that is allowed to exist.
+    assert "pitcher_days_since_prev" in columns
