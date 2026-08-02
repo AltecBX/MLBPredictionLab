@@ -33,6 +33,26 @@ jobs:
       ENVIRONMENT: production
       LOG_FORMAT: console
       REDIS_URL: ""
+      # These must match `pregame.yml`, and the reason is not tidiness.
+      #
+      # `check-sources` below recomputes every row of the Diagnostics source
+      # table from `configured_categories()`, which reads exactly these
+      # variables. Running it in a job that does not set them wrote
+      # "No provider configured" over categories that were being ingested
+      # successfully every hour: the deployed site reported lineups and weather
+      # as UNAVAILABLE on the same screen whose job log showed poll_lineups
+      # writing 180 rows and ingest_weather writing 15.
+      #
+      # That is the failure this product cares about most — UNAVAILABLE means
+      # "not measured", and claiming it for something measured is the same lie
+      # as the reverse.
+      #
+      # The pollers themselves construct `MlbStatsApiClient` directly and never
+      # consult these, so setting them changes what is *reported* and nothing
+      # about what is fetched.
+      LINEUP_PROVIDER: mlb_statsapi
+      INJURY_PROVIDER: mlb_statsapi
+      WEATHER_PROVIDER: open_meteo
     steps:
       - name: Check the database secret is set
         run: |
@@ -75,6 +95,22 @@ jobs:
       - name: Refresh data
         working-directory: backend
         run: python -m app.cli daily --skip-predictions
+
+      # Injured-list moves from the transactions feed. Not in any workflow
+      # before this, which is why the production table was empty and the site
+      # said "Injuries unavailable" — honestly, but only because nothing was
+      # ever fetching them.
+      #
+      # A fortnight rather than a day. A transaction is reported roughly a day
+      # after it takes effect, the feed is occasionally amended afterwards, and
+      # the upsert is keyed on (player, effective_from, status) so re-reading a
+      # window costs one request and writes nothing new.
+      - name: Ingest injured-list moves
+        working-directory: backend
+        run: |
+          END=$(date -u +%F)
+          START=$(date -u -d '14 days ago' +%F)
+          python -m app.cli ingest-injuries --start "$START" --end "$END"
 
       - name: Retrain
         working-directory: backend
