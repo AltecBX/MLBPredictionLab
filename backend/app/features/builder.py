@@ -20,6 +20,7 @@ import pandas as pd
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.features import aggregates as agg
+from app.features import bullpen as bp
 from app.features import lineup_features as lf
 from app.features import statcast_features as sc
 from app.features.asof import AsOfStore, season_start_utc
@@ -520,6 +521,30 @@ class FeatureBuilder:
             int(len(relief_7d)),
             season_relief.appearances < MIN_RELIEF_APPEARANCES,
         )
+
+        # --- individual availability -------------------------------------
+        #
+        # Everything above is a team total, and a team total cannot distinguish
+        # four innings spread across four arms from four innings out of the two
+        # best. This can.
+        availability = bp.summarize(
+            bp.bullpen_status(
+                self.store, team_id, as_of, season_start,
+                baseline.relief_k_minus_bb_pct,
+            )
+        )
+        if availability is not None:
+            out["bp_available_count"] = FeatureValue(
+                float(availability.available_count), availability.corps_size, False
+            )
+            if availability.available_quality is not None:
+                out["bp_available_quality"] = FeatureValue(
+                    availability.available_quality, availability.corps_size, False
+                )
+            if availability.best_reliever_available is not None:
+                out["bp_best_reliever_available"] = FeatureValue(
+                    availability.best_reliever_available, availability.corps_size, False
+                )
         return out
 
     def _statcast_starter_values(
@@ -835,6 +860,9 @@ class FeatureBuilder:
             ("sp_days_rest_diff", "sp_days_rest"),
             ("sp_experience_diff", "sp_experience"),
             ("bp_k_minus_bb_pct_season_diff", "bp_k_minus_bb_pct_season"),
+            ("bp_available_count_diff", "bp_available_count"),
+            ("bp_available_quality_diff", "bp_available_quality"),
+            ("bp_best_reliever_available_diff", "bp_best_reliever_available"),
             ("def_efficiency_proxy_diff", "def_efficiency_proxy"),
             ("sched_days_rest_diff", "sched_days_rest"),
             ("h2h_season_series_shrunk_diff", "h2h_season_series"),

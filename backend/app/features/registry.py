@@ -651,8 +651,59 @@ ARSENAL_ONLY: list[FeatureSpec] = [
     s for s in LINEUP if s.key.startswith("arsenal_")
 ]
 
+
+# --- Phase 2A step 5: individual bullpen availability (fs_v5) ---------------
+#
+# The third hypothesis the starting-pitcher rejection left open, and the one
+# that has waited longest. It is a different SHAPE from the three groups already
+# rejected: not another season aggregate over the same population, but a
+# per-pitcher constraint the aggregate provably cannot express.
+#
+# The bullpen features already in fs_v1 are team totals — relief innings over
+# three days, a fatigue index, a thirty-day relief ERA. A pen that threw four
+# innings yesterday across four pitchers and one that threw four innings out of
+# its two best arms produce the SAME value on every one of them, and are in
+# completely different states tonight. That gap is what this group addresses.
+#
+# The rest thresholds are conventions written down in `features/bullpen.py`, not
+# parameters fitted here. Tuning a rest threshold against the win outcome it is
+# about to be scored on is how a feature group manufactures its own
+# significance, and the four rejections on record are honest partly because
+# nothing like that happened.
+BULLPEN_AVAILABILITY: list[FeatureSpec] = [
+    FeatureSpec(
+        "bp_available_count_diff", "Available relievers",
+        FeatureCategory.BULLPEN,
+        "Relievers in the team's thirty-day corps who are neither on three "
+        "straight days nor coming off a heavy outing.",
+        unit="count", window="3d", min_sample=3, phase=2,
+        source_category="bullpen_availability",
+        narrative="has more of its bullpen available tonight",
+    ),
+    FeatureSpec(
+        "bp_available_quality_diff", "Available bullpen quality",
+        FeatureCategory.BULLPEN,
+        "Mean K−BB% of the relievers who can pitch, each shrunk toward the "
+        "league relief rate. Unavailable arms are excluded rather than zeroed.",
+        unit="%", window="season", min_sample=3, phase=2,
+        source_category="bullpen_availability",
+        narrative="can call on the better relievers tonight",
+    ),
+    FeatureSpec(
+        "bp_best_reliever_available_diff", "Best reliever available",
+        FeatureCategory.BULLPEN,
+        "Whether the team's best-rated reliever can pitch: 1 available, 0.5 "
+        "limited, 0 unavailable. Not a closer — no save or leverage data exists "
+        "in this database, and a closer inferred from appearance counts would be "
+        "a guess presented as a fact.",
+        unit="0-1", window="3d", min_sample=3, phase=2,
+        source_category="bullpen_availability",
+        narrative="has its best reliever available tonight",
+    ),
+]
+
 REGISTRY: dict[str, FeatureSpec] = {
-    s.key: s for s in FS_V1 + SC_SP + LINEUP + DEFERRED
+    s.key: s for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + DEFERRED
 }
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
@@ -669,6 +720,10 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # than a coin flip. Measuring them together measured their average, which is
     # not a quantity anyone wants. This isolates the half that showed something.
     "fs_v4": [s.key for s in FS_V1 + ARSENAL_ONLY],
+    # fs_v1 + individual bullpen availability. On fs_v1 rather than fs_v4 for
+    # the same reason fs_v3 was: fs_v4 did not clear the bar either, and
+    # stacking on a group that failed measures the pair, not the group.
+    "fs_v5": [s.key for s in FS_V1 + BULLPEN_AVAILABILITY],
 }
 
 
