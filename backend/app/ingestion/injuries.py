@@ -44,7 +44,8 @@ from app.core.clock import utcnow
 from app.core.logging import get_logger
 from app.db.models import Injury, Player, Team
 from app.db.upsert import upsert
-from app.ingestion.status import job_run
+from app.ingestion.status import job_run, record_source_status
+from app.providers.base import DataCategory
 from app.providers.mlb_statsapi.client import SOURCE_NAME, MlbStatsApiClient
 
 log = get_logger(__name__)
@@ -214,6 +215,12 @@ def ingest_injuries(
                 cursor = chunk_end + timedelta(days=1)
 
             run.rows_written = written
+            # See the note in `lineup_poller`.
+            record_source_status(
+                session, SOURCE_NAME, DataCategory.INJURIES,
+                success=True, records=written,
+                detail="Injured-list moves from the transactions feed.",
+            )
             log.info("injuries.ingested", written=written)
     finally:
         if owned:

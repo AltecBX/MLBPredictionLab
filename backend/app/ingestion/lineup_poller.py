@@ -44,7 +44,8 @@ from app.core.clock import utcnow
 from app.core.logging import get_logger
 from app.db.models import Game, Lineup, Player, Team
 from app.db.upsert import upsert
-from app.ingestion.status import job_run
+from app.ingestion.status import job_run, record_source_status
+from app.providers.base import DataCategory
 from app.providers.mlb_statsapi.client import SOURCE_NAME, MlbStatsApiClient
 
 log = get_logger(__name__)
@@ -158,6 +159,18 @@ def poll_lineups(
                         written += len(rows)
 
             run.rows_written = written
+            # Without this the Diagnostics row for this category keeps whatever
+            # the bootstrap wrote and never learns the poller ran. The
+            # categories that report correctly -- schedule, results, reference,
+            # player stats -- all record a source result; the three that read a
+            # client directly rather than through a ProviderResult did not, and
+            # so the deployed site described a working hourly feed as
+            # UNAVAILABLE.
+            record_source_status(
+                session, SOURCE_NAME, DataCategory.LINEUPS,
+                success=True, records=written,
+                detail="Posted lineups captured pregame, stamped when observed.",
+            )
             log.info(
                 "lineups.polled",
                 date=target.isoformat(),
