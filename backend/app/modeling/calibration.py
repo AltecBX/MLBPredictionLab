@@ -90,3 +90,115 @@ def fit_calibrator(
         method="isotonic", _isotonic_model=model, n_fit=len(p),
         params={"n_thresholds": int(len(getattr(model, "X_thresholds_", [])))},
     )
+
+
+@dataclass(frozen=True, slots=True)
+class CalibrationChoice:
+    """Which calibrator was picked, and the evidence for picking it."""
+
+    method: str
+    reason: str
+    scores: dict[str, float | None]
+    n_fit: int
+    n_score: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "reason": self.reason,
+            "scores": {k: (None if v is None else round(v, 6)) for k, v in self.scores.items()},
+            "n_fit": self.n_fit,
+            "n_score": self.n_score,
+        }
+
+
+def choose_calibration(
+    raw_probabilities: np.ndarray, y: np.ndarray, holdout_fraction: float = 0.4
+) -> CalibrationChoice:
+    """Pick isotonic or Platt by measuring both, not by counting rows.
+
+    The previous rule chose isotonic above a sample-size threshold and Platt
+    below it. That is a reasonable prior and it is not a measurement: isotonic
+    is far more flexible, so on a model whose miscalibration is close to a simple
+    monotone stretch it can fit the validation slice's noise and come out worse
+    on anything else.
+
+    So both are fitted on the earlier part of the validation window and scored on
+    the later part. The split is **chronological**, like every other split in
+    this repository — a random one would let a calibrator see games from after
+    the ones it is scored on.
+
+    **Ties go to Platt.** It has two parameters against isotonic's step function,
+    and when two candidates cannot be told apart the one with less freedom is the
+    one that is less likely to have been fitted to noise.
+    """
+    p = np.clip(np.asarray(raw_probabilities, dtype=float), EPS, 1 - EPS)
+    y = np.asarray(y, dtype=int)
+    n = len(p)
+
+    cut = int(n * (1 - holdout_fraction))
+    fit_p, fit_y = p[:cut], y[:cut]
+    score_p, score_y = p[cut:], y[cut:]
+
+    unusable = (
+        n < ISOTONIC_MIN_SAMPLES
+        or len(score_p) < 50
+        or len(np.unique(fit_y)) < 2
+        or len(np.unique(score_y)) < 2
+    )
+    if unusable:
+        return CalibrationChoice(
+            method="sigmoid",
+            reason=(
+                f"Too little validation data to choose by measurement "
+                f"({n} rows, {len(score_p)} scoreable). Platt is the default "
+                f"because it has the fewer parameters."
+            ),
+            scores={"sigmoid": None, "isotonic": None},
+            n_fit=len(fit_p),
+            n_score=len(score_p),
+        )
+
+    # Imported here: `feature_set_compare` pulls in `train`, which imports this.
+    from app.backtest.feature_set_compare import _paired_bootstrap
+
+    per_game: dict[str, np.ndarray] = {}
+    scores: dict[str, float | None] = {}
+    for method in ("sigmoid", "isotonic"):
+        calibrator = fit_calibrator(fit_p, fit_y, method=method)
+        losses = _per_game_loss(score_y, calibrator.transform(score_p))
+        per_game[method] = losses
+        scores[method] = float(losses.mean())
+
+    # Isotonic has to beat Platt by more than noise, not merely beat it. On a
+    # miscalibration Platt can already express, the extra flexibility buys a
+    # difference in the fifth decimal roughly half the time, and adopting on
+    # that is how a more complex model wins a coin toss. Same paired-bootstrap
+    # standard every other decision in this repository is held to.
+    delta = _paired_bootstrap(per_game["sigmoid"] - per_game["isotonic"])
+    if delta.is_distinguishable_from_zero and delta.favours_candidate:
+        return CalibrationChoice(
+            method="isotonic",
+            reason=(
+                f"Isotonic beat Platt on held-out log loss over {len(score_p)} "
+                f"games by {delta.mean:.5f}, interval "
+                f"[{delta.ci_low:.5f}, {delta.ci_high:.5f}] excluding zero."
+            ),
+            scores=scores, n_fit=len(fit_p), n_score=len(score_p),
+        )
+    return CalibrationChoice(
+        method="sigmoid",
+        reason=(
+            f"Isotonic did not beat Platt distinguishably over {len(score_p)} "
+            f"games (delta {delta.mean:+.5f}, interval "
+            f"[{delta.ci_low:.5f}, {delta.ci_high:.5f}]). A difference inside "
+            f"the noise band goes to the model with fewer parameters."
+        ),
+        scores=scores, n_fit=len(fit_p), n_score=len(score_p),
+    )
+
+
+def _per_game_loss(y: np.ndarray, p: np.ndarray) -> np.ndarray:
+    """Log loss per row, so the two calibrators can be compared pairwise."""
+    clipped = np.clip(p, EPS, 1 - EPS)
+    return -(y * np.log(clipped) + (1 - y) * np.log(1 - clipped))

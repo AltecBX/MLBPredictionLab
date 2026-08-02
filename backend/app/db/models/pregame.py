@@ -84,6 +84,10 @@ class Injury(Base, SourcedMixin):
     __tablename__ = "injuries"
     __table_args__ = (
         Index("ix_injuries_player_effective", "player_id", "effective_from"),
+        UniqueConstraint(
+            "player_id", "effective_from", "status",
+            name="uq_injury_player_effective_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -103,6 +107,10 @@ class Weather(Base, SourcedMixin):
     __tablename__ = "weather"
     __table_args__ = (
         Index("ix_weather_game", "game_id", "observation_type"),
+        UniqueConstraint(
+            "game_id", "observation_type", "knowledge_time",
+            name="uq_weather_game_type_knowledge",
+        ),
         CheckConstraint(
             "observation_type IN ('FORECAST','OBSERVED')", name="ck_weather_obs_type"
         ),

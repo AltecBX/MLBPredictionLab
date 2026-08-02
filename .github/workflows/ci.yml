@@ -108,6 +108,11 @@ jobs:
         env:
           CI: "true"
           API_BASE_URL: http://127.0.0.1:9/api/v1
+          # The client retries a failing API for ~21s, because on the real
+          # deployment a failure usually means "still waking". Here the API is
+          # a closed port on purpose and every request fails instantly by
+          # design, so retrying only turns a three-minute job into a timeout.
+          API_RETRY_ATTEMPTS: "0"
         run: npx playwright test --reporter=list
       - name: Upload traces on failure
         if: failure()

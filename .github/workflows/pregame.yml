@@ -1,0 +1,98 @@
+name: Pregame refresh
+
+# The cadence half of Phase 2A step 10.
+#
+# `refresh.yml` runs once at 09:15 UTC and issues one prediction per game. That
+# is enough to have a prediction and not enough to have a *timeline*: the change
+# decomposition merged in #13 compares two snapshots, and one snapshot a day
+# means there is never a second one to compare against until tomorrow, by which
+# time the game has been played.
+#
+# This runs through the afternoon and evening and does three things that only
+# make sense close to first pitch:
+#
+#   * polls posted lineups, which appear an hour or two before the game and are
+#     stamped with the moment they were observed;
+#   * refreshes the live weather forecast, which is a different forecast at 4pm
+#     than it was at 9am;
+#   * reissues predictions, so the day accumulates snapshots and the timeline
+#     has something to explain.
+#
+# Every hour rather than every five minutes. GitHub throttles scheduled
+# workflows under load and a five-minute cadence would mostly produce identical
+# snapshots — `generate_prediction` already declines to write one when nothing
+# material changed, so the extra runs would be cost without information.
+#
+# Note the deliberate absence of a training step. Retraining belongs to the
+# daily job; a model that changed between two snapshots of the same game would
+# make the change decomposition compare two different models, which
+# `explain_change` refuses to do and would simply report as unavailable.
+
+on:
+  schedule:
+    # Hourly from noon to 04:00 UTC — roughly 8am to midnight US Eastern, which
+    # covers every first pitch on a normal slate.
+    - cron: "5 12-23,0-4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Shared with the daily refresh and the seeder: these must never write at once.
+  group: jerry-data
+  cancel-in-progress: false
+
+jobs:
+  pregame:
+    name: Lineups, weather, reissue
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ENVIRONMENT: production
+      LOG_FORMAT: console
+      REDIS_URL: ""
+      # Open-Meteo needs no key, so the forecast provider is on by default here
+      # rather than waiting for a secret that does not exist.
+      WEATHER_PROVIDER: open_meteo
+    steps:
+      - name: Check the database secret is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::The DATABASE_URL repository secret is not set. See DEPLOYMENT.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      # Posted lineups for games that have not started. Rows are stamped with
+      # the moment of the poll, so this can never make a past game's lineup
+      # retroactively knowable.
+      - name: Poll posted lineups
+        working-directory: backend
+        run: python -m app.cli poll-lineups
+
+      # --live uses the forecast endpoint and stamps knowledge_time as now,
+      # rather than the archive path used for backfilling past seasons.
+      - name: Refresh today's forecast
+        working-directory: backend
+        run: |
+          TODAY=$(date -u +%F)
+          python -m app.cli ingest-weather --start "$TODAY" --end "$TODAY" --live
+
+      # Without --force, an unchanged feature vector writes no new snapshot,
+      # which is what keeps an hourly cadence from filling the table with
+      # identical rows. A snapshot appears when something actually moved.
+      - name: Reissue predictions
+        working-directory: backend
+        run: python -m app.cli predict

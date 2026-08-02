@@ -13,6 +13,7 @@ from app.core.errors import ConfigurationError
 from app.providers.base import DataCategory
 from app.providers.baseball_savant.provider import BaseballSavantProvider
 from app.providers.mlb_statsapi.provider import MlbStatsApiProvider
+from app.providers.open_meteo.provider import OpenMeteoWeatherProvider
 from app.providers.unavailable import (
     UnavailableBullpenAvailabilityProvider,
     UnavailableInjuryProvider,
@@ -26,6 +27,7 @@ from app.providers.unavailable import (
 _IMPLEMENTATIONS: dict[str, type] = {
     "mlb_statsapi": MlbStatsApiProvider,
     "baseball_savant": BaseballSavantProvider,
+    "open_meteo": OpenMeteoWeatherProvider,
 }
 
 _shared: dict[str, Any] = {}

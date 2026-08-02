@@ -23,6 +23,7 @@ from app.features import aggregates as agg
 from app.features import bullpen as bp
 from app.features import lineup_features as lf
 from app.features import statcast_features as sc
+from app.features import weather_features as wx
 from app.features.asof import AsOfStore, season_start_utc
 from app.features.context import GameContext
 from app.features.elo import AsOfElo
@@ -910,6 +911,19 @@ class FeatureBuilder:
         emit("sp_identified_home", home.get("sp_identified"))
         emit("sp_identified_away", away.get("sp_identified"))
         emit("env_home_field", FeatureValue(1.0, 0, False))
+
+        # Forecast weather. Game-level rather than per-side: the air is shared,
+        # which is exactly why two of the three are absolute and only the
+        # interaction with each staff's fly-ball tendency can move a margin.
+        season_start = season_start_utc(ctx.season)
+        for key, value in wx.weather_values(
+            self.store,
+            ctx.game_id,
+            as_of,
+            self.store.team_pitcher_games_asof(ctx.home_team_id, as_of, season_start),
+            self.store.team_pitcher_games_asof(ctx.away_team_id, as_of, season_start),
+        ).items():
+            emit(key, value)
 
         park = self.store.ballpark(ctx.venue_id)
         if park is not None:

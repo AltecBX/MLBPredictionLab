@@ -82,6 +82,74 @@ def cmd_ingest_history(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def cmd_ingest_weather(args: argparse.Namespace) -> int:
+    """Forecasts at first pitch, live for upcoming games or archived for past ones."""
+    from datetime import date as _date
+
+    from app.db.session import session_scope
+    from app.ingestion.weather import ingest_weather_for_dates
+
+    if args.seasons:
+        ranges = [
+            (_date(int(s), 1, 1), _date(int(s), 12, 31))
+            for s in args.seasons.split(",")
+        ]
+    else:
+        if not args.start or not args.end:
+            print(json.dumps({"error": "provide --seasons or both --start and --end"}))
+            return 1
+        ranges = [(args.start, args.end)]
+
+    # A session per range, not one spanning them all. A four-season backfill in
+    # a single transaction holds every row uncommitted for the whole run and
+    # loses the lot if the last season fails.
+    total = 0
+    for start, end in ranges:
+        with session_scope() as session:
+            total += ingest_weather_for_dates(
+                session, start, end, archived=not args.live
+            )
+    print(json.dumps({"rows_written": total}))
+    return 0
+
+
+
+def cmd_ingest_injuries(args: argparse.Namespace) -> int:
+    """Injured-list moves from the transactions feed."""
+    from datetime import date as _date
+
+    from app.db.session import session_scope
+    from app.ingestion.injuries import ingest_injuries
+
+    if args.seasons:
+        ranges = [(_date(int(s), 2, 1), _date(int(s), 11, 30)) for s in args.seasons.split(",")]
+    elif args.start and args.end:
+        ranges = [(args.start, args.end)]
+    else:
+        print(json.dumps({"error": "provide --seasons or both --start and --end"}))
+        return 1
+
+    total = 0
+    for start, end in ranges:
+        with session_scope() as session:
+            total += ingest_injuries(session, start, end)
+    print(json.dumps({"rows_written": total}))
+    return 0
+
+
+
+def cmd_poll_lineups(args: argparse.Namespace) -> int:
+    """Capture posted lineups for games that have not started yet."""
+    from app.db.session import session_scope
+    from app.ingestion.lineup_poller import poll_lineups
+
+    with session_scope() as session:
+        rows = poll_lineups(session, args.date)
+    print(json.dumps({"rows_written": rows}))
+    return 0
+
+
 def cmd_ingest_statcast(args: argparse.Namespace) -> int:
     """Backfill Statcast for a date range, or for whole seasons.
 
@@ -381,6 +449,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seasons", required=True, help="e.g. 2023,2024,2025")
     p.add_argument("--skip-boxscores", action="store_true")
     p.set_defaults(func=cmd_ingest_history)
+
+    p = sub.add_parser(
+        "ingest-weather",
+        help="Forecast weather at first pitch (Open-Meteo, no API key required)",
+    )
+    p.add_argument("--start", type=_parse_date)
+    p.add_argument("--end", type=_parse_date)
+    p.add_argument("--seasons", default=None, help="e.g. 2023,2024,2025")
+    p.add_argument(
+        "--live",
+        action="store_true",
+        help="Use the live forecast endpoint and stamp knowledge_time as now. "
+             "Default is the archive, for backfilling past games.",
+    )
+    p.set_defaults(func=cmd_ingest_weather)
+
+    p = sub.add_parser("ingest-injuries", help="Injured-list moves from MLB transactions")
+    p.add_argument("--start", type=_parse_date)
+    p.add_argument("--end", type=_parse_date)
+    p.add_argument("--seasons", default=None, help="e.g. 2024,2025")
+    p.set_defaults(func=cmd_ingest_injuries)
+
+    p = sub.add_parser(
+        "poll-lineups",
+        help="Capture posted lineups pregame, stamped with the moment observed",
+    )
+    p.add_argument("--date", type=_parse_date, default=None)
+    p.set_defaults(func=cmd_poll_lineups)
 
     p = sub.add_parser("ingest-statcast", help="Backfill Statcast pitches for a range")
     p.add_argument("--start", type=_parse_date)

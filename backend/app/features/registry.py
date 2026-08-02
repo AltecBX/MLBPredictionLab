@@ -732,8 +732,52 @@ BULLPEN_AVAILABILITY: list[FeatureSpec] = [
     ),
 ]
 
+# --- Phase 2 #5: forecast weather (fs_v6) ----------------------------------
+#
+# The park measurement decided the shape of this group before it was built. A
+# condition both teams share moves the total and not the margin, so a "the ball
+# carries tonight" feature is a totals input against a win target. The
+# interaction is the part that can move a margin: the air is shared, the two
+# staffs' exposure to it is not.
+#
+# Both shapes are registered so the ablation can separate them rather than
+# reporting their average — which is the mistake the fs_v3 measurement caught
+# and had to be re-run to undo.
+WEATHER: list[FeatureSpec] = [
+    FeatureSpec(
+        "wx_carry_index", "Ball carry conditions",
+        FeatureCategory.ENVIRONMENT,
+        "How far the ball carries tonight against a standard evening, from "
+        "forecast air density and the wind's out-to-centre component. Shared "
+        "by both teams, so it is a totals input against a win target.",
+        unit="index", window="game", min_sample=1, phase=2, is_absolute=True,
+        source_category="weather",
+        narrative="is playing in air that carries the ball further",
+    ),
+    FeatureSpec(
+        "wx_carry_x_flyball_diff", "Carry against staff fly-ball tendency",
+        FeatureCategory.ENVIRONMENT,
+        "Carry conditions times the gap between the two staffs' fly-ball "
+        "tendency. The air is shared; exposure to it is not, which is the only "
+        "way weather can move a margin rather than a total.",
+        unit="index", window="season", min_sample=300, phase=2,
+        source_category="weather",
+        narrative="has the staff better suited to tonight's air",
+    ),
+    FeatureSpec(
+        "wx_precip_prob", "Rain probability",
+        FeatureCategory.ENVIRONMENT,
+        "Forecast chance of precipitation at first pitch. Shared, and included "
+        "because rain changes how much baseball is played before a result "
+        "stands rather than who is better.",
+        unit="probability", window="game", min_sample=1, phase=2, is_absolute=True,
+        source_category="weather",
+        narrative="faces a higher chance of rain",
+    ),
+]
+
 REGISTRY: dict[str, FeatureSpec] = {
-    s.key: s for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + DEFERRED
+    s.key: s for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + WEATHER + DEFERRED
 }
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
@@ -759,6 +803,9 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # here. Reproduce with `--C 0.01` and `--C 0.03` as well as the default, or
     # the sensitivity that decided this is invisible.
     "fs_v5": [s.key for s in FS_V1 + BULLPEN_AVAILABILITY],
+    # fs_v1 + forecast weather. Phase 2's acceptance criterion names the weather
+    # group explicitly: it improves measurably or it is removed.
+    "fs_v6": [s.key for s in FS_V1 + WEATHER],
 }
 
 

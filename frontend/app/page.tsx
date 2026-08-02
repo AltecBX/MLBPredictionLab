@@ -5,7 +5,7 @@ import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { GameCardView } from "@/components/GameCard";
 import { EmptyState, UnavailableNotice } from "@/components/UnavailableNotice";
-import { api } from "@/lib/api";
+import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
 import {
   longDate,
   mediumDate,
@@ -255,8 +255,20 @@ export default async function GameCenterPage({
       ) : (
         <div className="mt-6">
           <UnavailableNotice
-            title="The prediction API is unavailable"
-            reason={result.message}
+            title={
+              looksLikeColdStart(result.status)
+                ? "The prediction API is still waking up"
+                : "The prediction API is unavailable"
+            }
+            reason={
+              looksLikeColdStart(result.status)
+                ? `${result.message} — this deployment sleeps when idle and takes about a minute to come back.${
+                    retryBudgetSeconds() > 0
+                      ? ` It was retried for ${retryBudgetSeconds()} seconds and had not answered yet;`
+                      : ""
+                  } reloading in a moment usually works.`
+                : result.message
+            }
             requiredSource="backend at API_BASE_URL"
           />
         </div>
