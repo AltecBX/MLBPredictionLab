@@ -36,7 +36,8 @@ from app.features.weather_physics import (
     field_relative_wind,
     is_enclosed,
 )
-from app.ingestion.status import job_run
+from app.ingestion.status import job_run, record_source_status
+from app.providers.base import DataCategory
 from app.providers.open_meteo.provider import (
     SOURCE_NAME,
     HourlyForecast,
@@ -203,6 +204,14 @@ def ingest_weather_for_dates(
                     written += len(rows)
 
             run.rows_written = written
+            # See the note in `lineup_poller`: a job that never records a
+            # source result leaves its Diagnostics row frozen at whatever the
+            # bootstrap wrote, which was UNAVAILABLE.
+            record_source_status(
+                session, provider.name, DataCategory.WEATHER,
+                success=True, records=written,
+                detail="Forecast at first pitch; archive path for past dates.",
+            )
             log.info(
                 "weather.ingested",
                 written=written,

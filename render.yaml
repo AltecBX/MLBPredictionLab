@@ -70,16 +70,26 @@ services:
         sync: false
       - key: ADMIN_API_KEY
         generateValue: true
-      # Later-phase providers stay unset on purpose. Each unset variable makes
-      # its category report UNAVAILABLE in the UI, naming itself as the fix.
-      # Never set one to a fake value to make a screen look complete.
+      # Three of these are now real, and setting them is not cosmetic: the
+      # Diagnostics report resolves a category's provider by reading these
+      # variables IN THE PROCESS THAT RENDERS THE PAGE. Ingesting lineups,
+      # injuries and weather hourly while leaving them unset here is what made
+      # the deployed site call three working feeds "not configured".
+      #
+      # Nothing fake is being set. The lineup poller and the injury ingest both
+      # read the MLB Stats API, and the weather ingest reads Open-Meteo; these
+      # name the sources the data actually comes from.
       - key: LINEUP_PROVIDER
-        sync: false
+        value: mlb_statsapi
       - key: WEATHER_PROVIDER
-        sync: false
-      - key: STATCAST_PROVIDER
-        sync: false
+        value: open_meteo
       - key: INJURY_PROVIDER
+        value: mlb_statsapi
+      # Genuinely unset, and staying that way. Each makes its category report
+      # UNAVAILABLE while naming itself as the fix, which is the correct answer
+      # for a feed nothing fetches. Never set one to a fake value to make a
+      # screen look complete.
+      - key: STATCAST_PROVIDER
         sync: false
       - key: PARK_FACTOR_PROVIDER
         sync: false
