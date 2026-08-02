@@ -26,7 +26,9 @@ assumed, and `fit_dispersion` reports it so the assumption can be checked.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -46,6 +48,16 @@ REGULATION_INNINGS = 9
 MAX_EXTRA_INNINGS = 9
 
 DEFAULT_SIMULATIONS = 20_000
+
+# Run totals are reported individually up to this many and pooled above it. Ten
+# or more runs happens on the order of one team-game in forty, and splitting that
+# tail into single-run buckets reports sampling noise as if it were structure.
+MAX_REPORTED_RUNS = 10
+
+# Most-likely final scores kept for display. Baseball's score distribution is
+# flat enough that the modal score carries only a few percent, so one score on
+# its own would overstate how much the simulation knows.
+TOP_SCORES = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,8 +148,15 @@ class GameSimulation:
     #: Most frequent final score, as (away, home).
     modal_score: tuple[int, int]
     simulations: int
+    #: P(exactly n runs) per side, index 0..MAX_REPORTED_RUNS, last bucket "or
+    #: more". Empty unless the caller asked for distributions — the ablation runs
+    #: this function four times a game and has no use for them.
+    home_run_distribution: tuple[float, ...] = ()
+    away_run_distribution: tuple[float, ...] = ()
+    #: The TOP_SCORES most likely finals, as ((away, home), probability).
+    score_distribution: tuple[tuple[tuple[int, int], float], ...] = ()
 
-    def to_dict(self) -> dict[str, float | int | list[int]]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "home_win_prob": round(self.home_win_prob, 6),
             "mean_home_runs": round(self.mean_home_runs, 3),
@@ -150,6 +169,59 @@ class GameSimulation:
             "simulations": self.simulations,
         }
 
+    def run_distribution_dict(self) -> dict[str, Any]:
+        """Shaped for `simulation_results.run_distribution`.
+
+        `max_reported` travels with the numbers because the final bucket is "or
+        more", and a reader who does not know where the pooling starts cannot
+        tell a tail from a spike.
+        """
+        return {
+            "max_reported": MAX_REPORTED_RUNS,
+            "home": [round(p, 5) for p in self.home_run_distribution],
+            "away": [round(p, 5) for p in self.away_run_distribution],
+        }
+
+    def score_distribution_dict(self) -> dict[str, Any]:
+        """Shaped for `simulation_results.score_distribution`.
+
+        The covered share is carried alongside: these are the top handful of a
+        long tail, and without it the list reads as if it were the whole
+        distribution.
+        """
+        return {
+            "scores": [
+                {"away": away, "home": home, "probability": round(p, 5)}
+                for (away, home), p in self.score_distribution
+            ],
+            "covered": round(sum(p for _, p in self.score_distribution), 5),
+        }
+
+
+def _run_histogram(totals: np.ndarray) -> tuple[float, ...]:
+    """P(exactly n runs) for n in 0..MAX_REPORTED_RUNS, last bucket "or more"."""
+    counts = np.bincount(
+        np.clip(totals.astype(int), 0, MAX_REPORTED_RUNS),
+        minlength=MAX_REPORTED_RUNS + 1,
+    )
+    return tuple(float(c) / float(totals.size) for c in counts)
+
+
+def _score_histogram(
+    away: np.ndarray, home: np.ndarray
+) -> tuple[tuple[tuple[int, int], float], ...]:
+    """The TOP_SCORES most likely finals, descending.
+
+    Ties in frequency are broken by the score itself so the output is a function
+    of the draws alone. Counter.most_common does not promise an order among
+    equal counts, and a display that reshuffles between two identical runs would
+    look like the model changed its mind when nothing changed.
+    """
+    pairs = Counter(zip(away.astype(int).tolist(), home.astype(int).tolist(), strict=True))
+    n = float(away.size)
+    ranked = sorted(pairs.items(), key=lambda item: (-item[1], item[0]))
+    return tuple((score, count / n) for score, count in ranked[:TOP_SCORES])
+
 
 def simulate_game(
     home_mean: float,
@@ -158,6 +230,7 @@ def simulate_game(
     *,
     simulations: int = DEFAULT_SIMULATIONS,
     seed: int = 20240401,
+    distributions: bool = False,
 ) -> GameSimulation:
     """Simulate one game many times and report the distribution.
 
@@ -233,6 +306,11 @@ def simulate_game(
         p_away_shutout=float((home_total == 0).mean()),
         modal_score=_modal_score(away_total, home_total),
         simulations=simulations,
+        home_run_distribution=_run_histogram(home_total) if distributions else (),
+        away_run_distribution=_run_histogram(away_total) if distributions else (),
+        score_distribution=(
+            _score_histogram(away_total, home_total) if distributions else ()
+        ),
     )
 
 

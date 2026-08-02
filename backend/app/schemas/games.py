@@ -181,6 +181,42 @@ class BacktestEvidence(ApiModel):
     overall_n: int | None = None
 
 
+class SimulationScore(ApiModel):
+    away: int
+    home: int
+    probability: float
+
+
+class SimulationDetail(ApiModel):
+    """A real Monte Carlo result. Only ever built from a persisted simulation.
+
+    `available` is True here by construction — the alternative is `Unavailable`,
+    which carries a reason. A simulation that did not run is never a
+    `SimulationDetail` full of zeros.
+    """
+
+    available: bool = True
+    n_simulations: int
+    home_win_pct: float
+    away_win_pct: float
+    mean_home_runs: float | None = None
+    mean_away_runs: float | None = None
+    #: P(exactly n runs), index 0..max_reported_runs; the last entry is "or more".
+    home_run_distribution: list[float] = []
+    away_run_distribution: list[float] = []
+    max_reported_runs: int | None = None
+    likely_scores: list[SimulationScore] = []
+    #: Share of outcomes the listed scores account for. The rest is a long tail.
+    likely_scores_covered: float | None = None
+    extra_innings_prob: float | None = None
+    one_run_prob: float | None = None
+    upset_prob: float | None = None
+    seed: int | None = None
+    #: How the served probability was formed from this simulation.
+    blend_weight: float | None = None
+    blended_with_logistic: bool = False
+
+
 class GameDetail(ApiModel):
     card: GameCard
     drivers_for: list[DriverSummary] = []
@@ -192,7 +228,7 @@ class GameDetail(ApiModel):
     away_detail: SideDetail
     matchup_history: dict[str, Any] = {}
     environment: dict[str, Any] = {}
-    simulation: Unavailable
+    simulation: SimulationDetail | Unavailable
     market: MarketComparison
     backtest_evidence: BacktestEvidence
     change_since_previous: PredictionChange

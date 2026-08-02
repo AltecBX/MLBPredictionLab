@@ -108,6 +108,38 @@ export interface Unavailable {
   phase?: number | null;
 }
 
+export interface SimulationScore {
+  away: number;
+  home: number;
+  probability: number;
+}
+
+/**
+ * A real Monte Carlo result. `available: true` is the discriminant against
+ * `Unavailable` — a game that was not simulated is never a SimulationDetail
+ * with zeros in it.
+ */
+export interface SimulationDetail {
+  available: true;
+  n_simulations: number;
+  home_win_pct: number;
+  away_win_pct: number;
+  mean_home_runs: number | null;
+  mean_away_runs: number | null;
+  /** P(exactly n runs); the final entry is "or more". */
+  home_run_distribution: number[];
+  away_run_distribution: number[];
+  max_reported_runs: number | null;
+  likely_scores: SimulationScore[];
+  likely_scores_covered: number | null;
+  extra_innings_prob: number | null;
+  one_run_prob: number | null;
+  upset_prob: number | null;
+  seed: number | null;
+  blend_weight: number | null;
+  blended_with_logistic: boolean;
+}
+
 export interface DriverSummary {
   feature_key: string;
   display_name: string;
@@ -303,7 +335,7 @@ export interface GameDetail {
   away_detail: SideDetail;
   matchup_history: Record<string, unknown>;
   environment: Record<string, unknown>;
-  simulation: Unavailable;
+  simulation: SimulationDetail | Unavailable;
   market: MarketComparison;
   backtest_evidence: BacktestEvidence;
   change_since_previous: PredictionChange;

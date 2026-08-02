@@ -93,27 +93,33 @@ name of the required source. They are **not** filled with placeholder numbers:
 
 ### Deliverables
 
-1. **Run-scoring model** — Poisson / negative binomial per side, dispersion
-   tested rather than assumed.
-2. **Monte Carlo simulation** — ≥ 10,000 seeded runs per game producing win
-   distribution, run distributions, most common scores, extra-innings
-   probability, one-run probability, upset probability; re-run triggers on
-   material change.
-3. **Ensemble** — non-negative weights fit on out-of-sample walk-forward
-   predictions only, shrunk toward equal weight.
-4. **Advanced matchup features** — times-through-order, platoon splits,
-   arsenal-vs-lineup, batter-vs-pitcher under the ≥ 25 PA gate and contribution
-   cap.
-5. **Licensed odds integration** — timestamped snapshots, de-vigging, market
-   comparison, ROI and CLV in the backtest.
-6. **Game detail tabs completed** — Simulation and Market comparison.
+1. **Run-scoring model** — *Done.* Negative binomial per side, dispersion fitted
+   and reported rather than assumed (`modeling/runs.py`).
+2. **Monte Carlo simulation** — *Done.* 20,000 seeded draws per game producing
+   the win probability, both run distributions, the most likely finals, and the
+   extra-innings, one-run and upset probabilities. Persisted per prediction in
+   `simulation_results`. Re-runs are driven by the snapshot signature, which
+   already covers a material change.
+3. **Ensemble** — *Done, and served.* The blend weight is **pre-registered at
+   0.5 rather than fitted**, which is a deliberate departure from this line: the
+   grid argmax disagreed between the two measured seasons (1.0 and 0.3), so
+   fitting it would have been selection on the evaluation set. Measured at the
+   fixed weight it still beats the logistic model in both seasons.
+4. **Advanced matchup features** — arsenal-vs-lineup and projected lineups built
+   and **rejected on measurement** (MODELING_PLAN.md). Times-through-order and
+   batter-vs-pitcher not started.
+5. **Licensed odds integration** — **Blocked.** Needs a paid odds provider; no
+   free source carries timestamped pregame lines that survive the leakage rule.
+6. **Game detail tabs completed** — Simulation *done*; Market blocked with 5.
 
 ### Acceptance criteria
 
 * Simulation win% agrees with the ensemble probability within a stated
   tolerance, and disagreement beyond it is surfaced as reduced model agreement.
+  *Met:* both are carried on every prediction's `component_probs`, and their
+  spread feeds `model_agreement` directly.
 * No market feature can be read by a prediction whose `as_of` precedes the odds
-  snapshot timestamp (enforced by test).
+  snapshot timestamp (enforced by test). *Not yet applicable — no odds source.*
 
 ---
 
@@ -197,10 +203,10 @@ Ordered so each step is usable on its own and the next one depends on it.
 | 3 | Expected lineup features | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 4 | Pitch arsenal matchup engine | Built, **measured and rejected** — best standalone signal per feature in the model, still redundant |
 | 5 | Individual bullpen availability | Not started |
-| 6 | Weather and empirical park factors | Not started |
+| 6 | Weather and empirical park factors | **Park factors built and measured** — no effect on the win target, and inert by construction (MODELING_PLAN.md). Weather blocked: no forecast provider |
 | 7 | Gradient boosting | Built, **measured and rejected** (MODELING_PLAN.md) |
 | 8 | Run scoring model and simulation | **Built, measured, and it works** — +0.0047 to +0.0065 log loss across two seasons, both intervals excluding zero. MODELING_PLAN.md |
-| 9 | Stacked ensemble and calibration | Not started |
+| 9 | Stacked ensemble and calibration | **Served.** The blend is what the product now shows; the simulation is persisted per prediction and surfaced on the Simulation tab |
 | 10 | Prediction timeline and change explanations | Not started |
 | 11 | UI context features | Partly done — records, streaks, standings, nine-row summary shipped |
 

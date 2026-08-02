@@ -24,6 +24,7 @@ from app.db.models import (
     Player,
     Prediction,
     PredictionExplanation,
+    SimulationResult,
     Team,
 )
 from app.features.registry import CATEGORY_LABELS, deferred_by_source
@@ -51,6 +52,8 @@ from app.schemas.games import (
     PredictionSummary,
     ProjectedScore,
     SideDetail,
+    SimulationDetail,
+    SimulationScore,
 )
 from app.services.freshness import freshness_report
 from app.services.matchup_summary import build_matchup_summary
@@ -78,8 +81,9 @@ WEATHER_UNAVAILABLE_REASON = (
     "temperature, wind and humidity features."
 )
 SIMULATION_UNAVAILABLE_REASON = (
-    "Monte Carlo simulation arrives in Phase 3 together with the run-scoring "
-    "model. No simulated numbers are shown until it exists."
+    "This game was not simulated. The run model needs both teams to have enough "
+    "games on record and a league-wide dispersion fit, neither of which exists "
+    "in the opening weeks of a season."
 )
 MARKET_UNAVAILABLE_REASON = (
     "Market comparison requires a licensed odds provider. Set ODDS_PROVIDER to "
@@ -492,6 +496,57 @@ def sort_cards(cards: list[GameCard], sort: str) -> list[GameCard]:
     return sorted(cards, key=lambda c: (c.first_pitch_utc, c.game_id))
 
 
+def _simulation(
+    session: Session, prediction: Prediction | None
+) -> SimulationDetail | Unavailable:
+    """The persisted Monte Carlo result behind a prediction, if there was one.
+
+    Read back from `simulation_results` rather than re-simulated. Re-running it
+    here would be a second opinion on the same game — seeded identically, so
+    usually the same number, but not necessarily the one that was served, and
+    the screen must show what was served.
+    """
+    if prediction is None:
+        return Unavailable(reason="No prediction has been issued for this game yet.")
+    row = session.scalar(
+        select(SimulationResult).where(SimulationResult.prediction_id == prediction.id)
+    )
+    if row is None:
+        snapshot = prediction.feature_snapshot or {}
+        blend = snapshot.get("blend") or {}
+        return Unavailable(
+            reason=blend.get("simulation_unavailable") or SIMULATION_UNAVAILABLE_REASON
+        )
+
+    runs = row.run_distribution or {}
+    scores = row.score_distribution or {}
+    blend = (prediction.feature_snapshot or {}).get("blend") or {}
+    return SimulationDetail(
+        n_simulations=row.n_simulations,
+        home_win_pct=float(row.home_win_pct),
+        away_win_pct=float(row.away_win_pct),
+        mean_home_runs=_f(row.mean_home_runs),
+        mean_away_runs=_f(row.mean_away_runs),
+        home_run_distribution=list(runs.get("home") or []),
+        away_run_distribution=list(runs.get("away") or []),
+        max_reported_runs=runs.get("max_reported"),
+        likely_scores=[
+            SimulationScore(
+                away=int(s["away"]), home=int(s["home"]),
+                probability=float(s["probability"]),
+            )
+            for s in (scores.get("scores") or [])
+        ],
+        likely_scores_covered=scores.get("covered"),
+        extra_innings_prob=_f(row.extra_innings_prob),
+        one_run_prob=_f(row.one_run_prob),
+        upset_prob=_f(row.upset_prob),
+        seed=row.seed,
+        blend_weight=blend.get("weight_on_simulation"),
+        blended_with_logistic=bool(blend.get("is_blended")),
+    )
+
+
 def build_game_detail(
     session: Session, game: Game, prediction: Prediction | None
 ) -> GameDetail:
@@ -526,7 +581,7 @@ def build_game_detail(
         away_detail=_side_detail(session, game, prediction, side="A"),
         matchup_history=_matchup_history(prediction),
         environment=_environment(card, prediction),
-        simulation=Unavailable(reason=SIMULATION_UNAVAILABLE_REASON, phase=3),
+        simulation=_simulation(session, prediction),
         market=card.prediction.market
         if card.prediction
         else MarketComparison(available=False, reason=MARKET_UNAVAILABLE_REASON),

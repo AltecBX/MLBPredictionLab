@@ -291,10 +291,76 @@ def test_game_detail_exposes_every_tab_payload(client):
         assert key in body
 
     assert body["drivers_for"][0]["display_name"] == "Starter FIP edge"
+    # This fixture's prediction has no persisted simulation, so the slot must be
+    # an explicit unavailable carrying a reason — never zeros standing in for a
+    # simulation that did not run.
     assert body["simulation"]["available"] is False
-    assert "Phase 3" in body["simulation"]["reason"] or body["simulation"]["phase"] == 3
+    assert body["simulation"]["reason"]
+    assert "home_win_pct" not in body["simulation"]
     assert body["market"]["available"] is False
     assert "ODDS_PROVIDER" in body["market"]["reason"]
+
+
+def test_a_persisted_simulation_surfaces_on_the_detail(client, seeded):
+    """The Simulation tab reads back what was served, not a fresh re-run.
+
+    The row is removed again at the end: this module shares one seeded database
+    across its tests, and a simulation left behind would silently change what
+    the unavailable-state test above is asserting.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.db.models import Prediction, SimulationResult
+
+    Session = sessionmaker(bind=seeded, expire_on_commit=False)
+    session = Session()
+    prediction = session.scalar(
+        sa_select(Prediction).where(
+            Prediction.game_id == 555001, Prediction.is_latest.is_(True)
+        )
+    )
+    original_snapshot = dict(prediction.feature_snapshot or {})
+    row = SimulationResult(
+        prediction_id=prediction.id,
+        n_simulations=20000,
+        home_win_pct=0.5432,
+        away_win_pct=0.4568,
+        mean_home_runs=4.61,
+        mean_away_runs=4.33,
+        run_distribution={"max_reported": 10, "home": [0.02] * 11, "away": [0.02] * 11},
+        score_distribution={
+            "scores": [{"away": 3, "home": 4, "probability": 0.041}],
+            "covered": 0.041,
+        },
+        extra_innings_prob=0.0871,
+        one_run_prob=0.2604,
+        upset_prob=0.4568,
+        seed=555001,
+    )
+    session.add(row)
+    prediction.feature_snapshot = original_snapshot | {
+        "blend": {
+            "method": "log_odds", "weight_on_simulation": 0.5,
+            "is_blended": True, "simulation_unavailable": None,
+        }
+    }
+    session.commit()
+
+    try:
+        simulation = client.get("/api/v1/games/555001").json()["simulation"]
+        assert simulation["available"] is True
+        assert simulation["home_win_pct"] == pytest.approx(0.5432)
+        assert simulation["n_simulations"] == 20000
+        assert simulation["max_reported_runs"] == 10
+        assert simulation["likely_scores"][0] == {"away": 3, "home": 4, "probability": 0.041}
+        assert simulation["one_run_prob"] == pytest.approx(0.2604)
+        assert simulation["blended_with_logistic"] is True
+        assert simulation["blend_weight"] == 0.5
+    finally:
+        session.delete(row)
+        prediction.feature_snapshot = original_snapshot
+        session.commit()
+        session.close()
 
 
 def test_backtest_evidence_reports_the_matching_band(client):
