@@ -1,13 +1,54 @@
+import Image from "next/image";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 /**
- * The mark.
+ * The mark, in the header and the footer.
+ *
+ * It renders the real logo from `public/logo.png` when that file exists and
+ * falls back to the drawn baseball below when it does not. The fallback is not
+ * decoration: it is what keeps `npm run build` working in a checkout that has
+ * not had the artwork added, and it means a missing asset degrades to a plain
+ * mark rather than a broken-image icon in the corner of every page.
+ *
+ * The check runs once at module scope. Every page here is server-rendered, so
+ * this is one stat per process rather than per request, and the answer cannot
+ * change without a redeploy.
+ */
+const HAS_LOGO = existsSync(path.join(process.cwd(), "public", "logo.png"));
+
+export function BrandMark({ size = 22 }: { size?: number }) {
+  if (HAS_LOGO) {
+    return (
+      <Image
+        src="/logo.png"
+        alt=""
+        width={size}
+        height={size}
+        // A detailed shield read at 22px in a header. Serving the full-resolution
+        // file and letting the browser downscale is what keeps it legible at a
+        // phone's pixel density.
+        quality={90}
+        priority
+        aria-hidden="true"
+        className="shrink-0 object-contain"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return <DrawnMark size={size} />;
+}
+
+/**
+ * The fallback mark.
  *
  * A baseball's two seams reduced to their essential curves, inside a rounded
  * square. It has to survive being rendered at 22px on a phone header, so it is
  * two strokes and a circle — anything more becomes mud at that size — and it
- * inherits `currentColor` so it works on any surface in either theme without a
- * second asset.
+ * inherits the accent colour so it works on any surface in either theme without
+ * a second asset.
  */
-export function BrandMark({ size = 22 }: { size?: number }) {
+function DrawnMark({ size }: { size: number }) {
   return (
     <svg
       width={size}
