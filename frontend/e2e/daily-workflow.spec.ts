@@ -39,7 +39,7 @@ async function backendIsReachable(page: Page) {
  * does not auto-wait and every route here is server-rendered on demand.
  */
 async function openFirstGame(page: Page, date = "2026-08-01"): Promise<string> {
-  await page.goto(`/?date=${date}`);
+  await page.goto(`/d/${date}/`);
   const link = page.getByRole("link", { name: /Full breakdown/ }).first();
   try {
     await link.waitFor({ state: "visible", timeout: 15_000 });
@@ -75,27 +75,31 @@ test.describe("daily game workflow", () => {
   test("date navigation targets the adjacent dates and renders them", async ({
     page,
   }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     await expect(page.getByText("August 1, 2026")).toBeVisible();
 
     // Assert the links point where they should, then follow them by URL. A
     // click here would measure the client router's timing under whatever load
     // the rest of the suite is putting on the server, not the navigation
     // contract this test is about.
+    // The trailing slash is optional on purpose. `trailingSlash` is only set
+    // for the static export, so the same href renders as `/d/2026-07-31/` in
+    // the published build and `/d/2026-07-31` in the server build this suite
+    // runs against. Both resolve; pinning either one would fail the other.
     await expect(page.getByRole("link", { name: "← Prev" })).toHaveAttribute(
       "href",
-      /date=2026-07-31/,
+      /\/d\/2026-07-31\/?$/,
     );
     await expect(page.getByRole("link", { name: "Next →" })).toHaveAttribute(
       "href",
-      /date=2026-08-02/,
+      /\/d\/2026-08-02\/?$/,
     );
 
-    await page.goto("/?date=2026-07-31");
+    await page.goto("/d/2026-07-31/");
     await expect(page.getByText("July 31, 2026").first()).toBeVisible();
 
     // A date with nothing ingested must say so rather than rendering blank.
-    await page.goto("/?date=2026-08-02");
+    await page.goto("/d/2026-08-02/");
     await expect(page.getByText("August 2, 2026").first()).toBeVisible();
   });
 
@@ -137,7 +141,7 @@ test.describe("daily game workflow", () => {
   test("cards carry the role-specific record and the current streak", async ({
     page,
   }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     const card = page.locator("article").first();
     try {
       await card.waitFor({ state: "visible", timeout: 15_000 });
@@ -152,7 +156,7 @@ test.describe("daily game workflow", () => {
   });
 
   test("the slate is separated by status", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     const headings = page.getByRole("heading", {
       name: /^(Live|Upcoming|Final|Postponed)/,
     });
@@ -206,7 +210,7 @@ test.describe("daily game workflow", () => {
   });
 
   test("no page promises a guaranteed outcome", async ({ page }) => {
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     const body = (await page.textContent("body")) ?? "";
     for (const phrase of ["guaranteed win", "sure thing", "lock of the day", "can't lose"]) {
       expect(body.toLowerCase()).not.toContain(phrase);
@@ -245,7 +249,7 @@ test.describe("daily game workflow", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/?date=2026-08-01");
+    await page.goto("/d/2026-08-01/");
     await expect(page.getByRole("heading", { name: "Daily Game Center" })).toBeVisible();
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -256,14 +260,18 @@ test.describe("daily game workflow", () => {
   test("an unknown game id renders the not-found page", async ({ page }) => {
     const reachable = await backendIsReachable(page);
 
-    // The route is force-dynamic and streamed, so the HTTP status is committed
-    // before notFound() runs; the rendered page is the contract that matters.
     await page.goto("/game/999999999");
 
     if (!reachable) {
-      // "The API said this game does not exist" and "I could not ask the API"
-      // are different facts, and the app must not conflate them.
-      await expect(page.getByText(/Could not load this game/)).toBeVisible();
+      // With no API the build produced no game pages at all, so an unknown id
+      // is indistinguishable from every other id: there is no page. Either
+      // honest state is acceptable here — what must never appear is a game.
+      await expect(
+        page
+          .getByText(/Could not load this game/)
+          .or(page.getByRole("heading", { name: "Not found" })),
+      ).toBeVisible();
+      await expect(page.getByText(/win probability/i)).toHaveCount(0);
       return;
     }
     await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();

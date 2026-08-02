@@ -3,7 +3,6 @@ import { Section } from "@/components/StatBlock";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
 
-export const dynamic = "force-dynamic";
 export const metadata = { title: "Methodology" };
 
 export default async function MethodologyPage() {

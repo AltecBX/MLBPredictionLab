@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import { num, pct, timestamp } from "@/lib/format";
 import type { BacktestSlice } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
 export const metadata = { title: "Backtest" };
 
 const SLICE_TITLES: Record<string, { title: string; description: string }> = {

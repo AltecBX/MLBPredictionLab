@@ -6,6 +6,7 @@ import { BrandMark } from "@/components/Brand";
 import { PrimaryNav } from "@/components/PrimaryNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
+import { asset } from "@/lib/asset";
 
 export const metadata: Metadata = {
   title: {
@@ -36,11 +37,11 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: asset("/icon.svg"), type: "image/svg+xml" },
+      { url: asset("/icon-192.png"), sizes: "192x192", type: "image/png" },
+      { url: asset("/icon-512.png"), sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: asset("/apple-icon.png"), sizes: "180x180", type: "image/png" }],
   },
 };
 

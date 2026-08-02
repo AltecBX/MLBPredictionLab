@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 export interface TabDef {
@@ -11,22 +10,29 @@ export interface TabDef {
 }
 
 /**
- * Link-driven tabs so every panel is server-rendered and deep-linkable.
+ * The tab strip. Selection is the caller's — see `TabPanels`, which owns the
+ * active tab and keeps it in the URL.
  *
- * The client boundary buys exactly one thing: after navigating to a tab the
- * strip is re-rendered scrolled to the left, so on a phone the tab you just
- * tapped can be off-screen. This scrolls it back into view.
+ * Buttons rather than links: a static export serves one file per game, so a
+ * `?tab=` link would navigate to the same page it is already on. The URL is
+ * still updated, so deep links and the back button behave as they did.
+ *
+ * The client boundary also buys one thing it always did: after switching tab
+ * the strip can be scrolled such that the tab you just tapped is off-screen on
+ * a phone. This scrolls it back into view.
  */
 export function Tabs({
   tabs,
   active,
   basePath,
+  onSelect,
 }: {
   tabs: TabDef[];
   active: string;
   basePath: string;
+  onSelect: (key: string) => void;
 }) {
-  const activeRef = useRef<HTMLAnchorElement>(null);
+  const activeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
@@ -52,9 +58,10 @@ export function Tabs({
           const isActive = tab.key === active;
           return (
             <li key={tab.key}>
-              <Link
+              <button
+                type="button"
                 ref={isActive ? activeRef : undefined}
-                href={`${basePath}?tab=${tab.key}`}
+                onClick={() => onSelect(tab.key)}
                 aria-current={isActive ? "page" : undefined}
                 className={`tap t-small relative whitespace-nowrap px-3 transition-colors ${
                   isActive ? "" : "muted hover:text-[var(--text)]"
@@ -76,7 +83,7 @@ export function Tabs({
                     style={{ background: "var(--accent)" }}
                   />
                 ) : null}
-              </Link>
+              </button>
             </li>
           );
         })}
