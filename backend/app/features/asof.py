@@ -26,7 +26,15 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import LeakageError
 from app.core.logging import get_logger
-from app.db.models import Ballpark, Game, Player, PlayerGameStat, TeamGameStat, Weather
+from app.db.models import (
+    Ballpark,
+    Game,
+    Injury,
+    Player,
+    PlayerGameStat,
+    TeamGameStat,
+    Weather,
+)
 from app.features.batter_agg import (
     load_batter_statcast,
     load_batting_orders,
@@ -98,6 +106,8 @@ class AsOfStore:
         pitcher_arsenal: pd.DataFrame | None = None,
         batting_orders: pd.DataFrame | None = None,
         weather: pd.DataFrame | None = None,
+        batter_games: pd.DataFrame | None = None,
+        injuries: pd.DataFrame | None = None,
     ) -> None:
         self.games = games
         self.pitcher_games = pitcher_games
@@ -120,12 +130,29 @@ class AsOfStore:
         # Forecast weather. Append-only snapshots keyed by knowledge_time, so a
         # prediction reads whichever forecast existed when it was made.
         self.weather = pd.DataFrame() if weather is None else weather
+        # Per-batter game lines, for the share of a team's production that a
+        # missing player took with him. Only the columns the availability group
+        # reads are loaded: this is the widest table in the database and the
+        # rest of it has no caller.
+        self.batter_games = pd.DataFrame() if batter_games is None else batter_games
+        # Roster transactions, sorted by when they became knowable. Sorted once
+        # here because every lookup is a window found by binary search.
+        self.injuries = pd.DataFrame() if injuries is None else injuries
+        if not self.injuries.empty:
+            self.injuries = self.injuries.sort_values(
+                ["knowledge_time", "id"]
+            ).reset_index(drop=True)
+            self._injury_ns = _ns_array(self.injuries["knowledge_time"])
+        else:
+            self._injury_ns = np.array([], dtype="int64")
+        self._unavailable_cache: dict[int, frozenset[int]] = {}
         self.team_games = self._attach_opponent_starter_hand(
             team_games, pitcher_games, players
         )
 
         self._assert_no_outcome_columns(self.team_games, "team_games")
         self._assert_no_outcome_columns(pitcher_games, "pitcher_games")
+        self._assert_no_outcome_columns(self.batter_games, "batter_games")
 
         self._team_index = self._build_index(self.team_games, "team_id")
         self._pitcher_index = self._build_index(pitcher_games, "player_id")
@@ -136,6 +163,7 @@ class AsOfStore:
         self._arsenal_index = self._build_index(self.pitcher_arsenal, "player_id")
         self._orders_index = self._build_index(self.batting_orders, "team_id")
         self._team_pitchers_index = self._build_index(pitcher_games, "team_id")
+        self._team_batters_index = self._build_index(self.batter_games, "team_id")
         self._schedule_index = self._build_schedule_index(games)
         self._weather_index = (
             {}
@@ -186,6 +214,41 @@ class AsOfStore:
                 for row in session.scalars(pg_stmt).all()
             ]
         )
+
+        # Batter lines, narrowed to the columns the availability group reads.
+        # `player_game_stats` is 333k rows across both roles and forty-odd
+        # columns; loading the whole thing to divide two sums would cost more
+        # memory than every other frame here put together.
+        bat_stmt = select(
+            PlayerGameStat.game_id, PlayerGameStat.player_id, PlayerGameStat.team_id,
+            PlayerGameStat.game_date_utc, PlayerGameStat.knowledge_time,
+            PlayerGameStat.pa, PlayerGameStat.hits, PlayerGameStat.doubles,
+            PlayerGameStat.triples, PlayerGameStat.home_runs, PlayerGameStat.bb,
+            PlayerGameStat.ibb, PlayerGameStat.hbp,
+        ).where(PlayerGameStat.role == "batter")
+        if seasons:
+            bat_stmt = bat_stmt.join(Game, Game.id == PlayerGameStat.game_id).where(
+                Game.season.in_(seasons)
+            )
+        batter_games = pd.DataFrame(session.execute(bat_stmt).mappings().all())
+        if not batter_games.empty:
+            batter_games = cls._to_utc(batter_games, "game_date_utc", "knowledge_time")
+            batter_games = batter_games.sort_values("knowledge_time").reset_index(drop=True)
+
+        # Roster transactions. Deliberately NOT season-filtered: a placement
+        # made in September is what a March prediction needs to know it is still
+        # in force, and `seasons` restricts which games are scored, not which
+        # facts were knowable when they were played.
+        injuries = pd.DataFrame(
+            session.execute(
+                select(
+                    Injury.id, Injury.player_id, Injury.team_id, Injury.status,
+                    Injury.knowledge_time,
+                )
+            ).mappings().all()
+        )
+        if not injuries.empty:
+            injuries = cls._to_utc(injuries, "knowledge_time")
 
         players = pd.DataFrame(
             session.execute(
@@ -243,6 +306,8 @@ class AsOfStore:
             pitcher_arsenal,
             batting_orders,
             weather,
+            batter_games,
+            injuries,
         )
 
     # -- preparation -------------------------------------------------------
@@ -486,6 +551,34 @@ class AsOfStore:
         if relievers_only and not frame.empty:
             frame = frame[~frame["is_starter"].astype(bool)]
         return frame
+
+    def team_batter_games_asof(
+        self, team_id: int, as_of: datetime, start: datetime | None = None
+    ) -> pd.DataFrame:
+        """Per-batter game lines for one team, guarded like every other slice."""
+        return self._slice(self._team_batters_index, team_id, as_of, start)
+
+    def unavailable_asof(self, as_of: datetime) -> frozenset[int]:
+        """Players on the injured list as far as ``as_of`` can know.
+
+        Cached by the minute rather than the exact instant. Every game on a
+        slate is predicted at its own first pitch minus three hours, so the
+        as-of values differ, but the answer changes only when a transaction is
+        reported and those arrive perhaps a hundred times a day. Without the
+        cache this is the single most expensive call in a walk-forward.
+        """
+        from app.features.availability import unavailable_as_of
+
+        if self.injuries.empty:
+            return frozenset()
+        key = _ns(as_of) // 60_000_000_000
+        cached = self._unavailable_cache.get(key)
+        if cached is None:
+            cached = frozenset(
+                unavailable_as_of(self.injuries, self._injury_ns, as_of)
+            )
+            self._unavailable_cache[key] = cached
+        return cached
 
     def league_pitcher_games_asof(
         self, as_of: datetime, start: datetime | None = None

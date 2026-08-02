@@ -802,8 +802,58 @@ WEATHER: list[FeatureSpec] = [
     ),
 ]
 
+# --- Phase 2 #4: roster availability (fs_v7) -------------------------------
+#
+# Six rejections, one diagnosis: every group so far has been a DECOMPOSITION of
+# team strength. A season rate is a sufficient statistic for any rearrangement
+# of the players who produced it, so rearranging them says nothing new. The
+# starting-pitcher split is the cleanest demonstration — it disagreed with the
+# base model about one game in five and was not the more accurate of the two.
+#
+# This group performs a different operation. It does not redistribute the
+# season rate, it reports that the rate is STALE: it was accumulated by a roster
+# that included somebody who is not playing tonight. That fact cannot be inside
+# the team rate, because the team rate contains his contribution precisely on
+# account of his having made it.
+#
+# The prediction that distinguishes it from the six: a decomposition averages
+# back to the team rate over a season (each rotation slot comes up equally
+# often), which is why the pitching split was worth nothing in aggregate. An
+# availability loss does not average back — a player lost for the year holds the
+# feature away from zero until the window rolls past him.
+#
+# `IL_RECENCY_DAYS` is fitted, and fitted against ABSENCE — whether the player
+# subsequently appeared — not against the win outcome this group is about to be
+# scored on. See `features/availability.py` for the table. The bullpen group's
+# warning is about a nuisance constant tuned on the target; this is deliberately
+# the other thing.
+AVAILABILITY: list[FeatureSpec] = [
+    FeatureSpec(
+        "il_offense_lost_diff", "Bats on the injured list",
+        FeatureCategory.OFFENSE,
+        "Share of the team's last forty-five days of weighted offensive "
+        "production belonging to players placed on the injured list within the "
+        "last four weeks. A share, not a headcount: losing a cleanup hitter and "
+        "losing a bench bat are not the same event.",
+        unit="share", window="w45", min_sample=200, phase=2,
+        source_category="injuries", higher_favors_home=False,
+        narrative="has lost less of its recent batting to the injured list",
+    ),
+    FeatureSpec(
+        "il_pitching_lost_diff", "Arms on the injured list",
+        FeatureCategory.BULLPEN,
+        "The same, for pitching: share of the team's batters faced over the "
+        "last forty-five days thrown by pitchers now on the injured list.",
+        unit="share", window="w45", min_sample=200, phase=2,
+        source_category="injuries", higher_favors_home=False,
+        narrative="has lost less of its recent pitching to the injured list",
+    ),
+]
+
 REGISTRY: dict[str, FeatureSpec] = {
-    s.key: s for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + WEATHER + DEFERRED
+    s.key: s
+    for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + WEATHER + AVAILABILITY
+    + DEFERRED
 }
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
@@ -832,6 +882,9 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # fs_v1 + forecast weather. Phase 2's acceptance criterion names the weather
     # group explicitly: it improves measurably or it is removed.
     "fs_v6": [s.key for s in FS_V1 + WEATHER],
+    # fs_v1 + roster availability. On fs_v1 for the same reason as every
+    # candidate since fs_v3: stacking on a rejected group measures the pair.
+    "fs_v7": [s.key for s in FS_V1 + AVAILABILITY],
 }
 
 

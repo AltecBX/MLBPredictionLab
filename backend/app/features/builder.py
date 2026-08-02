@@ -20,6 +20,7 @@ import pandas as pd
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.features import aggregates as agg
+from app.features import availability as av
 from app.features import bullpen as bp
 from app.features import lineup_features as lf
 from app.features import statcast_features as sc
@@ -253,6 +254,7 @@ class FeatureBuilder:
         )
         values.update(self._schedule_values(team_id, ctx, as_of))
         values.update(self._history_values(team_id, opponent_id, ctx, as_of, season_start))
+        values.update(self._availability_values(team_id, as_of))
 
         return SideFeatures(
             values=values,
@@ -806,6 +808,30 @@ class FeatureBuilder:
             )
         }
 
+    def _availability_values(
+        self, team_id: int, as_of: datetime
+    ) -> dict[str, FeatureValue]:
+        """How much of the team's recent record is on the injured list.
+
+        Reports missing rather than zero when the transaction feed is empty or
+        the window is too short to divide. Nobody injured and no idea who is
+        injured are different states, and a zero would say the first when the
+        truth is the second.
+        """
+        loss = av.availability_loss(self.store, team_id, as_of)
+        out: dict[str, FeatureValue] = {}
+        out["il_offense_lost"] = (
+            FeatureValue(loss.offense, loss.team_pa, False)
+            if loss.offense is not None
+            else FeatureValue.missing("no batting window to divide")
+        )
+        out["il_pitching_lost"] = (
+            FeatureValue(loss.pitching, loss.team_batters_faced, False)
+            if loss.pitching is not None
+            else FeatureValue.missing("no pitching window to divide")
+        )
+        return out
+
     # -- assembly ----------------------------------------------------------
     def build(self, ctx: GameContext, as_of: datetime) -> FeatureVector:
         if as_of >= ctx.first_pitch_utc:
@@ -902,6 +928,8 @@ class FeatureBuilder:
             ("sc_sp_avg_exit_velocity_allowed_diff", "sc_sp_avg_exit_velocity_allowed"),
             ("lineup_whiff_pct_weighted_diff", "lineup_whiff_pct_weighted"),
             ("arsenal_whiff_edge_diff", "arsenal_whiff_edge"),
+            ("il_offense_lost_diff", "il_offense_lost"),
+            ("il_pitching_lost_diff", "il_pitching_lost"),
         ):
             emit(key, _diff(away.get(source), home.get(source)))
 

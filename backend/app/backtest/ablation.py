@@ -42,6 +42,7 @@ FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     "offense": ("off_",),
     "projected_lineup": ("lineup_",),
     "arsenal_matchup": ("arsenal_",),
+    "roster_availability": ("il_",),
 }
 
 # Groups whose providers are not enabled in Phase 1. Reported as untestable
