@@ -74,8 +74,30 @@ def record_source_status(
         )
     )
     if existing is None:
-        existing = DataSourceStatus(source_name=source_name, category=category)
-        session.add(existing)
+        # Take over the bootstrap placeholder rather than inserting beside it.
+        #
+        # `seed_source_status` writes one row per category at bootstrap named
+        # `unavailable::<category>`, and this function matches on
+        # (source_name, category) — so the first real ingest for a category
+        # inserted a SECOND row and left the placeholder in place.
+        #
+        # That is worse than the stale row it was meant to replace.
+        # `freshness_report` builds a dict keyed by category, so with two rows
+        # the one a reader sees is whichever the database happened to return
+        # last. Observed live: lineups showed OK and weather showed UNAVAILABLE
+        # on the same page, from the same code, in the same run.
+        placeholder = session.scalar(
+            select(DataSourceStatus).where(
+                DataSourceStatus.category == category,
+                DataSourceStatus.source_name.startswith("unavailable::"),
+            )
+        )
+        if placeholder is not None:
+            placeholder.source_name = source_name
+            existing = placeholder
+        else:
+            existing = DataSourceStatus(source_name=source_name, category=category)
+            session.add(existing)
 
     if success:
         existing.last_success_at = now

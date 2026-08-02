@@ -104,3 +104,26 @@ def test_categories_nothing_fetches_stay_unset():
             f"{key} has no ingest behind it on the deployment; giving it a "
             f"value would make the UI claim data that is not there."
         )
+
+
+def test_a_category_can_only_have_one_row():
+    """Two rows for one category made the page nondeterministic.
+
+    `record_source_status` matched on (source_name, category), so the first real
+    ingest inserted a row *beside* the `unavailable::` placeholder rather than
+    replacing it. `freshness_report` keys a dict by category, so which of the
+    two a reader saw was whichever the database returned last — on the
+    deployment, lineups showed OK and weather showed UNAVAILABLE on the same
+    page, from the same code, in the same run.
+    """
+    source = (BACKEND / "app" / "ingestion" / "status.py").read_text(encoding="utf-8")
+    assert 'startswith("unavailable::")' in source, (
+        "record_source_status must take over the bootstrap placeholder for its "
+        "category, not insert a second row beside it."
+    )
+
+    migrations = (BACKEND / "alembic" / "versions").glob("*.py")
+    assert any(
+        "uq_data_source_status_category" in p.read_text(encoding="utf-8")
+        for p in migrations
+    ), "A unique constraint on category is what stops the duplicate recurring."

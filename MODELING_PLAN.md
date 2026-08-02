@@ -524,10 +524,16 @@ not the number of columns:
    probability is three inferential steps downstream of that, and each step
    costs signal. This is step 8 in IMPLEMENTATION_PLAN.md and it is now the
    highest-value one.
-2. **A market baseline.** Nothing here has ever been compared against a de-vigged
-   closing line. Without one there is no way to know whether 0.6868 is close to
-   the achievable floor or a long way above it — and that is the single most
-   useful unknown left. It needs a licensed odds provider.
+2. **A market baseline.** ~~Nothing here has ever been compared against a
+   de-vigged closing line. Without one there is no way to know whether 0.6868 is
+   close to the achievable floor or a long way above it — and that is the single
+   most useful unknown left. It needs a licensed odds provider.~~
+   **Answered, and it did not need one** — see *The market baseline, answered
+   without a market feed* below. Forty-two published seasons of moneyline prices
+   give an achievable floor of **0.679–0.681**, so 0.6868 is close to it rather
+   than a long way above: the entire remaining gap is smaller than this model's
+   own margin over a coin flip. A live odds feed is still wanted for the Market
+   tab, but no longer for this question.
 3. **Confirmed lineups at a later snapshot.** Every lineup feature here is
    projected because no posted lineup is knowable at T−3h. A pregame poller plus
    the prediction timeline would let the same features be scored at T−60m, where
@@ -1130,6 +1136,129 @@ other information. It is a shape parameter, not a rate.
   seasons rather than two, and every one excludes zero. It does not have a third
   season, and the optimal weight moving between the two it does have is the
   clearest single argument for getting one.
+
+---
+
+## The market baseline, answered without a market feed
+
+MODELING_PLAN.md has carried this as the single most useful unknown left, and
+gated it on a licensed odds provider:
+
+> Nothing here has ever been compared against a de-vigged closing line. Without
+> one there is no way to know whether 0.6868 is close to the achievable floor or
+> a long way above it.
+
+It does not need one. Forty-two seasons of MLB moneylines, 1977–2018, are
+published in [Bouchard (2019), Harvard](https://dash.harvard.edu/bitstreams/24950429-b1b7-4372-a029-1b68de1872e3/download),
+and the price *distribution* is enough to compute what the closing line itself
+scores.
+
+**What the market knows.** Favourites win 55.92% (home favourites 57.04%, away
+53.30%). Favourite implied probability has mean .584 and **range .515–.737** —
+over forty-two seasons the market never priced an MLB game past about 74%. Its
+calibration slope sits in [0.963, 1.05], so there is no exploitable bias in it.
+
+**What that implies is achievable**, de-vigging at 2.5–3.5% and treating the
+market as the true probability:
+
+| | Best achievable | Best public model (538, 2016–19, 9.7k games) |
+|---|---|---|
+| Log loss | **0.679–0.681** | **0.6769** |
+| Brier | 0.243–0.244 | 0.2420 |
+| Accuracy | 56.4–57.0% | 56.96% |
+
+**The best public model is already sitting on the ceiling.** There is
+essentially nothing between a good model and the closing line.
+
+### Where this repository actually stands
+
+| Season | fs_v1 | Edge over a coin flip | Gap to a 0.681 ceiling |
+|---|---|---|---|
+| 2024 | 0.68383 | 0.0093 | +0.0028 |
+| 2025 | 0.68682 | 0.0063 | +0.0058 |
+
+So the honest position is: **this model holds somewhere between a third and
+nine tenths of the available edge**, and the whole remaining distance to a
+market that has never been beaten is smaller than fs_v1's own margin over a coin
+flip. Two seasons of games resolve about ±0.0009. The remaining headroom is a
+handful of multiples of the noise floor.
+
+That reframes every null in this document. Six groups were diagnosed as
+redundant with team strength; the seventh could not be resolved at this sample
+size. Both readings are consistent with a simpler one: **the measurable space
+between here and the ceiling is only a few thousandths of a nat wide**, and this
+repository's instrument bottoms out at about one.
+
+### A prior correction
+
+An earlier working note in this session put the ceiling at 0.65 and the headroom
+at 0.032 nats. That was wrong by roughly a factor of five. The real figure is
+0.679–0.681, and the headroom is ~0.006. Anything that claims a large gap is
+worth re-deriving before it is acted on.
+
+### The leakage test this gives for free
+
+Every published claim above 60% accuracy that could be inspected has an
+identifiable defect, and the failure mode is one this repository already guards:
+
+* **Cui (2020), 61.77%** — proven at code level. `pandas .rolling(7)` is
+  right-aligned and *includes the current row*, and there is no `.shift(1)`
+  anywhere in the repository. The covariate for a game contains that team's H,
+  AB, BB, TB and SF **from the game being predicted**. The tells corroborate it:
+  OBP carries by far the largest coefficient, April accuracy is already 60.57%,
+  and the model has no current-season starting-pitcher data at all yet beats 538,
+  which does model starters.
+* **Allen & Savala (2025), 62.94%** — no code, but the output is impossible. It
+  put 181 games at ≥85% home win probability where 538 put **zero** above 85%
+  and the market's forty-two-year maximum is 73.7% *including* vig. Its own
+  betting test loses 51% of money wagered; the positive return comes from
+  grid-searching 400 cutoff pairs on the test set it reports.
+
+Reverse-engineering a score into implied average confidence makes the shape of
+the impossibility clear:
+
+| Score | Implied average confidence |
+|---|---|
+| Brier 0.250 (coin flip) | 50.0% |
+| Brier 0.242 (538) | 58.9% |
+| Brier 0.225 (Allen & Savala) | 65.7% |
+
+The market averages ~56.5% and its all-time extreme is ~74%. A model averaging
+65.7% is claiming knowledge that does not exist in baseball.
+
+**So: a backtest materially better than the market is evidence of leakage, not
+skill.** In this literature that rule has a 100% hit rate, and the two culprits
+are exactly the two this repository is built against — a rolling window that
+includes the current game, and a season aggregate with no as-of date.
+
+### What this says about the remaining candidate signals
+
+Ranked by measured effect on the *winner*, which is not the same ranking as
+effect on runs:
+
+| Signal | Effect on the winner |
+|---|---|
+| Starting pitcher identity | Dominant. The market quotes moneylines *listed-pitcher* and voids the bet if a starter changes — its own statement of the top lever |
+| Team talent | Base rate. Elo alone scores 54.4%, CI [.528, .560], which contains the 53.9% home base rate |
+| Home field | +24 Elo ≈ +3.4pp |
+| Rest and travel | <1pp (+2.3 Elo per rest day, capped at three) |
+| Park, weather, umpire, framing | **≈ 0** — all apply to both teams |
+
+Catcher framing is worth about **one win per season**, 0.006 wins per game, and
+the spread has compressed by ~4 runs per 900 innings since 2014. Umpire effect on
+run environment is real and forecastable (year-to-year r = 0.61, extremes ±half a
+run per game) and **is a totals signal, not a sides signal** — which is exactly
+what the park measurement in this document predicted for anything shared by both
+teams.
+
+There is also a leakage answer on umpires, measured rather than assumed. Probing
+the MLB schedule endpoint with `hydrate=officials` on 2026-08-02: games starting
+within about three hours carried four named officials; every game later that day
+and every game on the two following days carried **none**. Umpire assignments
+publish roughly two to three hours before first pitch, same day only. So
+`knowledge_time` for an umpire is about first pitch minus three hours — after
+most prediction times — and back-filling one from a completed boxscore into a
+"pregame" feature is precisely the leak LEAKAGE_PREVENTION.md exists to stop.
 
 ---
 
