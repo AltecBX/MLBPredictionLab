@@ -52,6 +52,19 @@ export async function generateStaticParams() {
   return [...ids].map((id) => ({ id: String(id) }));
 }
 
+/**
+ * Every game page is built ahead of time, and an id with no page is a 404.
+ *
+ * Next requires a literal here — an expression is rejected as an invalid
+ * segment config — so this cannot vary by build mode, and `false` is what the
+ * static export needs.
+ *
+ * The consequence worth stating: if the API cannot be reached while the site is
+ * being built, `generateStaticParams` yields nothing and NO game pages are
+ * produced, leaving every "Full breakdown" link on an otherwise healthy-looking
+ * site pointing at a 404. The publish workflow counts the game pages and fails
+ * rather than deploying that.
+ */
 export const dynamicParams = false;
 
 

@@ -84,11 +84,11 @@ test.describe("daily game workflow", () => {
     // contract this test is about.
     await expect(page.getByRole("link", { name: "← Prev" })).toHaveAttribute(
       "href",
-      /date=2026-07-31/,
+      /\/d\/2026-07-31\//,
     );
     await expect(page.getByRole("link", { name: "Next →" })).toHaveAttribute(
       "href",
-      /date=2026-08-02/,
+      /\/d\/2026-08-02\//,
     );
 
     await page.goto("/d/2026-07-31/");
@@ -256,14 +256,18 @@ test.describe("daily game workflow", () => {
   test("an unknown game id renders the not-found page", async ({ page }) => {
     const reachable = await backendIsReachable(page);
 
-    // The route is force-dynamic and streamed, so the HTTP status is committed
-    // before notFound() runs; the rendered page is the contract that matters.
     await page.goto("/game/999999999");
 
     if (!reachable) {
-      // "The API said this game does not exist" and "I could not ask the API"
-      // are different facts, and the app must not conflate them.
-      await expect(page.getByText(/Could not load this game/)).toBeVisible();
+      // With no API the build produced no game pages at all, so an unknown id
+      // is indistinguishable from every other id: there is no page. Either
+      // honest state is acceptable here — what must never appear is a game.
+      await expect(
+        page
+          .getByText(/Could not load this game/)
+          .or(page.getByRole("heading", { name: "Not found" })),
+      ).toBeVisible();
+      await expect(page.getByText(/win probability/i)).toHaveCount(0);
       return;
     }
     await expect(page.getByRole("heading", { name: "Not found" })).toBeVisible();

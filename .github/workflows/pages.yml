@@ -136,9 +136,20 @@ jobs:
         working-directory: frontend
         run: |
           pages=$(find out -name '*.html' | wc -l)
-          echo "$pages HTML files"
+          games=$(find out -path '*/game/*' -name '*.html' | wc -l)
+          echo "$pages HTML files, $games of them game pages"
           if [ "$pages" -lt 5 ]; then
             echo "::error::Only $pages pages exported; something did not render."
+            exit 1
+          fi
+          # The failure this catches is specific and quiet. Game pages come from
+          # generateStaticParams, which asks the API for each date's slate; if
+          # that comes back empty the export still succeeds, and publishes a
+          # site whose every "Full breakdown" link is a 404. A slate with games
+          # and no game pages is never correct.
+          if [ "$games" -eq 0 ]; then
+            echo "::error::No game pages were built. The API returned no slates," \
+                 "so every game link would 404. Refusing to publish."
             exit 1
           fi
           # A build that succeeds while every game says "not predicted" is the
