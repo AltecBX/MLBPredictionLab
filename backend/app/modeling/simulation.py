@@ -196,6 +196,7 @@ def simulate_slate(
     simulations: int = DEFAULT_SIMULATIONS,
     models: tuple[RunModel, ...] = (BASE,),
     parks: ParkFactors | None = None,
+    size_by_game: dict[int, float] | None = None,
 ) -> pd.DataFrame:
     """Simulated home win probability for every game in ``frame``, per variant.
 
@@ -224,9 +225,13 @@ def simulate_slate(
         # Seeded from the game id, so a rerun reproduces exactly, two games never
         # share a draw sequence, and two variants of the same game do.
         seed = int(record.game_id) % (2**31)
+        # A per-game size is how the serving path is scored: it fits dispersion
+        # as-of each slate rather than once on the training side, because at
+        # serving time there is no training side to fit on.
+        game_size = size if size_by_game is None else size_by_game.get(record.game_id, size)
         for model in models:
             home, away = components.means(model)
-            sim = simulate_game(home, away, size, simulations=simulations, seed=seed)
+            sim = simulate_game(home, away, game_size, simulations=simulations, seed=seed)
             row[f"sim_{model.name}"] = sim.home_win_prob
         row["sim_prob"] = row.get(f"sim_{BASE.name}")
         row["park_measured"] = components.park_measured
@@ -302,8 +307,15 @@ def compare_walk_forward(
     C: float,
     simulations: int = DEFAULT_SIMULATIONS,
     min_train_rows: int | None = None,
+    asof_dispersion: bool = False,
 ) -> SimulationComparison | None:
-    """Logistic vs simulation vs blend, on identical out-of-sample games."""
+    """Logistic vs simulation vs blend, on identical out-of-sample games.
+
+    ``asof_dispersion`` scores the model the way it is *served* rather than the
+    way it was first measured: dispersion re-fitted from everything knowable at
+    each slate, instead of once from the training side. Both are leak-free; they
+    are not the same number, and the serving path is entitled to its own reading.
+    """
     predictions = collect_predictions(
         run_walk_forward(dataset, steps, C=C, min_train_rows=min_train_rows)
     )
@@ -336,7 +348,13 @@ def compare_walk_forward(
     )
 
     builder = FeatureBuilder(store)
-    sims = simulate_slate(store, builder, predictions, dispersion.size, simulations)
+    size_by_game = (
+        _asof_sizes(store, predictions, dispersion.size) if asof_dispersion else None
+    )
+    sims = simulate_slate(
+        store, builder, predictions, dispersion.size, simulations,
+        size_by_game=size_by_game,
+    )
     merged = predictions.merge(sims, on="game_id", how="inner", validate="one_to_one")
     merged = merged[merged["sim_prob"].notna()]
     if merged.empty:
@@ -389,6 +407,30 @@ def compare_walk_forward(
         verdict=verdict,
         reading=reading,
     )
+
+
+def _asof_sizes(
+    store: AsOfStore, predictions: pd.DataFrame, fallback: float
+) -> dict[int, float]:
+    """Per-game dispersion, fitted the way the serving path fits it.
+
+    Fitted once per distinct `as_of` rather than once per game: every game on a
+    slate shares a moment, so they share a fit, and doing it per game would
+    repeat an identical league-wide scan for each card. A slate whose sample is
+    still too small keeps the training-side value, which is what serving does
+    when it declines to simulate at all.
+    """
+    from app.modeling.serving import dispersion_asof
+
+    sizes: dict[int, float] = {}
+    by_moment: dict[pd.Timestamp, float] = {}
+    for record in predictions.itertuples():
+        as_of = pd.Timestamp(record.as_of)
+        if as_of not in by_moment:
+            fitted = dispersion_asof(store, as_of.to_pydatetime())
+            by_moment[as_of] = fallback if fitted is None else fitted.size
+        sizes[record.game_id] = by_moment[as_of]
+    return sizes
 
 
 def _observed_runs(store: AsOfStore, game_ids: list[int]) -> np.ndarray:

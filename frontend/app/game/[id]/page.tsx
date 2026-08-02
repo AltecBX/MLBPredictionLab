@@ -777,13 +777,214 @@ function ExplanationTab({ detail }: { detail: GameDetail }) {
   );
 }
 
-function SimulationTab({ detail }: { detail: GameDetail }) {
+/**
+ * One row of the run distribution. The bar is scaled to the *most likely* run
+ * total rather than to 100%, because every bar would otherwise be a stub — no
+ * single run total carries much more than a fifth of the probability, and a
+ * chart where nothing is visible communicates nothing.
+ */
+function RunBar({
+  runs,
+  probability,
+  peak,
+  isTail,
+  tone,
+}: {
+  runs: number;
+  probability: number;
+  peak: number;
+  isTail: boolean;
+  tone: "home" | "away";
+}) {
+  const width = peak > 0 ? Math.max(2, (probability / peak) * 100) : 0;
   return (
-    <UnavailableNotice
-      title="Monte Carlo simulation is not available"
-      reason={detail.simulation.reason}
-      phase={detail.simulation.phase ?? 3}
-    />
+    <div className="flex items-center gap-2">
+      <span className="numeral w-7 shrink-0 text-right text-xs muted">
+        {isTail ? `${runs}+` : runs}
+      </span>
+      <div
+        className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full"
+        style={{ background: "var(--surface-sunken)" }}
+      >
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${width}%`,
+            background: tone === "home" ? "var(--home)" : "var(--away)",
+          }}
+        />
+      </div>
+      <span className="numeral w-11 shrink-0 text-right text-xs muted">
+        {pct(probability, 1)}
+      </span>
+    </div>
+  );
+}
+
+function RunDistribution({
+  label,
+  distribution,
+  maxReported,
+  tone,
+}: {
+  label: string;
+  distribution: number[];
+  maxReported: number | null;
+  tone: "home" | "away";
+}) {
+  if (distribution.length === 0) return null;
+  const peak = Math.max(...distribution);
+  const tailIndex = maxReported ?? distribution.length - 1;
+  return (
+    <div className="min-w-0">
+      <p className="eyebrow mb-2">{label}</p>
+      <div className="flex flex-col gap-1.5">
+        {distribution.map((probability, runs) => (
+          <RunBar
+            key={runs}
+            runs={runs}
+            probability={probability}
+            peak={peak}
+            isTail={runs >= tailIndex}
+            tone={tone}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SimulationTab({ detail }: { detail: GameDetail }) {
+  const simulation = detail.simulation;
+  if (!simulation.available) {
+    return (
+      <UnavailableNotice
+        title="This game was not simulated"
+        reason={simulation.reason}
+        phase={simulation.phase ?? null}
+      />
+    );
+  }
+
+  const card = detail.card;
+  const homeName = card.home.abbreviation ?? card.home.name;
+  const awayName = card.away.abbreviation ?? card.away.name;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section
+        title="Simulated win probability"
+        description={
+          simulation.blended_with_logistic
+            ? `${simulation.n_simulations.toLocaleString()} seeded games. The served probability is this blended with the logistic model in log-odds, at a weight fixed in advance.`
+            : `${simulation.n_simulations.toLocaleString()} seeded games.`
+        }
+      >
+        <ProbabilityBar
+          homeProb={simulation.home_win_pct}
+          homeLabel={homeName}
+          awayLabel={awayName}
+        />
+        {simulation.blended_with_logistic && card.prediction ? (
+          <dl className="mt-4 grid grid-cols-2 gap-4">
+            <StatBlock
+              label="Simulation alone"
+              value={pct(simulation.home_win_pct)}
+              sub={`${homeName} to win`}
+            />
+            <StatBlock
+              label="Served (blended)"
+              value={pct(card.prediction.home_win_prob)}
+              sub={`weight ${num(simulation.blend_weight, 2)} on the simulation`}
+              tone="accent"
+            />
+          </dl>
+        ) : null}
+      </Section>
+
+      <Section
+        title="How the game goes"
+        description="Read off the same simulated games as the probability above, so these agree with it by construction."
+      >
+        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <StatBlock
+            label="Extra innings"
+            value={pct(simulation.extra_innings_prob)}
+            sub="tied after nine"
+          />
+          <StatBlock
+            label="One-run game"
+            value={pct(simulation.one_run_prob)}
+            sub="decided by a single run"
+          />
+          <StatBlock
+            label="Mean runs"
+            value={`${num(simulation.mean_away_runs, 2)} – ${num(simulation.mean_home_runs, 2)}`}
+            sub={`${awayName} – ${homeName}`}
+          />
+          <StatBlock
+            label="Underdog wins"
+            value={pct(simulation.upset_prob)}
+            sub="against the simulation's own pick"
+          />
+        </dl>
+      </Section>
+
+      <Section
+        title="Run distribution"
+        description={
+          simulation.max_reported_runs !== null
+            ? `Chance of each run total. The final row pools ${simulation.max_reported_runs} runs or more.`
+            : "Chance of each run total."
+        }
+      >
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <RunDistribution
+            label={`${awayName} runs`}
+            distribution={simulation.away_run_distribution}
+            maxReported={simulation.max_reported_runs}
+            tone="away"
+          />
+          <RunDistribution
+            label={`${homeName} runs`}
+            distribution={simulation.home_run_distribution}
+            maxReported={simulation.max_reported_runs}
+            tone="home"
+          />
+        </div>
+      </Section>
+
+      {simulation.likely_scores.length > 0 ? (
+        <Section
+          title="Most likely finals"
+          description={
+            simulation.likely_scores_covered !== null
+              ? `These account for ${pct(simulation.likely_scores_covered)} of simulated games. Baseball's score distribution is long-tailed — the rest is spread across scores too rare to list.`
+              : undefined
+          }
+        >
+          <ul className="flex flex-col gap-2">
+            {simulation.likely_scores.map((score) => (
+              <li
+                key={`${score.away}-${score.home}`}
+                className="flex items-center justify-between gap-3 border-b pb-2 last:border-b-0 last:pb-0"
+                style={{ borderColor: "var(--border)" }}
+              >
+                {/* min-w-0 + truncate: a team with no abbreviation falls back to
+                    its full name, and two long names would otherwise set this
+                    row's minimum width and push the page sideways on a phone. */}
+                <span className="numeral min-w-0 truncate text-sm">
+                  {awayName} {score.away} – {score.home} {homeName}
+                </span>
+                <span className="numeral shrink-0 text-sm muted">
+                  {pct(score.probability)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+    </div>
   );
 }
 

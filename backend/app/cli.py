@@ -267,7 +267,8 @@ def cmd_simulate_check(args: argparse.Namespace) -> int:
             dataset.labelled, start=args.start, end=args.end, step_days=args.step_days
         )
         comparison = compare_walk_forward(
-            store, dataset, steps, C=C, simulations=args.simulations
+            store, dataset, steps, C=C, simulations=args.simulations,
+            asof_dispersion=args.asof_dispersion,
         )
 
     if comparison is None:
@@ -458,6 +459,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--end", type=_parse_date, default=None)
     p.add_argument("--step-days", type=int, default=30)
     p.add_argument("--simulations", type=int, default=20000)
+    p.add_argument(
+        "--asof-dispersion",
+        action="store_true",
+        help="Fit dispersion per slate as the serving path does, not once on the "
+             "training side. This is how the served blend is actually scored.",
+    )
     p.set_defaults(func=cmd_simulate_check)
 
     p = sub.add_parser(

@@ -25,6 +25,7 @@ from app.db.models import (
     ModelVersion,
     Prediction,
     PredictionExplanation,
+    SimulationResult,
     Team,
 )
 from app.features.asof import AsOfStore
@@ -34,6 +35,8 @@ from app.features.elo import AsOfElo
 from app.ingestion.status import job_run
 from app.modeling.logistic import LogisticWinModel
 from app.modeling.registry import load_active_model
+from app.modeling.runs import Dispersion
+from app.modeling.serving import ServedProbability, dispersion_asof, serve_probability
 from app.services.confidence import recommendation_label, score_confidence
 from app.services.explanation import build_contributions, build_warnings
 from app.services.freshness import freshness_map
@@ -87,12 +90,23 @@ def generate_prediction(
     team_names: dict[int, str],
     freshness: dict[str, str],
     force: bool = False,
+    dispersion: Dispersion | None = None,
 ) -> Prediction | None:
     """Score one game and persist an immutable prediction snapshot."""
     frame = _feature_frame(vector, list(model.feature_names))
     raw = float(model.predict_raw(frame)[0])
-    probability = float(model.predict(frame)[0])
-    probability = min(max(probability, 0.001), 0.999)
+    logistic_probability = float(model.predict(frame)[0])
+    logistic_probability = min(max(logistic_probability, 0.001), 0.999)
+
+    # The served probability is the blend, not the logistic model alone. The
+    # simulation beat it on both measured seasons and this is where that result
+    # reaches the screen; `served.is_blended` is False when the game could not be
+    # simulated, and the fallback is recorded rather than hidden.
+    served = serve_probability(
+        builder.store, builder, ctx, vector.as_of, logistic_probability,
+        dispersion=dispersion,
+    )
+    probability = min(max(served.probability, 0.001), 0.999)
 
     # Elo is shipped in Phase 1 as a reference model: it does not enter the
     # ensemble, but the spread between it and the calibrated model is a real
@@ -103,8 +117,33 @@ def generate_prediction(
         elo.rating_at(ctx.away_team_id, as_of_ts),
         elo.engine.home_advantage,
     )
-    components = {"logistic_calibrated": probability, "elo_reference": float(elo_prob)}
-    agreement = _model_agreement(components)
+    # Probabilities only, and the simulation key is absent rather than null when
+    # there was no simulation — the schema is `dict[str, float]`, and an absence
+    # that renders as a number is the failure mode this repository is built to
+    # avoid. Why it is absent is recorded in `feature_snapshot["blend"]`.
+    components: dict[str, float] = {
+        "logistic_calibrated": logistic_probability,
+        "elo_reference": float(elo_prob),
+        "served": probability,
+    }
+    if served.simulation is not None:
+        components["simulation"] = served.simulation
+    # Agreement is measured between the models that are actually combined, plus
+    # the Elo reference. A missing simulation contributes nothing rather than
+    # contributing a 0.5.
+    agreement = _model_agreement(
+        {
+            "logistic_calibrated": logistic_probability,
+            "elo_reference": float(elo_prob),
+            "simulation": served.simulation,
+        }
+    )
+    blend_detail: dict[str, Any] = {
+        "method": "log_odds",
+        "weight_on_simulation": served.weight,
+        "is_blended": served.is_blended,
+        "simulation_unavailable": served.unavailable_reason,
+    }
 
     existing = session.scalar(
         select(Prediction).where(
@@ -176,6 +215,7 @@ def generate_prediction(
                 "is_estimated": runs.is_estimated,
                 "detail": runs.detail,
             },
+            "blend": blend_detail,
         },
         component_probs=components,
         confidence_components=confidence.components,
@@ -216,8 +256,43 @@ def generate_prediction(
             )
         )
 
+    _persist_simulation(session, prediction.id, served)
     _persist_feature_row(session, ctx, vector)
     return prediction
+
+
+def _persist_simulation(
+    session: Session, prediction_id: int, served: ServedProbability
+) -> None:
+    """Store the simulation behind a prediction, when there was one.
+
+    No row is written when the game could not be simulated. An empty
+    `simulation_results` row carrying zeros would be indistinguishable from a
+    simulation that genuinely produced them, and the absence is already recorded
+    on the prediction's `component_probs`.
+    """
+    sim = served.game_simulation
+    if sim is None:
+        return
+    session.add(
+        SimulationResult(
+            prediction_id=prediction_id,
+            n_simulations=sim.simulations,
+            home_win_pct=round(sim.home_win_prob, 5),
+            away_win_pct=round(1.0 - sim.home_win_prob, 5),
+            mean_home_runs=round(sim.mean_home_runs, 2),
+            mean_away_runs=round(sim.mean_away_runs, 2),
+            run_distribution=sim.run_distribution_dict(),
+            score_distribution=sim.score_distribution_dict(),
+            extra_innings_prob=round(sim.p_extra_innings, 5),
+            one_run_prob=round(sim.p_one_run_game, 5),
+            # "Upset" is defined against the simulation's own favourite, so it is
+            # a property of this distribution rather than of the market — which
+            # this repository has no licensed access to.
+            upset_prob=round(min(sim.home_win_prob, 1.0 - sim.home_win_prob), 5),
+            seed=served.seed,
+        )
+    )
 
 
 def _missing_data_labels(vector: FeatureVector, freshness: dict[str, str]) -> list[str]:
@@ -290,6 +365,15 @@ def generate_predictions_for_date(
         }
         freshness = freshness_map(session)
 
+        # Overdispersion is a property of the season, not of a game, so it is
+        # fitted once from the earliest as-of on the card. Fitting it per game
+        # would repeat an identical league-wide scan for every game on the slate
+        # and could give two games on the same day different run models.
+        earliest = min(_live_as_of(GameContext.from_row(dict(r)).first_pitch_utc) for r in games)
+        dispersion = dispersion_asof(store, earliest)
+        if dispersion is None:
+            log.info("prediction.dispersion_unavailable", date=target.isoformat())
+
         created = 0
         skipped = 0
         for row in games:
@@ -313,7 +397,7 @@ def generate_predictions_for_date(
                 continue
             prediction = generate_prediction(
                 session, ctx, vector, model, version, builder, elo,
-                team_names, freshness, force=force,
+                team_names, freshness, force=force, dispersion=dispersion,
             )
             if prediction is not None:
                 created += 1
