@@ -63,12 +63,18 @@ jobs:
         run: alembic upgrade head
 
       # Schedule window and missing boxscores, then enforce the raw-payload
-      # retention bound. Predictions for today are issued by `daily` too, but
-      # before the retrain — the explicit predict below supersedes them with
-      # the fresh model.
+      # retention bound.
+      #
+      # `--skip-predictions` is load-bearing, not tidiness. `daily` used to
+      # predict here as well, which the comment this replaces waved off as
+      # superseded by the explicit predict below. It was worse than redundant:
+      # predicting requires a trained model, the step that trains one comes
+      # after, and on a fresh runner with no loadable artifact this raised and
+      # took the retrain down with it. Every run of this workflow had failed
+      # for that reason.
       - name: Refresh data
         working-directory: backend
-        run: python -m app.cli daily
+        run: python -m app.cli daily --skip-predictions
 
       - name: Retrain
         working-directory: backend

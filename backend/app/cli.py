@@ -193,6 +193,15 @@ def cmd_ingest_statcast(args: argparse.Namespace) -> int:
 
 
 def cmd_daily(args: argparse.Namespace) -> int:
+    """Ingest, predict, prune.
+
+    `--skip-predictions` exists because the two halves are not equally
+    dependent. Ingesting needs a database; predicting needs a *trained model*,
+    and the daily workflow retrains after this runs. A fresh runner therefore
+    had no loadable model, this step raised before the retrain, and the retrain
+    that would have supplied one was never reached — the whole refresh
+    deadlocked on a prediction it was about to throw away.
+    """
     from app.db.session import session_scope
     from app.ingestion.maintenance import prune_raw_payloads
     from app.ingestion.runner import daily_refresh
@@ -200,9 +209,11 @@ def cmd_daily(args: argparse.Namespace) -> int:
 
     with session_scope() as session:
         counts = daily_refresh(session)
-    with session_scope() as session:
-        target = args.date or utcnow().date()
-        generated = generate_predictions_for_date(session, target)
+    generated = 0
+    if not getattr(args, "skip_predictions", False):
+        with session_scope() as session:
+            target = args.date or utcnow().date()
+            generated = generate_predictions_for_date(session, target)
     # Enforce the payload retention bound on the same pass, so the archive
     # cannot grow unbounded on an unattended deployment.
     with session_scope() as session:
@@ -488,6 +499,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("daily", help="Refresh schedule + results, then predict")
     p.add_argument("--date", type=_parse_date, default=None)
+    # For a caller that retrains and reissues afterwards. Predicting here would
+    # be superseded anyway, and doing it first makes the ingest depend on a
+    # model existing — which is a deadlock when the step that creates one comes
+    # later. See `cmd_daily`.
+    p.add_argument("--skip-predictions", action="store_true")
     p.set_defaults(func=cmd_daily)
 
     p = sub.add_parser("train", help="Walk-forward fit and register a model version")
