@@ -872,6 +872,64 @@ the refined versions were measured against it and were not better.
 
 ---
 
+## Forecast weather: measured, and rejected on data better than production's
+
+The sixth negative result, and the one the park measurement predicted.
+
+Weather was recorded as blocked on a paid provider. It was not: Open-Meteo
+serves forecasts without an API key, and serves an archive of past forecasts as
+well, which is what makes a weather feature measurable rather than only
+servable. 10,297 forecasts at first pitch, 99.9% coverage of 2023–25.
+
+**The hypothesis was shaped by the park result rather than ignoring it.** A
+condition both teams share moves the total and not the margin — that is why the
+park factor is inert on a win probability by construction. Temperature, density
+and wind are shared conditions, so the group was built around the one part that
+is *not* shared: two pitching staffs are not equally exposed to carrying air,
+and that gap is asymmetric. `wx_carry_x_flyball_diff` is that interaction; the
+two absolute features are included so the ablation could say whether shared
+conditions do anything at all, instead of the claim resting on the park
+argument alone.
+
+| Season | n | fs_v1 | fs_v6 | Δ log loss | Paired 95% CI | Verdict |
+|---|---|---|---|---|---|---|
+| 2024 | 1,741 | 0.68383 | 0.68607 | −0.002244 | [−0.00537, +0.00088] | NO_EFFECT |
+| **2025** | 2,363 | **0.68682** | 0.68697 | **−0.000151** | **[−0.00027, −0.00003]** | **REJECT** |
+
+Negative in both seasons, and on the larger one the interval excludes zero: the
+group measurably hurts. Both arms drew the same regularisation in both seasons —
+C=0.03 on 2024 and C=0.001 on 2025 — so unlike the bullpen group there is no
+confound to unpick. This is the features.
+
+### Why this null is stronger than the others
+
+Backfilled forecasts come from an archive that does not expose which model run
+produced each value. A reading for a 7pm first pitch may come from a run
+initialised that afternoon — later, and therefore more accurate, than the
+forecast that actually existed at T−3h. Backfilled weather is **optimistically
+biased**, and the consequence is asymmetric:
+
+* had the group succeeded, the effect size would have been an upper bound
+  needing live confirmation;
+* it failed, which means it failed **with better information than production
+  would ever have had**.
+
+That is the most conclusive rejection in this document. The others leave open
+"perhaps with better data"; this one does not.
+
+The interaction did not rescue the shared part. Two staffs' fly-ball exposure
+gap is apparently too small a lever to recover what a condition both sides play
+in cannot say about which of them wins.
+
+**What the work is still worth.** `ParkFactors` and the weather pipeline are
+both aimed at the wrong target rather than wasted, and they are aimed at the
+*same* wrong target. Air density, carry and park factor are all inputs to how
+many runs get scored, and the run model already emits a full distribution over
+total runs that nothing currently scores. A totals model is where six rejections
+have been quietly pointing.
+
+---
+
 ## Individual bullpen availability: measured, rejected, and a warning about the method
 
 The fifth negative result. The hypothesis was the best-motivated one left, and
