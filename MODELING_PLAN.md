@@ -872,6 +872,91 @@ the refined versions were measured against it and were not better.
 
 ---
 
+## Individual bullpen availability: measured, rejected, and a warning about the method
+
+The fifth negative result. The hypothesis was the best-motivated one left, and
+the way it failed matters more than that it failed.
+
+**The hypothesis.** Every bullpen feature in `fs_v1` is a team total — relief
+innings over three days, a fatigue index, a thirty-day relief ERA. A pen that
+threw four innings yesterday across four pitchers and one that threw four
+innings out of its two best arms produce **identical values on every one of
+them**, and are in completely different states tonight. So this group is not
+another season aggregate over the same population, which is what the first four
+rejections all were. It is a per-pitcher constraint the aggregate provably
+cannot express: how many relievers can pitch, how good the ones who can are, and
+whether the best arm is among them.
+
+Reproduce with:
+
+```
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v5 --seasons 2024
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v5 \
+    --seasons 2024,2025 --start 2025-04-01
+# and the same two with --C 0.01 and --C 0.03
+```
+
+### The result depends on a constant nobody has a reason to set
+
+| Season | Regularisation | fs_v1 | fs_v5 | Δ log loss | Paired 95% CI | Verdict |
+|---|---|---|---|---|---|---|
+| 2024 | selected per set | 0.68383 | 0.68240 | +0.001434 | [−0.000002, +0.002927] | NO_EFFECT |
+| 2024 | pinned 0.03 | 0.68383 | 0.68325 | +0.000578 | [−0.000683, +0.001870] | NO_EFFECT |
+| **2024** | **pinned 0.01** | 0.68433 | 0.68240 | **+0.001932** | **[+0.000350, +0.003576]** | **ADOPT** |
+| 2025 | selected per set | 0.68682 | 0.68683 | −0.000013 | [−0.000384, +0.000368] | NO_EFFECT |
+| **2025** | **pinned 0.03** | 0.69103 | 0.69165 | **−0.000621** | **[−0.001178, −0.000071]** | **REJECT** |
+| 2025 | pinned 0.01 | 0.69021 | 0.69060 | −0.000395 | [−0.000896, +0.000098] | NO_EFFECT |
+
+Coverage was 100% on all three features in both seasons, so nothing here is a
+missing-data artefact.
+
+Six comparisons. One says adopt, one says reject, four say nothing, **and the
+sign flips between seasons at every single regularisation setting**. The one
+ADOPT does not replicate at its own C: run the identical C=0.01 comparison on
+the larger season and the difference is negative.
+
+The group is rejected. It stays registered with `available=False` and the
+measurement attached.
+
+### The part worth keeping is about the protocol
+
+At C=0.01 on 2024 this group clears the bar outright — interval excluding zero,
+verdict ADOPT, three features into the model. At C=0.03, same season, same
+features, same games, same walk-forward, it is worth a third of that and nothing
+is distinguishable. **Nobody changed a feature between those two rows.**
+
+Two things follow, and both are about the machinery rather than about bullpens.
+
+**Per-set regularisation selection can manufacture an effect.** The default
+protocol gives each feature set its own C, chosen walk-forward. On 2024 that
+handed the baseline C=0.03 and the candidate C=0.01, and the +0.001434 it
+reported decomposes into two pieces that are not the same thing:
+
+* the baseline is 0.00050 *worse* at C=0.01 than at its own selected C, and
+* the candidate is 0.00085 *better* at C=0.01 than at C=0.03.
+
+Neither is a feature effect. Letting each set choose its own regulariser is
+defensible — it is what the trainer does — but it means a head-to-head is not
+purely a comparison of feature sets, and on a difference this small that is the
+whole result.
+
+**A single comparison is not evidence here.** The honest reading of this table
+is that the machinery has enough freedom in it to reach ADOPT or REJECT for the
+same three features by choosing a season and a constant. Every previous
+rejection in this document ran the default protocol on two seasons and stopped;
+this one ran six configurations because the first result had the baseline and
+the candidate on different regularisation, and that turned out to matter more
+than the features did.
+
+Nothing above invalidates the four earlier rejections — they were all null in
+the same direction on both seasons, which is a much more stable finding than a
+sign that flips. It does mean that any *future* group landing near the
+significance boundary should be run at pinned regularisation across both
+seasons before anybody believes it, and that a group whose verdict moves with C
+has not been measured, only sampled.
+
+---
+
 ## Serving the blend: the promotion, and what it cost to check
 
 The simulation beat the served model on both seasons and was still not served.
