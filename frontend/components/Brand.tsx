@@ -20,7 +20,7 @@ import { asset } from "@/lib/asset";
  */
 const HAS_LOGO = existsSync(path.join(process.cwd(), "public", "logo.png"));
 
-export function BrandMark({ size = 22 }: { size?: number }) {
+export function BrandMark({ size = 27 }: { size?: number }) {
   if (HAS_LOGO) {
     return (
       <Image

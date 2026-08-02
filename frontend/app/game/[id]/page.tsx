@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/Badge";
+import { LiveGameBadge } from "@/components/LiveGameBadge";
 import { DriverList } from "@/components/DriverList";
 import { FeatureTable } from "@/components/FeatureTable";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
@@ -151,6 +152,12 @@ export default async function GameDetailPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <LiveGameBadge
+              gameId={card.game_id}
+              date={card.official_date}
+              firstPitch={card.first_pitch_utc}
+              isFinal={card.is_final}
+            />
             {card.is_final ? (
               <Badge tone="muted">
                 Final {card.away_score}–{card.home_score}

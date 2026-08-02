@@ -84,6 +84,8 @@ export interface BallparkRef {
   center: number | null;
   rf_line: number | null;
   turf_type: string | null;
+  latitude: number | null;
+  longitude: number | null;
   capacity: number | null;
   timezone: string | null;
 }

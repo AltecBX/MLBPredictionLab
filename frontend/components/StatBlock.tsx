@@ -23,8 +23,8 @@ export function StatBlock({
     <div className="min-w-0">
       <dt className="eyebrow">{label}</dt>
       <dd
-        className="numeral-lg mt-1.5 text-[1.25rem] leading-none sm:text-[1.4375rem]"
-        style={{ color }}
+        className="numeral-lg mt-1.5 text-[1.4375rem] leading-none sm:text-[1.625rem]"
+        style={{ color, letterSpacing: "-0.04em" }}
       >
         {value}
       </dd>
@@ -50,7 +50,7 @@ export function Section({
     // them a single long heading sets the grid track's minimum and pushes the
     // whole page sideways on a phone instead of wrapping.
     <section className="card min-w-0 p-4 sm:p-5">
-      <div className="mb-3.5 flex flex-wrap items-start justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 className="t-heading">{title}</h2>
           {description ? (
@@ -59,6 +59,7 @@ export function Section({
         </div>
         {actions}
       </div>
+      <hr className="rule-soft my-3.5" />
       {children}
     </section>
   );

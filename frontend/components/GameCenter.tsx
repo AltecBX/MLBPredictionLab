@@ -5,6 +5,7 @@ import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { SlateSorter } from "@/components/SlateSorter";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { WakeRetry } from "@/components/WakeRetry";
+import { WeatherNow } from "@/components/WeatherNow";
 import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
 import { longDate, mediumDate, timestamp, weekdayShort } from "@/lib/format";
 import { buildToday, isBuilt, shiftUtcIsoDate } from "@/lib/window";
@@ -25,9 +26,19 @@ export async function GameCenter({ date }: { date: string }) {
   const prev = shiftUtcIsoDate(date, -1);
   const next = shiftUtcIsoDate(date, 1);
 
+  /*
+   * Where "current weather" points. One reading, from the slate's most
+   * relevant park — the first game still to be decided, or the first game at
+   * all on a finished day. Every reading is named with its park, because 74°
+   * is only information somewhere in particular.
+   */
+  const weatherGame = result.ok
+    ? (result.data.games.find((g) => !g.is_final) ?? result.data.games[0])
+    : undefined;
+
   return (
     <div className="flex flex-col">
-      <div className="flex items-baseline justify-between gap-3 pb-3">
+      <div className="flex items-baseline justify-between gap-3">
         <h1 className="t-display">Daily Game Center</h1>
         {result.ok ? (
           <p className="t-micro hidden shrink-0 subtle sm:block">
@@ -39,6 +50,18 @@ export async function GameCenter({ date }: { date: string }) {
           </p>
         ) : null}
       </div>
+
+      {weatherGame?.ballpark ? (
+        <div className="pt-1.5 pb-3">
+          <WeatherNow
+            latitude={weatherGame.ballpark.latitude}
+            longitude={weatherGame.ballpark.longitude}
+            place={weatherGame.ballpark.name ?? "the ballpark"}
+          />
+        </div>
+      ) : (
+        <div className="pb-3" />
+      )}
 
       {/*
        * Only the date row sticks. Changing date is the most repeated action on

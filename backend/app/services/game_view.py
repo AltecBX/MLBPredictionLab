@@ -183,6 +183,7 @@ def _ballpark_ref(park: Ballpark | None) -> BallparkRef:
         roof_type=park.roof_type, elevation_ft=park.elevation_ft,
         lf_line=park.lf_line, center=park.center, rf_line=park.rf_line,
         turf_type=park.turf_type, capacity=park.capacity, timezone=park.timezone,
+        latitude=park.latitude, longitude=park.longitude,
     )
 
 
