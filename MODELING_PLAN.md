@@ -1386,6 +1386,97 @@ section documents, avoided deliberately rather than by luck.
 
 ---
 
+## XGBoost, LightGBM, Elo and the stack: measured, and the baseline stands
+
+The eighth measurement, and the widest: every model the Phase 2A table still
+listed as unbuilt, on identical out-of-sample games. The earlier ensemble
+rejection covered one boosted model (sklearn HistGradientBoosting) at one
+fixed configuration; this run measures what that left open — XGBoost and
+LightGBM each with shallow trees, strong L1+L2, row and column subsampling, a
+conservative learning rate, early stopping on the chronological validation
+tail, and an eight-configuration grid searched *inside each training fold
+only*; per-model calibration with Platt and isotonic both fitted and the
+method chosen prequentially on strictly-earlier out-of-fold rows; the Elo
+model as a calibrated component; and the stacked logistic meta-model over
+prior-fold OOF probabilities. No random cross-validation exists anywhere in
+the path.
+
+Reproduce with `python -m app.cli challenger-check --step-days 30`.
+
+**8,134 out-of-sample games, 26 walk-forward steps, 2023–2026:**
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC | Max prob | > market max |
+|---|---|---|---|---|---|---|---|
+| **Logistic (baseline)** | 0.68477 | 0.24584 | 1.33% | 55.72% | 0.5692 | 0.873 | 0.90% |
+| XGBoost | 0.68409 | 0.24549 | **0.77%** | 55.64% | 0.5710 | 0.807 | **0.43%** |
+| LightGBM | 0.70948 | 0.24640 | 0.78% | 55.35% | 0.5685 | 1.000 | 1.14% |
+| Elo, calibrated | **0.68306** | **0.24498** | 0.71% | **55.79%** | **0.5743** | 0.794 | 0.98% |
+| Stack (6,989 games) | 0.68493 | 0.24564 | 0.58% | 55.42% | 0.5714 | 0.923 | 0.99% |
+
+("> market max" is the share of predictions past 73.7%, the market's
+forty-two-year maximum implied favourite price.)
+
+**Paired against the baseline, positive favouring the challenger:**
+
+| | Δ log loss | Paired 95% CI | Season signs (23/24/25/26) | Verdict |
+|---|---|---|---|---|
+| XGBoost | +0.000675 | [−0.00142, +0.00274] | + − + + | NOT PROMOTED |
+| LightGBM | −0.024707 | [−0.03865, −0.01295] | − − + + | NOT PROMOTED |
+| Elo, calibrated | +0.001712 | [−0.00068, +0.00420] | − + + + | NOT PROMOTED |
+| Stack | +0.000007 | [−0.00204, +0.00203] | − − + + | NOT PROMOTED |
+
+Every interval spans zero except LightGBM's, which excludes it on the wrong
+side, and no candidate holds its sign across all four seasons. The
+pre-registered rule — total log loss improved with the interval excluding
+zero, Brier held, calibration not materially worse, positive in every full
+season — fails for all four, so nothing is promoted and the served model is
+unchanged. The challengers were measured against the logistic model alone;
+the *served* model is the logistic–simulation blend, which beats the logistic
+alone by +0.005 to +0.007 per season, so the bar for serving is higher still
+and nothing here approaches it.
+
+**What the run actually found, model by model.**
+
+* **XGBoost is real competition and still not an improvement.** Better
+  calibration (0.77% against 1.33%), better AUC, half the baseline's
+  overconfidence rate, and nominally better log loss in three seasons of
+  four — but 2024 flips (−0.00188) and the pooled interval comfortably
+  contains zero. Its per-fold search also never settled: all eight
+  configurations won at least once in 26 folds. A model whose
+  hyperparameters churn that much across adjacent windows is fitting noise
+  at the margin, which is exactly what the season flip says.
+* **LightGBM fails the protocol before it fails the data.** Its pooled
+  number is ruined by the earliest 2023 folds, where on a few hundred
+  training rows it emitted probabilities at 0.9999+ during the calibration
+  passthrough phase — log loss 0.807 on 2023, while Brier barely moves,
+  the signature of a handful of catastrophically confident rows. From 2024
+  onward it is indistinguishable from neutral. The stack agrees: its fitted
+  LightGBM weight is negative and near zero throughout.
+* **Calibrated Elo is the finding.** Two numbers per game — a rating
+  difference and a home-field constant — recalibrated prequentially, match
+  and nominally beat the 42-feature model on every headline metric. The
+  paired interval still spans zero and 2023 flips sign, so it is not
+  promotable either; what it establishes is the same thing the market
+  baseline did from the other side. Most of what fs_v1 knows about a game's
+  winner, Elo already knew.
+* **The stack has nothing to stack.** With components this correlated and
+  this close, the meta-model converges to roughly 0.5 logistic + 0.35 Elo +
+  0.15 XGBoost and delivers the baseline's number with the best calibration
+  error of the table (0.58%) — a wash on log loss, purchased with 1,145
+  fewer scored games spent warming it up.
+* **Platt won calibration for all five models.** Isotonic was worse pooled
+  for every stream and much worse for the trees (0.706, 0.713 against Platt's
+  0.684) — on validation slices this size its flexibility is spent on noise,
+  which is what calibration.py's tie-to-Platt rule predicted.
+
+**The lineup split is honestly empty.** Every historical lineup row is
+knowable only postgame (first pitch +3h30m, boxscore-derived), so the
+"after confirmed lineups" arm contains zero games in every model's report.
+It fills only as the pregame poller's archive accumulates; nothing was
+inferred from postgame data to fake it.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
@@ -1412,14 +1503,14 @@ training window, validation slice and test window at every step:
 
 | Model | Status |
 |---|---|
-| Calibrated logistic | Baseline, currently served |
-| Gradient boosting | Built; **measured and rejected** — see above |
-| Negative-binomial run model | Not built |
-| Starter + bullpen innings allocation | Not built |
-| Monte Carlo simulation | Not built |
-| Elo with starter adjustment | Elo exists as a reference signal; starter adjustment not built |
-| Stacked ensemble | Not built |
+| Calibrated logistic | Baseline; served as half of the blend |
+| Gradient boosting | **Measured twice and rejected** — HistGradientBoosting at a fixed configuration, then XGBoost and LightGBM with per-fold search; see above |
+| Negative-binomial run model | Built; serves as the simulation half of the blend |
+| Starter + bullpen innings allocation | Built into the simulation; refinements measured and rejected |
+| Monte Carlo simulation | Built; **promoted** as half of the served blend |
+| Elo with starter adjustment | Elo **measured as a calibrated component** — matches the baseline, not promotable; the starter adjustment is still not built |
+| Stacked ensemble | Built; **measured and rejected** — see above |
 
 Nothing in that table is claimed to improve anything until the walk-forward
-proves it. The one row that has been measured says the opposite of what was
-hoped, and it is recorded rather than retried until it agreed.
+proves it. Every row that has been measured is recorded with its verdict
+rather than retried until it agreed.
