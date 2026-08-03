@@ -24,6 +24,7 @@ from app.features import availability as av
 from app.features import bullpen as bp
 from app.features import lineup_features as lf
 from app.features import statcast_features as sc
+from app.features import streaks as sk
 from app.features import weather_features as wx
 from app.features.asof import AsOfStore, season_start_utc
 from app.features.context import GameContext
@@ -132,6 +133,7 @@ class FeatureBuilder:
         self._statcast_league_cache: dict[str, sc.StatcastBaseline] = {}
         self._batting_league_cache: dict[str, lf.LeagueBatting] = {}
         self._team_rate_cache: dict[tuple[int, str], dict[int, tuple[float, float, int]]] = {}
+        self._streak_index: sk.StreakIndex | None = None
 
     # -- league baselines --------------------------------------------------
     def league_baseline(self, season: int, as_of: datetime) -> LeagueBaseline:
@@ -255,6 +257,7 @@ class FeatureBuilder:
         values.update(self._schedule_values(team_id, ctx, as_of))
         values.update(self._history_values(team_id, opponent_id, ctx, as_of, season_start))
         values.update(self._availability_values(team_id, as_of))
+        values.update(self._streak_values(team_id, ctx, as_of))
 
         return SideFeatures(
             values=values,
@@ -808,6 +811,15 @@ class FeatureBuilder:
             )
         }
 
+    def _streak_values(
+        self, team_id: int, ctx: GameContext, as_of: datetime
+    ) -> dict[str, FeatureValue]:
+        """Candidate streak features (fs_v8). Index built once, lazily —
+        it replays the same games frame every other feature reads."""
+        if self._streak_index is None:
+            self._streak_index = sk.StreakIndex(self.store.games)
+        return self._streak_index.side_values(team_id, ctx.season, as_of)
+
     def _availability_values(
         self, team_id: int, as_of: datetime
     ) -> dict[str, FeatureValue]:
@@ -901,6 +913,11 @@ class FeatureBuilder:
             ("lineup_xwoba_weighted_diff", "lineup_xwoba_weighted"),
             ("lineup_xwoba_vs_hand_diff", "lineup_xwoba_vs_hand"),
             ("arsenal_xwoba_edge_diff", "arsenal_xwoba_edge"),
+            ("sk_win_streak_capped_diff", "sk_win_streak"),
+            ("sk_continue_prob_diff", "sk_continue_prob"),
+            ("sk_adjusted_effect_diff", "sk_adjusted_effect"),
+            ("sk_streak_run_diff_diff", "sk_streak_run_diff"),
+            ("sk_streak_opp_elo_diff", "sk_streak_opp_elo"),
         ):
             emit(key, _diff(home.get(source), away.get(source)))
 
@@ -930,6 +947,7 @@ class FeatureBuilder:
             ("arsenal_whiff_edge_diff", "arsenal_whiff_edge"),
             ("il_offense_lost_diff", "il_offense_lost"),
             ("il_pitching_lost_diff", "il_pitching_lost"),
+            ("sk_loss_streak_capped_diff", "sk_loss_streak"),
         ):
             emit(key, _diff(away.get(source), home.get(source)))
 

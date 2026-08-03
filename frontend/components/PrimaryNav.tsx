@@ -15,6 +15,11 @@ import { usePathname } from "next/navigation";
 export const NAV_ITEMS = [
   { href: "/", label: "Games", match: (p: string) => p === "/" || p.startsWith("/game") },
   {
+    href: "/streaks",
+    label: "Streaks",
+    match: (p: string) => p.startsWith("/streaks"),
+  },
+  {
     href: "/backtest",
     label: "Backtest",
     match: (p: string) => p.startsWith("/backtest"),
