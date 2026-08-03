@@ -36,6 +36,28 @@ export function buildToday(env: Record<string, string | undefined> = process.env
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * The reader's notion of today, which is not the build's.
+ *
+ * The build stamps its dates in UTC, and UTC rolls over at 8 PM Eastern — so
+ * a page published on a Sunday evening called Monday "today" while Sunday's
+ * games were still being played. For a baseball reader, today is their own
+ * calendar day, held until 4 AM local: a West Coast game that started at
+ * 10 PM is still tonight's game in the ninth inning at 1 AM, and nobody
+ * wakes up at 12:30 AM wanting tomorrow's probables.
+ *
+ * Pure device-clock arithmetic, meant for the browser. At build time it would
+ * only reproduce the UTC problem it exists to fix — build code uses
+ * `buildToday`.
+ */
+export function viewerToday(now: Date = new Date()): string {
+  const shifted = new Date(now.getTime() - 4 * 3_600_000);
+  const y = shifted.getFullYear();
+  const m = String(shifted.getMonth() + 1).padStart(2, "0");
+  const d = String(shifted.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /** Every date the export builds a page for, oldest first. */
 export function buildDates(today: string = buildToday()): string[] {
   const out: string[] = [];
