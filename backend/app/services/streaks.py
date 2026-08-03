@@ -186,12 +186,12 @@ def build_team_log(games: pd.DataFrame) -> pd.DataFrame:
     # Pre-game ratings and the expectation for this side.
     pregame = engine.pregame
     own = np.array(
-        [pregame.get((g, t), 1500.0) for g, t in zip(log_frame["game_id"], log_frame["team_id"])]
+        [pregame.get((g, t), 1500.0) for g, t in zip(log_frame["game_id"], log_frame["team_id"], strict=False)]
     )
     opp = np.array(
         [
             pregame.get((g, t), 1500.0)
-            for g, t in zip(log_frame["game_id"], log_frame["opponent_id"])
+            for g, t in zip(log_frame["game_id"], log_frame["opponent_id"], strict=False)
         ]
     )
     home_exp = np.array(
@@ -199,7 +199,7 @@ def build_team_log(games: pd.DataFrame) -> pd.DataFrame:
             EloEngine.expected_home(h, a, engine.home_advantage)
             for h, a in zip(
                 np.where(log_frame["is_home"], own, opp),
-                np.where(log_frame["is_home"], opp, own),
+                np.where(log_frame["is_home"], opp, own), strict=False,
             )
         ]
     )
@@ -257,7 +257,7 @@ def attach_context(log_frame: pd.DataFrame, session: Session) -> pd.DataFrame:
         session.execute(select(Player.id, Player.pitch_hand)).mappings().all()
     )
     hand_map = (
-        dict(zip(hands["id"], hands["pitch_hand"])) if not hands.empty else {}
+        dict(zip(hands["id"], hands["pitch_hand"], strict=False)) if not hands.empty else {}
     )
     log_frame["opp_starter_hand"] = [
         hand_map.get(int(p)) if pd.notna(p) else None

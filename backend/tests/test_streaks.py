@@ -10,7 +10,7 @@ drama.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ def _games(results: list[tuple[int, int]], season: int = 2025) -> pd.DataFrame:
     """A two-team league. ``results`` are (home_score, away_score) for team 1
     hosting team 2 on consecutive days."""
     rows = []
-    start = datetime(season, 4, 1, 23, 0, tzinfo=timezone.utc)
+    start = datetime(season, 4, 1, 23, 0, tzinfo=UTC)
     for i, (home, away) in enumerate(results):
         moment = start + timedelta(days=i)
         rows.append(
