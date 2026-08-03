@@ -8,8 +8,10 @@ import { FeatureTable } from "@/components/FeatureTable";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { MatchupBars } from "@/components/MatchupBars";
 import { MatchupSummary } from "@/components/MatchupSummary";
+import { ParkDimensions } from "@/components/ParkDimensions";
 import { TeamStandingBlock } from "@/components/TeamStandingBlock";
 import { ProbabilityBar } from "@/components/ProbabilityBar";
+import { TrendLine } from "@/components/TrendLine";
 import { Section, StatBlock } from "@/components/StatBlock";
 import { TabPanels } from "@/components/TabPanels";
 import type { TabDef } from "@/components/Tabs";
@@ -258,7 +260,7 @@ export default async function GameDetailPage({
       />
 
       <section className="surface px-4 py-3" aria-label="Data freshness">
-        <p className="mb-2 text-xs font-medium">Data freshness by source</p>
+        <p className="eyebrow mb-2">Data freshness by source</p>
         <FreshnessStrip entries={detail.freshness} />
       </section>
     </div>
@@ -534,6 +536,60 @@ function ChangeSummary({ detail }: { detail: GameDetail }) {
   );
 }
 
+/**
+ * A starter's identity block: monogram, name, and the two facts that matter
+ * before first pitch. The monogram is initials in the side's tone — presence
+ * without pretending to have a photo we don't ingest.
+ */
+function StarterIdentity({
+  starter,
+  tone,
+}: {
+  starter: GameDetail["home_detail"]["starter"];
+  tone: "home" | "away";
+}) {
+  const name = starter.full_name ?? "";
+  const initials = name
+    .split(/\s+/)
+    .map((word) => word[0] ?? "")
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  const status = starter.status
+    ? starter.status.charAt(0) + starter.status.slice(1).toLowerCase()
+    : null;
+  return (
+    <div className="flex min-w-0 items-center gap-3.5">
+      <span
+        aria-hidden
+        className="grid size-12 shrink-0 place-items-center rounded-full text-sm font-bold"
+        style={{
+          background: `color-mix(in srgb, var(--${tone}) 13%, transparent)`,
+          color: `var(--${tone})`,
+          boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, var(--${tone}) 30%, transparent)`,
+          letterSpacing: "0.02em",
+        }}
+      >
+        {initials}
+      </span>
+      <div className="min-w-0">
+        <p
+          className="truncate text-[1.0625rem] font-semibold"
+          style={{ letterSpacing: "-0.015em" }}
+        >
+          {name}
+        </p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <Badge tone="muted">
+            Throws {starter.pitch_hand ?? "—"}
+          </Badge>
+          {status ? <Badge tone="muted">{status}</Badge> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PitchersTab({ detail }: { detail: GameDetail }) {
   const { card, home_detail, away_detail } = detail;
   return (
@@ -546,12 +602,10 @@ function PitchersTab({ detail }: { detail: GameDetail }) {
             description={index === 0 ? "Away" : "Home"}
           >
             {side.starter.full_name ? (
-              <div>
-                <p className="text-base font-semibold">{side.starter.full_name}</p>
-                <p className="mt-0.5 text-xs muted">
-                  Throws {side.starter.pitch_hand ?? "—"} · {side.starter.status}
-                </p>
-              </div>
+              <StarterIdentity
+                starter={side.starter}
+                tone={index === 0 ? "away" : "home"}
+              />
             ) : (
               <UnavailableNotice
                 compact
@@ -704,6 +758,21 @@ function HistoryTab({ detail }: { detail: GameDetail }) {
         phase={3}
       />
       <Section title="Prediction history for this game">
+        {detail.prediction_history.length >= 2 ? (
+          <div className="mb-4">
+            <TrendLine
+              points={detail.prediction_history.map((row) => ({
+                t: row.as_of,
+                v: row.home_win_prob,
+              }))}
+              ariaLabel={`${detail.card.home.abbreviation} win probability across ${detail.prediction_history.length} issued predictions`}
+            />
+            <p className="t-micro mt-1 subtle">
+              {detail.card.home.abbreviation} win probability by issue time ·
+              dashed line marks 50% · spacing is real elapsed time
+            </p>
+          </div>
+        ) : null}
         {detail.prediction_history.length ? (
           <div className="scroll-x edge-cue">
             <table className="data sticky-label min-w-[360px]">
@@ -763,6 +832,13 @@ function EnvironmentTab({ detail }: { detail: GameDetail }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
       <Section title="Ballpark" description="Physical attributes, which are static and genuinely available.">
+        {park.lf_line && park.center && park.rf_line ? (
+          /* The wall drawn to scale says more than three numbers in a row —
+             the numbers are still on the drawing, at the points they measure. */
+          <div className="mb-4 flex justify-center">
+            <ParkDimensions lf={park.lf_line} cf={park.center} rf={park.rf_line} />
+          </div>
+        ) : null}
         <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:grid-cols-3">
           <StatBlock label="Venue" value={park.name ?? "—"} sub={park.city ?? undefined} />
           <StatBlock label="Roof" value={park.roof_type ?? "—"} />
@@ -770,9 +846,13 @@ function EnvironmentTab({ detail }: { detail: GameDetail }) {
             label="Elevation"
             value={park.elevation_ft !== null ? `${park.elevation_ft} ft` : "—"}
           />
-          <StatBlock label="LF line" value={park.lf_line ? `${park.lf_line}′` : "—"} />
-          <StatBlock label="Center" value={park.center ? `${park.center}′` : "—"} />
-          <StatBlock label="RF line" value={park.rf_line ? `${park.rf_line}′` : "—"} />
+          {!(park.lf_line && park.center && park.rf_line) ? (
+            <>
+              <StatBlock label="LF line" value={park.lf_line ? `${park.lf_line}′` : "—"} />
+              <StatBlock label="Center" value={park.center ? `${park.center}′` : "—"} />
+              <StatBlock label="RF line" value={park.rf_line ? `${park.rf_line}′` : "—"} />
+            </>
+          ) : null}
           <StatBlock label="Surface" value={park.turf_type ?? "—"} />
           <StatBlock
             label="Capacity"
@@ -826,6 +906,12 @@ function EnvironmentTab({ detail }: { detail: GameDetail }) {
 
 function ExplanationTab({ detail }: { detail: GameDetail }) {
   const prediction = detail.card.prediction;
+  // Bars are scaled to the largest contribution so relative weight is read
+  // straight off the column without comparing printed numbers.
+  const maxPp = Math.max(
+    ...detail.all_drivers.map((d) => d.contribution_pp),
+    0.01,
+  );
   return (
     <div className="flex flex-col gap-4">
       <Section
@@ -834,7 +920,7 @@ function ExplanationTab({ detail }: { detail: GameDetail }) {
       >
         {detail.all_drivers.length ? (
           <div className="scroll-x edge-cue">
-            <table className="data sticky-label min-w-[420px]">
+            <table className="data sticky-label min-w-[460px]">
               <thead>
                 <tr>
                   <th scope="col">Input</th>
@@ -868,7 +954,27 @@ function ExplanationTab({ detail }: { detail: GameDetail }) {
                           : detail.card.away.abbreviation}
                       </Badge>
                     </td>
-                    <td className="num tnum">+{d.contribution_pp.toFixed(2)}</td>
+                    <td className="num tnum">
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          className="inline-block h-[5px] w-14 overflow-hidden rounded-full"
+                          style={{ background: "var(--track)" }}
+                        >
+                          <span
+                            className="block h-full rounded-full"
+                            style={{
+                              width: `${(d.contribution_pp / maxPp) * 100}%`,
+                              background:
+                                d.favors === "H"
+                                  ? "linear-gradient(to right, var(--home), var(--home-hi))"
+                                  : "linear-gradient(to right, var(--away), var(--away-hi))",
+                            }}
+                          />
+                        </span>
+                        +{d.contribution_pp.toFixed(2)}
+                      </span>
+                    </td>
                     <td className="num tnum subtle">{d.feature_display ?? "—"}</td>
                     <td className="num tnum subtle">{d.sample_size ?? "—"}</td>
                   </tr>
@@ -935,9 +1041,15 @@ function RunBar({
   tone: "home" | "away";
 }) {
   const width = peak > 0 ? Math.max(2, (probability / peak) * 100) : 0;
+  // The modal total is the answer a reader takes away; it gets the ink.
+  const isPeak = peak > 0 && probability === peak;
+  const emphasis = isPeak ? { color: "var(--text)", fontWeight: 650 } : undefined;
   return (
     <div className="flex items-center gap-2">
-      <span className="numeral w-7 shrink-0 text-right text-xs muted">
+      <span
+        className={`numeral w-7 shrink-0 text-right text-xs${isPeak ? "" : " muted"}`}
+        style={emphasis}
+      >
         {isTail ? `${runs}+` : runs}
       </span>
       <div
@@ -948,11 +1060,20 @@ function RunBar({
           className="h-full rounded-full"
           style={{
             width: `${width}%`,
-            background: tone === "home" ? "var(--home)" : "var(--away)",
+            // Brightening toward the leading edge — the same gradient language
+            // as the probability meters on the slate cards.
+            background:
+              tone === "home"
+                ? "linear-gradient(to right, var(--home), var(--home-hi))"
+                : "linear-gradient(to right, var(--away), var(--away-hi))",
+            opacity: isPeak ? 1 : 0.82,
           }}
         />
       </div>
-      <span className="numeral w-11 shrink-0 text-right text-xs muted">
+      <span
+        className={`numeral w-11 shrink-0 text-right text-xs${isPeak ? "" : " muted"}`}
+        style={emphasis}
+      >
         {pct(probability, 1)}
       </span>
     </div>
@@ -1102,7 +1223,7 @@ function SimulationTab({ detail }: { detail: GameDetail }) {
           }
         >
           <ul className="flex flex-col gap-2">
-            {simulation.likely_scores.map((score) => (
+            {simulation.likely_scores.map((score, index) => (
               <li
                 key={`${score.away}-${score.home}`}
                 className="flex items-center justify-between gap-3 border-b pb-2 last:border-b-0 last:pb-0"
@@ -1111,11 +1232,31 @@ function SimulationTab({ detail }: { detail: GameDetail }) {
                 {/* min-w-0 + truncate: a team with no abbreviation falls back to
                     its full name, and two long names would otherwise set this
                     row's minimum width and push the page sideways on a phone. */}
-                <span className="numeral min-w-0 truncate text-sm">
+                <span
+                  className="numeral min-w-0 truncate text-sm"
+                  style={index === 0 ? { fontWeight: 650 } : undefined}
+                >
                   {awayName} {score.away} – {score.home} {homeName}
                 </span>
-                <span className="numeral shrink-0 text-sm muted">
-                  {pct(score.probability)}
+                <span className="flex shrink-0 items-center gap-2">
+                  {index === 0 ? (
+                    <span
+                      className="t-micro rounded-full px-2 py-0.5"
+                      style={{
+                        background: "var(--accent-soft)",
+                        color: "var(--accent)",
+                        fontWeight: 580,
+                      }}
+                    >
+                      most likely
+                    </span>
+                  ) : null}
+                  <span
+                    className={`numeral text-sm${index === 0 ? "" : " muted"}`}
+                    style={index === 0 ? { fontWeight: 650 } : undefined}
+                  >
+                    {pct(score.probability)}
+                  </span>
                 </span>
               </li>
             ))}

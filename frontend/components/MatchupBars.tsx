@@ -51,7 +51,7 @@ export function MatchupBars({
                 </span>
               </div>
               <div
-                className="relative h-1.5 rounded-full"
+                className="relative h-2 rounded-full"
                 style={{ background: "var(--track)" }}
                 role="img"
                 aria-label={`${bar.label}: ${
@@ -71,7 +71,11 @@ export function MatchupBars({
                     width: `${width}%`,
                     left: homeSide ? "50%" : undefined,
                     right: homeSide ? undefined : "50%",
-                    background: homeSide ? "var(--home)" : "var(--away)",
+                    // Brightening toward the tip — the bar's leading edge is
+                    // where the eye reads its length, same as the slate meters.
+                    background: homeSide
+                      ? "linear-gradient(to right, var(--home), var(--home-hi))"
+                      : "linear-gradient(to left, var(--away), var(--away-hi))",
                   }}
                 />
               </div>

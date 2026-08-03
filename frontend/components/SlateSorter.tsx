@@ -3,10 +3,10 @@
 import { useState } from "react";
 
 import { GameCardView } from "@/components/GameCard";
-import { useLiveScores } from "@/components/useLiveScores";
 import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { EmptyState } from "@/components/UnavailableNotice";
 import { longDate } from "@/lib/format";
+import type { LiveMap } from "@/lib/live";
 import { GROUP_HINT, GROUP_LABEL, groupSlate } from "@/lib/status";
 import type { GameCard } from "@/lib/types";
 
@@ -99,7 +99,16 @@ function compareBy(key: SortKey) {
   };
 }
 
-export function SlateSorter({ games, date }: { games: GameCard[]; date: string }) {
+export function SlateSorter({
+  games,
+  date,
+  live,
+}: {
+  games: GameCard[];
+  date: string;
+  /** One shared poll of MLB's feed, owned by `LiveSlate` above this. */
+  live: LiveMap;
+}) {
   const [sort, setSort] = useState<SortKey>("game_time");
 
   /*
@@ -108,7 +117,6 @@ export function SlateSorter({ games, date }: { games: GameCard[]; date: string }
    * built cards so a game that has started moves itself into the Live group
    * and carries its current score — the page stays truthful between builds.
    */
-  const live = useLiveScores(date, games);
   const merged = games.map((game) => {
     const state = live.get(game.game_id);
     if (!state) return game;

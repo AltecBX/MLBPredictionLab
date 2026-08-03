@@ -43,15 +43,22 @@ export function WeatherNow({
   latitude,
   longitude,
   place,
+  context,
 }: {
   latitude: number | null;
   longitude: number | null;
   /** Where the reading is from — always named, so 74° is 74° *somewhere*. */
   place: string;
+  /** Why this park was chosen — surfaces in the tooltip so the choice explains itself. */
+  context?: string;
 }) {
   const [reading, setReading] = useState<Reading | null>(null);
 
   useEffect(() => {
+    // The target can move mid-visit — a game ends and the chip repoints to the
+    // next park. The old reading must not survive the move: better no chip for
+    // a beat than Baltimore's temperature wearing Los Angeles's name.
+    setReading(null);
     if (latitude == null || longitude == null) return;
     let cancelled = false;
 
@@ -98,7 +105,7 @@ export function WeatherNow({
   return (
     <p
       className="t-small flex min-w-0 items-center gap-1.5 muted"
-      title={`Current conditions at ${place}`}
+      title={`Current conditions at ${place}${context ? ` — ${context}` : ""}`}
     >
       <WeatherGlyph kind={kind} />
       <span className="numeral" style={{ color: "var(--text)" }}>
