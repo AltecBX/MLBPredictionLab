@@ -13,7 +13,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GameCardView } from "@/components/GameCard";
 import { WeatherNow } from "@/components/WeatherNow";
-import { fetchLiveStates, slateIsActive } from "@/lib/live";
+import {
+  fetchLiveStates,
+  slateIsActive,
+  weatherTarget,
+  type LiveMap,
+  type LiveState,
+} from "@/lib/live";
 import { gameCard } from "./fixtures";
 
 afterEach(() => {
@@ -91,6 +97,63 @@ describe("fetchLiveStates", () => {
   });
 });
 
+describe("weatherTarget", () => {
+  const state = (status: LiveState["status"]): LiveState => ({
+    status,
+    detail: status,
+    awayRuns: null,
+    homeRuns: null,
+    inning: null,
+  });
+  // Early game in the east, late game out west — deliberately out of order so
+  // the selection is proven to sort by first pitch, not trust the input order.
+  const west = gameCard({ game_id: 2, first_pitch_utc: "2026-08-02T02:10:00Z" });
+  const east = gameCard({ game_id: 1, first_pitch_utc: "2026-08-01T23:05:00Z" });
+  const slate = [west, east];
+
+  it("repoints to the live game once the early one ends — the Baltimore case", () => {
+    // Build time: neither final, so the build would have pinned the east park.
+    // View time: the feed says the east game ended and the west one is on.
+    const live: LiveMap = new Map([
+      [1, state("Final")],
+      [2, state("Live")],
+    ]);
+    expect(weatherTarget(slate, live)).toEqual({ game: west, why: "LIVE" });
+  });
+
+  it("falls back to build-time states when no live data has arrived", () => {
+    expect(weatherTarget(slate, new Map())).toEqual({ game: east, why: "NEXT" });
+  });
+
+  it("prefers a game already in progress over a later one still to start", () => {
+    const started = { ...east, status: "Live" };
+    expect(weatherTarget([west, started], new Map())).toEqual({
+      game: started,
+      why: "LIVE",
+    });
+  });
+
+  it("settles on the day's first park once every game is over", () => {
+    const live: LiveMap = new Map([
+      [1, state("Final")],
+      [2, state("Final")],
+    ]);
+    expect(weatherTarget(slate, live)).toEqual({ game: east, why: "DONE" });
+  });
+
+  it("never hosts the reading at a postponed game's park", () => {
+    const rained = { ...east, status_detail: "Postponed" };
+    expect(weatherTarget([west, rained], new Map())).toEqual({
+      game: west,
+      why: "NEXT",
+    });
+  });
+
+  it("returns nothing for an empty slate", () => {
+    expect(weatherTarget([], new Map())).toBeUndefined();
+  });
+});
+
 describe("GameCardView with a live state", () => {
   it("shows the inning and the current score, and says where they come from", () => {
     const game = gameCard({ home_score: 2, away_score: 3, status: "Live" });
@@ -130,6 +193,48 @@ describe("WeatherNow", () => {
     expect(screen.getByText(/Clear/)).toBeInTheDocument();
     expect(screen.getByText(/wind 11 mph/)).toBeInTheDocument();
     expect(screen.getByText(/Rogers Centre/)).toBeInTheDocument();
+  });
+
+  it("explains its choice of park in the tooltip", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ current: { temperature_2m: 60.1, weather_code: 3 } })),
+      ),
+    );
+    render(
+      <WeatherNow
+        latitude={43.64}
+        longitude={-79.39}
+        place="Rogers Centre"
+        context="the next game to start"
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTitle("Current conditions at Rogers Centre — the next game to start"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("drops the old park's reading the moment the target moves", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ current: { temperature_2m: 74.2, weather_code: 61 } })),
+        )
+        // The second park's fetch never settles: the chip must show nothing,
+        // not the first park's temperature under the second park's name.
+        .mockImplementation(() => new Promise(() => {})),
+    );
+    const { container, rerender } = render(
+      <WeatherNow latitude={39.28} longitude={-76.62} place="Camden Yards" />,
+    );
+    await waitFor(() => expect(screen.getByText(/Camden Yards/)).toBeInTheDocument());
+    rerender(<WeatherNow latitude={34.07} longitude={-118.24} place="Dodger Stadium" />);
+    expect(container.innerHTML).toBe("");
   });
 
   it("renders nothing at all when the fetch fails", async () => {

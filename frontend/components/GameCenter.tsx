@@ -2,10 +2,9 @@ import Link from "next/link";
 
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
-import { SlateSorter } from "@/components/SlateSorter";
+import { LiveSlate } from "@/components/LiveSlate";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { WakeRetry } from "@/components/WakeRetry";
-import { WeatherNow } from "@/components/WeatherNow";
 import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
 import { longDate, mediumDate, timestamp, weekdayShort } from "@/lib/format";
 import { buildToday, isBuilt, shiftUtcIsoDate } from "@/lib/window";
@@ -22,19 +21,6 @@ import { buildToday, isBuilt, shiftUtcIsoDate } from "@/lib/window";
 export async function GameCenter({ date }: { date: string }) {
   const today = buildToday();
   const result = await api.games(date);
-  const isToday = date === today;
-  const prev = shiftUtcIsoDate(date, -1);
-  const next = shiftUtcIsoDate(date, 1);
-
-  /*
-   * Where "current weather" points. One reading, from the slate's most
-   * relevant park — the first game still to be decided, or the first game at
-   * all on a finished day. Every reading is named with its park, because 74°
-   * is only information somewhere in particular.
-   */
-  const weatherGame = result.ok
-    ? (result.data.games.find((g) => !g.is_final) ?? result.data.games[0])
-    : undefined;
 
   return (
     <div className="flex flex-col">
@@ -51,81 +37,16 @@ export async function GameCenter({ date }: { date: string }) {
         ) : null}
       </div>
 
-      {weatherGame?.ballpark ? (
-        <div className="pt-1.5 pb-3">
-          <WeatherNow
-            latitude={weatherGame.ballpark.latitude}
-            longitude={weatherGame.ballpark.longitude}
-            place={weatherGame.ballpark.name ?? "the ballpark"}
-          />
-        </div>
-      ) : (
-        <div className="pb-3" />
-      )}
-
-      {/*
-       * Only the date row sticks. Changing date is the most repeated action on
-       * this screen, so on a phone it must stay reachable without scrolling back
-       * past a twelve-game slate — but pinning the sort chips too would cost
-       * another 48px of an 844px viewport for a control used once a visit.
-       *
-       * One line, not two: the previous version spent 110px of a phone screen
-       * saying one date. The weekday carries the "which day" reading and the
-       * numeric part carries the rest, so both fit on a single baseline.
-       */}
-      <header
-        className="glass sticky z-20 -mx-4 border-b px-4 py-2 sm:-mx-6 sm:px-6"
-        style={{
-          top: "calc(var(--header-h) - 1px)",
-          borderColor: "color-mix(in srgb, var(--border) 78%, transparent)",
-        }}
-      >
-        <nav
-          aria-label="Date"
-          className="mx-auto grid max-w-[1240px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
-        >
-          <DateArrow dir="left" date={prev} today={today} label="Previous day" />
-
-          <div className="flex min-w-0 items-center justify-center gap-2">
-            <p className="t-heading min-w-0 truncate text-center">
-              <span className="subtle">{weekdayShort(date)}</span>{" "}
-              <span style={{ fontWeight: 640 }}>
-                {/* The 375px iPhone truncates the long month and swallows the
-                    year with it. Three letters of month is the cheaper loss. */}
-                <span className="min-[420px]:hidden">{mediumDate(date)}</span>
-                <span className="hidden min-[420px]:inline">
-                  {longDate(date, { weekday: false })}
-                </span>
-              </span>
-            </p>
-            {!isToday ? (
-              <Link
-                href={`/d/${today}/`}
-                className="pill tap t-micro shrink-0 px-2.5"
-                style={{ fontWeight: 580 }}
-              >
-                Today
-              </Link>
-            ) : (
-              <span
-                className="t-micro shrink-0 rounded-full px-2 py-0.5"
-                style={{
-                  background: "var(--accent-soft)",
-                  color: "var(--accent)",
-                  fontWeight: 580,
-                }}
-              >
-                Today
-              </span>
-            )}
-          </div>
-
-          <DateArrow dir="right" date={next} today={today} label="Next day" />
-        </nav>
-      </header>
-
       {result.ok ? (
-        <>
+        /*
+         * The weather chip, the score overlay and the slate share one live
+         * poll, so which park "current weather" means is decided in the
+         * reader's browser — at view time, not build time. The date header
+         * and freshness strip need no liveness and pass through as children.
+         */
+        <LiveSlate games={result.data.games} date={date}>
+          <DateHeader date={date} today={today} />
+
           {/*
            * Freshness is ambient. It used to be a card the same weight as a
            * game, which put "when did the schedule last update" beside "who
@@ -150,32 +71,104 @@ export async function GameCenter({ date }: { date: string }) {
               {timestamp(result.data.generated_at)}
             </p>
           </section>
-
-          <SlateSorter games={result.data.games} date={date} />
-        </>
+        </LiveSlate>
       ) : (
-        <div className="mt-6">
-          <UnavailableNotice
-            title={
-              looksLikeColdStart(result.status)
-                ? "The prediction API is still waking up"
-                : "The prediction API is unavailable"
-            }
-            reason={
-              looksLikeColdStart(result.status)
-                ? `${result.message} — this deployment sleeps when idle and takes about a minute to come back.${
-                    retryBudgetSeconds() > 0
-                      ? ` It was retried for ${retryBudgetSeconds()} seconds and had not answered yet;`
-                      : ""
-                  }`
-                : result.message
-            }
-            requiredSource="backend at API_BASE_URL"
-          />
-          {looksLikeColdStart(result.status) ? <WakeRetry /> : null}
-        </div>
+        <>
+          <div className="pb-3" />
+          <DateHeader date={date} today={today} />
+          <div className="mt-6">
+            <UnavailableNotice
+              title={
+                looksLikeColdStart(result.status)
+                  ? "The prediction API is still waking up"
+                  : "The prediction API is unavailable"
+              }
+              reason={
+                looksLikeColdStart(result.status)
+                  ? `${result.message} — this deployment sleeps when idle and takes about a minute to come back.${
+                      retryBudgetSeconds() > 0
+                        ? ` It was retried for ${retryBudgetSeconds()} seconds and had not answered yet;`
+                        : ""
+                    }`
+                  : result.message
+              }
+              requiredSource="backend at API_BASE_URL"
+            />
+            {looksLikeColdStart(result.status) ? <WakeRetry /> : null}
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+/**
+ * The sticky date row. Only this row sticks: changing date is the most
+ * repeated action on this screen, so on a phone it must stay reachable
+ * without scrolling back past a twelve-game slate — but pinning the sort
+ * chips too would cost another 48px of an 844px viewport for a control used
+ * once a visit.
+ *
+ * One line, not two: the previous version spent 110px of a phone screen
+ * saying one date. The weekday carries the "which day" reading and the
+ * numeric part carries the rest, so both fit on a single baseline.
+ */
+function DateHeader({ date, today }: { date: string; today: string }) {
+  const isToday = date === today;
+  const prev = shiftUtcIsoDate(date, -1);
+  const next = shiftUtcIsoDate(date, 1);
+
+  return (
+    <header
+      className="glass sticky z-20 -mx-4 border-b px-4 py-2 sm:-mx-6 sm:px-6"
+      style={{
+        top: "calc(var(--header-h) - 1px)",
+        borderColor: "color-mix(in srgb, var(--border) 78%, transparent)",
+      }}
+    >
+      <nav
+        aria-label="Date"
+        className="mx-auto grid max-w-[1240px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
+      >
+        <DateArrow dir="left" date={prev} today={today} label="Previous day" />
+
+        <div className="flex min-w-0 items-center justify-center gap-2">
+          <p className="t-heading min-w-0 truncate text-center">
+            <span className="subtle">{weekdayShort(date)}</span>{" "}
+            <span style={{ fontWeight: 640 }}>
+              {/* The 375px iPhone truncates the long month and swallows the
+                  year with it. Three letters of month is the cheaper loss. */}
+              <span className="min-[420px]:hidden">{mediumDate(date)}</span>
+              <span className="hidden min-[420px]:inline">
+                {longDate(date, { weekday: false })}
+              </span>
+            </span>
+          </p>
+          {!isToday ? (
+            <Link
+              href={`/d/${today}/`}
+              className="pill tap t-micro shrink-0 px-2.5"
+              style={{ fontWeight: 580 }}
+            >
+              Today
+            </Link>
+          ) : (
+            <span
+              className="t-micro shrink-0 rounded-full px-2 py-0.5"
+              style={{
+                background: "var(--accent-soft)",
+                color: "var(--accent)",
+                fontWeight: 580,
+              }}
+            >
+              Today
+            </span>
+          )}
+        </div>
+
+        <DateArrow dir="right" date={next} today={today} label="Next day" />
+      </nav>
+    </header>
   );
 }
 

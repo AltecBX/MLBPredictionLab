@@ -20,6 +20,9 @@
  * first pitch fails the knowledge-time cut by definition.
  */
 
+import { slateGroup } from "./status";
+import type { GameCard } from "./types";
+
 export interface LiveState {
   /** MLB's abstract state: Preview, Live, Final. */
   status: "Preview" | "Live" | "Final";
@@ -81,6 +84,53 @@ export async function fetchLiveStates(date: string): Promise<LiveMap> {
     });
   }
   return map;
+}
+
+/**
+ * Which park the "current weather" chip reads from, decided at *view* time.
+ *
+ * The old answer — the first game not yet final, chosen while the HTML was
+ * being built — went stale the moment that game ended: a reader watching the
+ * late game was shown conditions at a park where everyone had gone home. So
+ * the choice re-runs in the browser, against the same live overlay the score
+ * cards use:
+ *
+ *   1. the earliest game currently in progress — the likeliest thing the
+ *      reader is following;
+ *   2. else the next game still to start;
+ *   3. else the day's first game — everything is settled and the reading is
+ *      only a postscript.
+ *
+ * A postponed game never hosts "current" weather: nothing at that park is
+ * being played. With no live data yet (before the window opens, or if the
+ * feed is down) the build-time states apply unchanged — live data only ever
+ * sharpens the answer, it is not required for one.
+ */
+export interface WeatherPin {
+  game: GameCard;
+  why: "LIVE" | "NEXT" | "DONE";
+}
+
+export function weatherTarget(games: GameCard[], live: LiveMap): WeatherPin | undefined {
+  const effective = (game: GameCard): "LIVE" | "NEXT" | "DONE" => {
+    const state = live.get(game.game_id);
+    if (state?.status === "Final") return "DONE";
+    if (state?.status === "Live") return "LIVE";
+    const group = slateGroup(game);
+    if (group === "LIVE") return "LIVE";
+    if (group === "UPCOMING") return "NEXT";
+    // FINAL and POSTPONED alike: nothing more will happen at that park today.
+    return "DONE";
+  };
+
+  const ordered = [...games].sort((a, b) =>
+    a.first_pitch_utc.localeCompare(b.first_pitch_utc),
+  );
+  const inProgress = ordered.find((g) => effective(g) === "LIVE");
+  if (inProgress) return { game: inProgress, why: "LIVE" };
+  const upNext = ordered.find((g) => effective(g) === "NEXT");
+  if (upNext) return { game: upNext, why: "NEXT" };
+  return ordered[0] ? { game: ordered[0], why: "DONE" } : undefined;
 }
 
 /** Whether any game on the slate could change state right now. */
