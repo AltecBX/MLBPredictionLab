@@ -75,8 +75,16 @@
    * sticks (the game tab strip, the date bar) offsets by this rather than
    * re-deriving it, so one row of padding changing does not silently hide a
    * control under the header. The E2E suite asserts the tab strip lands clear.
+   *
+   * Two tokens, deliberately. `--header-row` is the visible row of chrome;
+   * `--header-h` adds the top safe-area inset on top of it. Installed to an
+   * iPhone home screen the app draws under a translucent status bar
+   * (viewport-fit=cover + black-translucent), and without the inset the
+   * wordmark sat beneath the clock and the theme toggle beneath the battery.
+   * In a browser tab the inset is 0 and the two tokens are equal.
    */
-  --header-h: 56px;
+  --header-row: 56px;
+  --header-h: calc(var(--header-row) + env(safe-area-inset-top, 0px));
 
   /* Type. Each step carries its own line-height and tracking, because a scale
      that only changes size is a scale that looks wrong at both ends: large text
@@ -124,7 +132,7 @@
 
 @media (min-width: 640px) {
   :root {
-    --header-h: 62px;
+    --header-row: 62px;
     --text-display: 2.375rem;
     --text-title: 1.625rem;
     --text-heading: 1.125rem;
