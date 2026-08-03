@@ -893,10 +893,15 @@ AVAILABILITY: list[FeatureSpec] = [
 # it is research and reading material. The verdict on the FEATURES is recorded
 # in `measurement` below once compare-feature-sets has run.
 STREAKS_MEASUREMENT = (
-    "Walk-forward fs_v1 vs fs_v8 at pinned regularisation on three seasons: "
-    "2024 (trained from 2023), 2025 (trained from 2023-24), 2026 to date "
-    "(trained from 2023-25). See MODELING_PLAN.md, Streak features, for the "
-    "table and verdict."
+    "Walk-forward fs_v1 vs fs_v8 at pinned regularisation on three seasons, "
+    "both C=0.03 and C=0.01. 2024: +0.001224 and +0.002021, intervals spanning "
+    "zero. 2025: +0.000039 and -0.000363, spanning zero. 2026 to date (1,569 "
+    "games, trained on 2023-25): -0.002511 [-0.00375, -0.00125] and -0.002179 "
+    "[-0.00335, -0.00104] -- the group measurably HURTS, on log loss and Brier "
+    "alike, at both regularisations. Sign decays with training-window size, "
+    "which is what noise the model can no longer exploit looks like. REJECTED; "
+    "the /streaks section is research and display only. See MODELING_PLAN.md, "
+    "Streak features."
 )
 
 STREAKS: list[FeatureSpec] = [

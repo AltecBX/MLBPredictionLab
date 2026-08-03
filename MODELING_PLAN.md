@@ -1477,6 +1477,67 @@ inferred from postgame data to fake it.
 
 ---
 
+## Streak features: measured, and rejected on three seasons
+
+The ninth candidate group, requested with its own gate attached: raw streak
+length was never to enter the model directly, and the processed streak story
+— capped lengths, the shrunk historical continuation probability in win
+direction, that probability minus the pre-game expectation for the same
+historical games, the run differential and opponent quality across the
+current streak — was to stay only if it improved out-of-sample log loss or
+Brier across multiple seasons. It does the opposite.
+
+Reproduce with:
+
+```
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v8 \
+    --seasons 2024 --C 0.03
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v8 \
+    --seasons 2024,2025 --start 2025-04-01 --C 0.03
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v8 \
+    --seasons 2023,2024,2025,2026 --start 2026-04-01 --C 0.03
+# and each again with --C 0.01
+```
+
+| Season | C | n | fs_v1 | fs_v8 | Δ log loss | Paired 95% CI | Verdict |
+|---|---|---|---|---|---|---|---|
+| 2024 | 0.03 | 1,741 | 0.68383 | 0.68261 | +0.001224 | [−0.00091, +0.00332] | NO_EFFECT |
+| 2024 | 0.01 | 1,741 | 0.68433 | 0.68231 | +0.002021 | [−0.00019, +0.00421] | NO_EFFECT |
+| 2025 | 0.03 | 2,363 | 0.69103 | 0.69099 | +0.000039 | [−0.00113, +0.00116] | NO_EFFECT |
+| 2025 | 0.01 | 2,363 | 0.69021 | 0.69057 | −0.000363 | [−0.00154, +0.00076] | NO_EFFECT |
+| **2026** | **0.03** | **1,569** | 0.69423 | 0.69675 | **−0.002511** | **[−0.00375, −0.00125]** | **REJECT** |
+| **2026** | **0.01** | **1,569** | 0.69360 | 0.69578 | **−0.002179** | **[−0.00335, −0.00104]** | **REJECT** |
+
+Brier agrees everywhere it is distinguishable: −0.001132 [−0.00171, −0.00054]
+and −0.000994 [−0.00154, −0.00045] on the 2026 arms.
+
+**The shape of the failure is the finding.** The delta decays monotonically
+with the training window: nominally positive when trained on one prior
+season, zero at two, and measurably negative at three — at both
+regularisations, on both proper scores. That is what noise looks like as the
+base model runs out of room to be fooled: with a weak baseline the streak
+story happens to correlate with the residual, and as the baseline sharpens
+the same six features are pure variance. The 2026 arms are the strongest
+negative result in this document after weather — both intervals exclude zero
+— and they are the arms with the most history behind both the features and
+the model.
+
+**This is also what the adjusted-effect column on the /streaks page shows
+reader-facing:** continuation rates hug the pre-game expectation, and the
+part of the streak story that is not already team strength is small and
+unstable. The section stays — it answers a real reading question honestly —
+and the model does not consume it. `fs_v8` remains registered with
+`available=False` and this measurement attached.
+
+Coverage caveat recorded with the run: the two history features
+(`sk_continue_prob_diff`, `sk_adjusted_effect_diff`) are defined only when a
+team enters the game on a streak of two or more — 24–31% of games across the
+arms — and are median-imputed elsewhere. The four always-defined features
+(capped lengths, streak run differential, streak opponent quality) carry the
+group's negative 2026 result on their own coverage.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
