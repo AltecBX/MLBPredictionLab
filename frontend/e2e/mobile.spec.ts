@@ -139,6 +139,17 @@ test.describe("iPhone layout", () => {
     // Anchored to the bottom edge, not merely somewhere down the page.
     expect(box.y + box.height).toBeGreaterThan(viewport.height - 2);
 
+    // One row, every destination on it. A fifth tab once wrapped the bar
+    // onto a second row; a tab bar that stacks has stopped being a tab bar.
+    const capsule = (await nav.locator("ul").boundingBox())!;
+    expect(capsule.height, "nav capsule wrapped onto a second row").toBeLessThan(76);
+    const links = nav.getByRole("link");
+    await expect(links).toHaveCount(5);
+    for (const link of await links.all()) {
+      const b = (await link.boundingBox())!;
+      expect(b.y - capsule.y, "a tab sits below the first row").toBeLessThan(8);
+    }
+
     await page.getByRole("link", { name: "Backtest" }).click();
     await page.waitForURL(/\/backtest/);
     await expect(page.getByRole("heading", { name: "Walk-forward backtest" })).toBeVisible();

@@ -4,7 +4,7 @@ import { Section } from "@/components/StatBlock";
 import { StreaksExplorer } from "@/components/StreaksExplorer";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { api } from "@/lib/api";
-import { longDate } from "@/lib/format";
+import { mediumDate } from "@/lib/format";
 import type { TeamStreaks } from "@/lib/streaks";
 
 export const metadata = { title: "Streaks" };
@@ -126,9 +126,9 @@ function CurrentStreaksTable({ teams }: { teams: TeamStreaks[] }) {
               <td>
                 <StreakChip value={team.current_streak} />
               </td>
-              <td className="tnum muted">
+              <td className="tnum muted whitespace-nowrap">
                 {team.current_streak_start
-                  ? longDate(team.current_streak_start, { weekday: false })
+                  ? mediumDate(team.current_streak_start)
                   : "—"}
               </td>
               <td>

@@ -105,12 +105,16 @@ export function BottomNav() {
       }}
     >
       <ul
-        className="glass grid w-full max-w-[26rem] grid-cols-4 border"
+        className="glass grid w-full max-w-[26rem] border"
         style={{
           pointerEvents: "auto",
           borderColor: "var(--border)",
           borderRadius: "var(--radius-xl)",
           boxShadow: "var(--shadow-3), inset 0 1px 0 var(--glow)",
+          // One column per destination, derived from the list itself. A
+          // hardcoded count wrapped the bar onto a second row the day a
+          // fifth tab was added; a tab bar is one row by definition.
+          gridTemplateColumns: `repeat(${ITEMS.length}, minmax(0, 1fr))`,
         }}
       >
         {ITEMS.map((item) => {

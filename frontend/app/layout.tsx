@@ -88,11 +88,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           className="glass sticky top-0 z-30 border-b"
           style={{
             borderColor: "color-mix(in srgb, var(--border) 78%, transparent)",
+            // Installed to a home screen the app draws under the translucent
+            // status bar; this keeps the wordmark and toggle clear of the
+            // clock and battery. Zero in a browser tab.
+            paddingTop: "env(safe-area-inset-top, 0px)",
           }}
         >
           {/* One row on every screen. On a phone the four destinations move to
               the bottom bar, so nothing here wraps. */}
-          <div className="safe-x mx-auto flex h-[calc(var(--header-h)-1px)] max-w-[1240px] items-center gap-3">
+          <div className="safe-x mx-auto flex h-[calc(var(--header-row)-1px)] max-w-[1240px] items-center gap-3">
             <Link
               href="/"
               className="tap min-w-0 shrink items-center gap-2.5"
