@@ -20,7 +20,7 @@ import { asset } from "@/lib/asset";
  */
 const HAS_LOGO = existsSync(path.join(process.cwd(), "public", "logo.png"));
 
-export function BrandMark({ size = 27 }: { size?: number }) {
+export function BrandMark({ size = 36 }: { size?: number }) {
   if (HAS_LOGO) {
     return (
       <Image
@@ -28,7 +28,7 @@ export function BrandMark({ size = 27 }: { size?: number }) {
         alt=""
         width={size}
         height={size}
-        // A detailed shield read at 22px in a header. Serving the full-resolution
+        // A detailed shield read at 36px in a header. Serving the full-resolution
         // file and letting the browser downscale is what keeps it legible at a
         // phone's pixel density.
         quality={90}
@@ -46,7 +46,7 @@ export function BrandMark({ size = 27 }: { size?: number }) {
  * The fallback mark.
  *
  * A baseball's two seams reduced to their essential curves, inside a rounded
- * square. It has to survive being rendered at 22px on a phone header, so it is
+ * square. It has to survive being rendered small on a phone header, so it is
  * two strokes and a circle — anything more becomes mud at that size — and it
  * inherits the accent colour so it works on any surface in either theme without
  * a second asset.

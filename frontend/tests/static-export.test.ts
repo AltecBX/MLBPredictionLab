@@ -24,7 +24,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { buildDates, isBuilt, shiftUtcIsoDate } from "@/lib/window";
+import { buildDates, isBuilt, shiftUtcIsoDate, viewerToday } from "@/lib/window";
 
 const APP = path.join(process.cwd(), "app");
 
@@ -80,5 +80,25 @@ describe("static export", () => {
     expect(buildToday({ BUILD_DATE: "2026-04-01" })).toBe("2026-04-01");
     // Junk is ignored rather than trusted.
     expect(buildToday({ BUILD_DATE: "nonsense" })).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  // Dates are constructed from local components and read back as local
+  // components, so these hold in any timezone the tests run in — which is the
+  // point: viewerToday is the reader's calendar, wherever they are.
+  it("keeps the viewer's evening on the viewer's date, whatever UTC says", () => {
+    // 9:01 PM local on Aug 2 — the reported bug had UTC already on Aug 3.
+    expect(viewerToday(new Date(2026, 7, 2, 21, 1))).toBe("2026-08-02");
+  });
+
+  it("holds tonight's date until 4 AM for a West Coast ninth inning", () => {
+    expect(viewerToday(new Date(2026, 7, 3, 1, 30))).toBe("2026-08-02");
+    expect(viewerToday(new Date(2026, 7, 3, 3, 59))).toBe("2026-08-02");
+    // By breakfast it is genuinely the next day.
+    expect(viewerToday(new Date(2026, 7, 3, 4, 0))).toBe("2026-08-03");
+    expect(viewerToday(new Date(2026, 7, 3, 9, 0))).toBe("2026-08-03");
+  });
+
+  it("rolls the 4 AM boundary across month edges correctly", () => {
+    expect(viewerToday(new Date(2026, 8, 1, 0, 30))).toBe("2026-08-31");
   });
 });

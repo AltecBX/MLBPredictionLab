@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { FreshnessStrip } from "@/components/FreshnessStrip";
 import { LiveSlate } from "@/components/LiveSlate";
+import { TodayLink } from "@/components/TodayLink";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { WakeRetry } from "@/components/WakeRetry";
 import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
@@ -114,7 +115,6 @@ export async function GameCenter({ date }: { date: string }) {
  * numeric part carries the rest, so both fit on a single baseline.
  */
 function DateHeader({ date, today }: { date: string; today: string }) {
-  const isToday = date === today;
   const prev = shiftUtcIsoDate(date, -1);
   const next = shiftUtcIsoDate(date, 1);
 
@@ -144,26 +144,9 @@ function DateHeader({ date, today }: { date: string; today: string }) {
               </span>
             </span>
           </p>
-          {!isToday ? (
-            <Link
-              href={`/d/${today}/`}
-              className="pill tap t-micro shrink-0 px-2.5"
-              style={{ fontWeight: 580 }}
-            >
-              Today
-            </Link>
-          ) : (
-            <span
-              className="t-micro shrink-0 rounded-full px-2 py-0.5"
-              style={{
-                background: "var(--accent-soft)",
-                color: "var(--accent)",
-                fontWeight: 580,
-              }}
-            >
-              Today
-            </span>
-          )}
+          {/* Aimed by the reader's clock, not the build's — the build lives
+              in UTC, where it is tomorrow from 8 PM Eastern onward. */}
+          <TodayLink pageDate={date} buildDate={today} />
         </div>
 
         <DateArrow dir="right" date={next} today={today} label="Next day" />
