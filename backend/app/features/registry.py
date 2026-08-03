@@ -20,6 +20,7 @@ class FeatureCategory(StrEnum):
     ENVIRONMENT = "environment"
     TEAM_STRENGTH = "team_strength"
     HISTORY = "history"
+    STREAKS = "streaks"
 
 
 CATEGORY_LABELS: dict[str, str] = {
@@ -31,6 +32,7 @@ CATEGORY_LABELS: dict[str, str] = {
     FeatureCategory.ENVIRONMENT: "Ballpark and environment",
     FeatureCategory.TEAM_STRENGTH: "Team strength",
     FeatureCategory.HISTORY: "Matchup history",
+    FeatureCategory.STREAKS: "Streaks",
 }
 
 
@@ -876,10 +878,88 @@ AVAILABILITY: list[FeatureSpec] = [
     ),
 ]
 
+# --- Streaks (fs_v8) --------------------------------------------------------
+#
+# Raw streak length never enters the model directly — the owner's own
+# instruction, and the right one: a streak is mostly a restatement of team
+# strength plus noise. What is offered to the gate is the processed story:
+# capped lengths, the shrunk historical continuation probability in win
+# direction, that probability minus what the pre-game expectation already said
+# (the only part that is not already team strength), and the run differential
+# and opponent quality across the current streak's games. All of it computed
+# from strictly-earlier results via knowledge_time; see features/streaks.py.
+#
+# The display section (/streaks) exists regardless of this group's verdict —
+# it is research and reading material. The verdict on the FEATURES is recorded
+# in `measurement` below once compare-feature-sets has run.
+STREAKS_MEASUREMENT = (
+    "Walk-forward fs_v1 vs fs_v8 at pinned regularisation on three seasons: "
+    "2024 (trained from 2023), 2025 (trained from 2023-24), 2026 to date "
+    "(trained from 2023-25). See MODELING_PLAN.md, Streak features, for the "
+    "table and verdict."
+)
+
+STREAKS: list[FeatureSpec] = [
+    FeatureSpec(
+        "sk_win_streak_capped_diff", "Winning streak", FeatureCategory.STREAKS,
+        "Current winning streak entering the game, capped at five so one "
+        "outlier run cannot dominate a linear term.",
+        unit="games", window="season", phase=2, available=False,
+        measurement=STREAKS_MEASUREMENT,
+        narrative="carries the longer winning streak into tonight",
+    ),
+    FeatureSpec(
+        "sk_loss_streak_capped_diff", "Losing streak", FeatureCategory.STREAKS,
+        "Current losing streak entering the game, capped at five.",
+        unit="games", window="season", phase=2, available=False,
+        higher_favors_home=False, measurement=STREAKS_MEASUREMENT,
+        narrative="carries the shorter losing streak into tonight",
+    ),
+    FeatureSpec(
+        "sk_continue_prob_diff", "Streak history, win direction",
+        FeatureCategory.STREAKS,
+        "The team's historical next-game win rate at exactly this streak "
+        "length, shrunk toward the league rate at the same length; both sides "
+        "computed from strictly earlier games. Missing when no streak of two "
+        "or more is active.",
+        unit="prob", window="all", min_sample=10, phase=2, available=False,
+        measurement=STREAKS_MEASUREMENT,
+        narrative="has historically fared better after streaks like its current one",
+    ),
+    FeatureSpec(
+        "sk_adjusted_effect_diff", "Adjusted streak effect", FeatureCategory.STREAKS,
+        "The shrunk streak-history win rate minus the pre-game expectation "
+        "for those same historical games — the part of the streak story that "
+        "is not already team strength. Missing when no streak of two or more "
+        "is active.",
+        unit="pp", window="all", min_sample=10, phase=2, available=False,
+        measurement=STREAKS_MEASUREMENT,
+        narrative="has outrun expectations after streaks like its current one",
+    ),
+    FeatureSpec(
+        "sk_streak_run_diff_diff", "Run differential during the streak",
+        FeatureCategory.STREAKS,
+        "Average run differential across the current streak's games; zero "
+        "when no streak is active, which is the true value of no streak.",
+        unit="runs/g", window="streak", phase=2, available=False,
+        measurement=STREAKS_MEASUREMENT,
+        narrative="has won or lost by more during its current run",
+    ),
+    FeatureSpec(
+        "sk_streak_opp_elo_diff", "Opponent quality during the streak",
+        FeatureCategory.STREAKS,
+        "Average pre-game Elo of the opponents faced during the current "
+        "streak, relative to 1500; zero when no streak is active.",
+        unit="pts", window="streak", phase=2, available=False,
+        measurement=STREAKS_MEASUREMENT,
+        narrative="has built its current run against tougher opposition",
+    ),
+]
+
 REGISTRY: dict[str, FeatureSpec] = {
     s.key: s
     for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + WEATHER + AVAILABILITY
-    + DEFERRED
+    + STREAKS + DEFERRED
 }
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
@@ -911,6 +991,9 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # fs_v1 + roster availability. On fs_v1 for the same reason as every
     # candidate since fs_v3: stacking on a rejected group measures the pair.
     "fs_v7": [s.key for s in FS_V1 + AVAILABILITY],
+    # fs_v1 + the processed streak story. On fs_v1 for the same reason as every
+    # candidate since fs_v3: stacking on a rejected group measures the pair.
+    "fs_v8": [s.key for s in FS_V1 + STREAKS],
 }
 
 

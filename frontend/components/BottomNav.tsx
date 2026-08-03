@@ -23,6 +23,7 @@ import { usePathname } from "next/navigation";
 
 const ITEMS = [
   { href: "/", label: "Games", match: (p: string) => p === "/" || p.startsWith("/game") || p.startsWith("/d/") },
+  { href: "/streaks", label: "Streaks", match: (p: string) => p.startsWith("/streaks") },
   { href: "/backtest", label: "Backtest", match: (p: string) => p.startsWith("/backtest") },
   {
     href: "/methodology",
@@ -55,6 +56,14 @@ function Icon({ name, active }: { name: string; active: boolean }) {
         <circle cx="12" cy="12" r="9" />
         <path d="M5.6 5.6c2.2 1.8 3.4 4 3.4 6.4s-1.2 4.6-3.4 6.4" />
         <path d="M18.4 5.6C16.2 7.4 15 9.6 15 12s1.2 4.6 3.4 6.4" />
+      </svg>
+    );
+  }
+  if (name === "Streaks") {
+    // A run of results: three rising steps.
+    return (
+      <svg {...common}>
+        <path d="M3 17.5h4.5v-4H12v-4h4.5V5H21" />
       </svg>
     );
   }

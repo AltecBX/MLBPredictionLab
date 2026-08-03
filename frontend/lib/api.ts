@@ -12,6 +12,7 @@ import type {
   GameDetail,
   GameListResponse,
 } from "./types";
+import type { StreaksPayload } from "./streaks";
 
 /**
  * A plain environment bag. Deliberately not `NodeJS.ProcessEnv`, which requires
@@ -209,6 +210,7 @@ export const api = {
   game: (id: number | string) =>
     request<GameDetail>(`/games/${id}`, { revalidate: 30 }),
   backtest: () => request<BacktestReport>("/backtest/latest", { revalidate: 300 }),
+  streaks: () => request<StreaksPayload>("/streaks", { revalidate: 300 }),
   diagnostics: () =>
     request<DiagnosticsSnapshot>("/diagnostics", { revalidate: 15 }),
   features: () =>
