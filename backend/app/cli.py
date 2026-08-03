@@ -9,6 +9,7 @@ import argparse
 import json
 import sys
 from datetime import date
+from pathlib import Path
 
 from app.core.clock import utcnow
 from app.core.config import settings
@@ -423,6 +424,111 @@ def cmd_compare_feature_sets(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_challenger_check(args: argparse.Namespace) -> int:
+    """XGBoost, LightGBM, Elo and a stacked meta-model against the baseline.
+
+    One walk-forward pass, every model on identical out-of-sample games, the
+    promotion rule answered from the result. Exits 0 whatever the verdict —
+    "the baseline stands" is a successful measurement, not an error.
+    """
+    from app.backtest.challenger_report import (
+        paired_against_baseline,
+        promotion_verdict,
+        score_model,
+        strip_private,
+    )
+    from app.backtest.walkforward import make_steps
+    from app.db.session import session_scope
+    from app.modeling.challenger import causal_calibrate, collect_oof, stacked_oof
+    from app.modeling.dataset import build_dataset
+    from app.modeling.registry import get_active_version
+
+    seasons = [int(s) for s in args.seasons.split(",")] if args.seasons else None
+    start = date.fromisoformat(args.start) if args.start else None
+
+    with session_scope() as session:
+        version = get_active_version(session)
+        C = float((version.hyperparameters or {}).get("C", 0.001))
+        dataset = build_dataset(session, seasons=seasons)
+        steps = make_steps(dataset.labelled, start=start, step_days=args.step_days)
+        oof, fold_meta = collect_oof(dataset, steps, C=C)
+
+    if oof.empty:
+        print(json.dumps({"error": "walk-forward produced no comparable games"}))
+        return 1
+
+    # Per-model calibration, selected prequentially on strictly-earlier OOF rows.
+    calibrated = {}
+    for name, raw in (
+        ("logistic", "raw_logistic"),
+        ("xgb", "raw_xgb"),
+        ("lgbm", "raw_lgbm"),
+        ("elo", "raw_elo"),
+    ):
+        stream = causal_calibrate(oof, raw)
+        oof[f"cal_{name}"] = stream.calibrated
+        calibrated[name] = {
+            "selected_method": stream.selected_method,
+            "pooled_candidates": stream.pooled,
+            "method_by_step": stream.method_by_step,
+        }
+
+    stack_probs, stack_mask, stack_weights = stacked_oof(
+        oof, input_columns=("cal_logistic", "cal_xgb", "cal_lgbm", "cal_elo")
+    )
+    oof["p_stack"] = stack_probs
+    stack_stream = causal_calibrate(
+        oof[stack_mask].reset_index(drop=True).assign(raw_stack=stack_probs[stack_mask]),
+        "raw_stack",
+    )
+    stacked = oof[stack_mask].reset_index(drop=True)
+    stacked["cal_stack"] = stack_stream.calibrated
+    calibrated["stack"] = {
+        "selected_method": stack_stream.selected_method,
+        "pooled_candidates": stack_stream.pooled,
+    }
+
+    full_seasons = sorted(
+        str(int(s)) for s, g in oof.groupby("season") if len(g) >= 1000
+    )
+
+    models = {
+        "logistic_baseline": ("p_logistic", oof),
+        "xgboost": ("cal_xgb", oof),
+        "lightgbm": ("cal_lgbm", oof),
+        "elo": ("cal_elo", oof),
+        "stacked_ensemble": ("cal_stack", stacked),
+    }
+    report: dict[str, object] = {
+        "n_games": int(len(oof)),
+        "n_stack_games": int(len(stacked)),
+        "baseline_C": C,
+        "seasons": full_seasons,
+        "calibration": {
+            k: {kk: vv for kk, vv in v.items() if kk != "method_by_step"}
+            for k, v in calibrated.items()
+        },
+        "folds": fold_meta["folds"],
+        "stack_weights": stack_weights,
+        "models": {},
+        "paired_vs_baseline": {},
+        "verdicts": {},
+    }
+    for label, (column, frame) in models.items():
+        report["models"][label] = score_model(frame, column)  # type: ignore[index]
+        if label == "logistic_baseline":
+            continue
+        paired = paired_against_baseline(frame, "p_logistic", column)
+        report["paired_vs_baseline"][label] = strip_private(paired)  # type: ignore[index]
+        report["verdicts"][label] = promotion_verdict(paired, full_seasons)  # type: ignore[index]
+
+    out = strip_private(report)
+    if args.out:
+        Path(args.out).write_text(json.dumps(out, indent=2, default=str))
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def cmd_check_sources(args: argparse.Namespace) -> int:
     from app.db.session import session_scope
     from app.services.diagnostics import refresh_freshness
@@ -561,6 +667,16 @@ def build_parser() -> argparse.ArgumentParser:
              "walk-forward, by the same rule the trainer uses.",
     )
     p.set_defaults(func=cmd_compare_feature_sets)
+
+    p = sub.add_parser(
+        "challenger-check",
+        help="XGBoost, LightGBM, Elo and a stacked meta-model vs the baseline, walk-forward",
+    )
+    p.add_argument("--seasons", default=None, help="e.g. 2024,2025; default all")
+    p.add_argument("--start", default=None, help="lower bound on test windows, YYYY-MM-DD")
+    p.add_argument("--step-days", type=int, default=30)
+    p.add_argument("--out", default=None, help="also write the JSON report here")
+    p.set_defaults(func=cmd_challenger_check)
 
     p = sub.add_parser(
         "simulate-check",
