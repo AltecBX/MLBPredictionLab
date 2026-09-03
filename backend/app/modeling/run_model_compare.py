@@ -183,6 +183,7 @@ def compare_run_models(
     coverage = {
         "park_measured": _share(merged, "park_measured"),
         "pitching_measured": _share(merged, "pitching_measured"),
+        "projected_measured": _share(merged, "projected_measured"),
     }
     verdict, reading = _judge_variants(results, coverage)
     return RunModelComparison(

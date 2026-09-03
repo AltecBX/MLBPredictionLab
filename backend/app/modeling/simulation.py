@@ -133,6 +133,41 @@ def expected_runs(
     )
 
 
+def projected_runs(
+    builder: FeatureBuilder, ctx: GameContext, as_of: datetime
+) -> RunMeans | None:
+    """Each side's expected runs from the multi-season projections.
+
+    The same multiplicative combination as `expected_runs`, with each team's
+    scoring and run-prevention rates taken from `features/projections.py`
+    instead of the season to date: the previous seasons, decayed, plus this
+    one, regressed toward the league. Identical in August with a full season
+    behind it; very different in April, when the base model's rates are the
+    league average for everyone.
+    """
+    league = builder.league_baseline(ctx.season, as_of)
+    if league.runs_per_game is None or league.runs_per_game <= 0:
+        return None
+    lg = float(league.runs_per_game)
+    home = builder.projections.team_values(ctx.home_team_id, ctx.season, as_of, lg)
+    away = builder.projections.team_values(ctx.away_team_id, ctx.season, as_of, lg)
+    rates = (
+        home["proj_off_rpg"], home["proj_ra_rpg"], away["proj_off_rpg"], away["proj_ra_rpg"]
+    )
+    if any(r.value is None or r.sample_size <= 0 for r in rates):
+        return None
+    home_off, home_def, away_off, away_def = (float(r.value) for r in rates)  # type: ignore[arg-type]
+    if min(home_off, home_def, away_off, away_def) <= 0:
+        return None
+    return RunMeans(
+        home=lg * (home_off / lg) * (away_def / lg),
+        away=lg * (away_off / lg) * (home_def / lg),
+        league=lg,
+        home_games=home["proj_off_rpg"].sample_size,
+        away_games=away["proj_off_rpg"].sample_size,
+    )
+
+
 def run_components(
     store: AsOfStore,
     builder: FeatureBuilder,
@@ -169,6 +204,7 @@ def run_components(
                 as_of,
             )
 
+    projected = projected_runs(builder, ctx, as_of)
     return RunComponents(
         home=means.home,
         away=means.away,
@@ -185,6 +221,8 @@ def run_components(
         away_pitching=pitching_split(
             store, ctx.away_team_id, ctx.away_starter_id, as_of, season_start
         ),
+        home_projected=None if projected is None else projected.home,
+        away_projected=None if projected is None else projected.away,
     )
 
 
@@ -238,6 +276,7 @@ def simulate_slate(
         row["pitching_measured"] = (
             components.home_pitching.is_measured and components.away_pitching.is_measured
         )
+        row["projected_measured"] = components.projected_measured
         rows.append(row)
     return pd.DataFrame(rows)
 

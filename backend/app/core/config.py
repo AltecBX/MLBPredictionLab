@@ -7,10 +7,10 @@ rather than defaulting silently. See ARCHITECTURE.md §11.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -46,7 +46,14 @@ class Settings(BaseSettings):
 
     # --- API ---------------------------------------------------------------
     api_prefix: str = "/api/v1"
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # `NoDecode` hands the raw string to `_split_origins` below. Without it,
+    # pydantic-settings insists a list-typed field be JSON and refuses the
+    # comma-separated form that .env.example, docker-compose.yml and render.yaml
+    # all document — so the process would not start on its own documented
+    # configuration.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
     admin_api_key: str | None = Field(
         default=None,
         description="When unset, admin/diagnostics write routes are disabled.",

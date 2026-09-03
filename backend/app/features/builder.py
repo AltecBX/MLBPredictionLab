@@ -23,13 +23,14 @@ from app.features import aggregates as agg
 from app.features import availability as av
 from app.features import bullpen as bp
 from app.features import lineup_features as lf
+from app.features import projections as pj
 from app.features import statcast_features as sc
 from app.features import streaks as sk
 from app.features import weather_features as wx
 from app.features.asof import AsOfStore, season_start_utc
 from app.features.context import GameContext
 from app.features.elo import AsOfElo
-from app.features.registry import FS_V1, FeatureSpec, feature_keys
+from app.features.registry import REGISTRY, FeatureSpec, feature_keys
 from app.features.shrinkage import (
     K_H2H,
     K_PITCHER_BB_PCT,
@@ -134,6 +135,7 @@ class FeatureBuilder:
         self._batting_league_cache: dict[str, lf.LeagueBatting] = {}
         self._team_rate_cache: dict[tuple[int, str], dict[int, tuple[float, float, int]]] = {}
         self._streak_index: sk.StreakIndex | None = None
+        self.projections = pj.Projections(store)
 
     # -- league baselines --------------------------------------------------
     def league_baseline(self, season: int, as_of: datetime) -> LeagueBaseline:
@@ -258,6 +260,7 @@ class FeatureBuilder:
         values.update(self._history_values(team_id, opponent_id, ctx, as_of, season_start))
         values.update(self._availability_values(team_id, as_of))
         values.update(self._streak_values(team_id, ctx, as_of))
+        values.update(self._projection_values(team_id, starter_id, ctx, as_of, baseline))
 
         return SideFeatures(
             values=values,
@@ -820,6 +823,35 @@ class FeatureBuilder:
             self._streak_index = sk.StreakIndex(self.store.games)
         return self._streak_index.side_values(team_id, ctx.season, as_of)
 
+    def _projection_values(
+        self,
+        team_id: int,
+        starter_id: int | None,
+        ctx: GameContext,
+        as_of: datetime,
+        baseline: LeagueBaseline,
+    ) -> dict[str, FeatureValue]:
+        """Multi-season projections (fs_v9): team scoring and prevention, and
+        the starter's K−BB% and FIP, each pooled over prior seasons and the
+        season in progress. See features/projections.py."""
+        out = self.projections.team_values(
+            team_id, ctx.season, as_of, baseline.runs_per_game
+        )
+        # The league FIP constant is league ERA minus the raw numerator rate, so
+        # the raw rate the projection regresses toward is their difference.
+        numerator_now = (
+            baseline.era - baseline.fip_constant
+            if baseline.era is not None and baseline.fip_constant is not None
+            else None
+        )
+        out.update(
+            self.projections.starter_values(
+                starter_id, ctx.season, as_of,
+                baseline.k_pct, baseline.bb_pct, baseline.fip_constant, numerator_now,
+            )
+        )
+        return out
+
     def _availability_values(
         self, team_id: int, as_of: datetime
     ) -> dict[str, FeatureValue]:
@@ -918,6 +950,8 @@ class FeatureBuilder:
             ("sk_adjusted_effect_diff", "sk_adjusted_effect"),
             ("sk_streak_run_diff_diff", "sk_streak_run_diff"),
             ("sk_streak_opp_elo_diff", "sk_streak_opp_elo"),
+            ("proj_off_rpg_diff", "proj_off_rpg"),
+            ("proj_sp_k_minus_bb_pct_diff", "proj_sp_k_minus_bb_pct"),
         ):
             emit(key, _diff(home.get(source), away.get(source)))
 
@@ -948,6 +982,8 @@ class FeatureBuilder:
             ("il_offense_lost_diff", "il_offense_lost"),
             ("il_pitching_lost_diff", "il_pitching_lost"),
             ("sk_loss_streak_capped_diff", "sk_loss_streak"),
+            ("proj_ra_rpg_diff", "proj_ra_rpg"),
+            ("proj_sp_fip_diff", "proj_sp_fip"),
         ):
             emit(key, _diff(away.get(source), home.get(source)))
 
@@ -1061,5 +1097,11 @@ def _diff(a: FeatureValue, b: FeatureValue) -> FeatureValue:
     )
 
 
-def active_specs() -> list[FeatureSpec]:
-    return list(FS_V1)
+def active_specs(feature_set_version: str | None = None) -> list[FeatureSpec]:
+    """The specs of the feature set the model is configured to consume.
+
+    Read from the configured version rather than from the `FS_V1` constant, so
+    promoting a feature set changes what the feature dictionary and the
+    diagnostics screen report about the model actually being served.
+    """
+    return [REGISTRY[key] for key in feature_keys(feature_set_version or FEATURE_SET_VERSION)]
