@@ -125,6 +125,34 @@ def test_walk_forward_is_reproducible():
     assert np.allclose(first["prob"].to_numpy(), second["prob"].to_numpy())
 
 
+def test_a_thin_validation_slice_leaves_a_step_uncalibrated():
+    """Below the floor the step serves the raw fit; at the floor it calibrates.
+
+    Six fixture games a day: a 45-day slice is 270 rows, under the floor of
+    300, and a 60-day slice is 360, over it. A Platt fit on the opening week
+    once pulled a whole month toward the visitor (MODELING_PLAN.md); the floor
+    is what stops it.
+    """
+    from app.backtest.walkforward import MIN_CALIBRATION_ROWS
+    from app.modeling.dataset import LABEL_COLUMN
+    from app.modeling.logistic import LogisticWinModel
+
+    assert MIN_CALIBRATION_ROWS == 300
+    dataset = _dataset(days=200)
+    thin = make_steps(dataset.labelled, step_days=30, validation_days=45)[-1]
+    wide = make_steps(dataset.labelled, step_days=30, validation_days=60)[-1]
+    frame = dataset.labelled
+    for step, calibrated in ((thin, False), (wide, True)):
+        train = frame[frame["official_date"] <= step.train_end]
+        validation = train[train["official_date"] >= step.validation_start]
+        assert (len(validation) >= MIN_CALIBRATION_ROWS) is calibrated
+        result = run_walk_forward(dataset, [step], C=0.1, min_train_rows=200)[0]
+        raw = LogisticWinModel(feature_names=FEATURES, C=0.1).fit(train, LABEL_COLUMN)
+        test = frame[(frame["official_date"] >= step.test_start) & (frame["official_date"] <= step.test_end)]
+        same_as_raw = np.allclose(result.predictions["prob"].to_numpy(), raw.predict_raw(test))
+        assert same_as_raw is not calibrated
+
+
 def test_train_end_date_is_recorded_on_every_row():
     dataset = _dataset(days=200)
     steps = make_steps(dataset.labelled, step_days=30)
@@ -331,8 +359,23 @@ def _served_fixture(monkeypatch):
     monkeypatch.setattr(served_module, "simulate_slate", fake_simulate_slate)
     monkeypatch.setattr(served_module, "_observed_runs", lambda store, ids: np.array([4.0, 5.0, 3.0, 6.0, 4.0, 2.0]))
     monkeypatch.setattr(served_module, "FeatureBuilder", lambda store: object())
+
+    def fake_asof_sizes(store, predictions, fallback):
+        # Serving fits dispersion per slate; the evaluation must ask for it.
+        calls["asof_fallback"] = fallback
+        return {int(g): 3.5 for g in predictions["game_id"]}
+
+    monkeypatch.setattr(served_module, "_asof_sizes", fake_asof_sizes)
     evaluation = evaluate_served(object(), dataset, frame, simulations=777)
     return frame, simulated, calls, evaluation
+
+
+def test_served_dispersion_is_fitted_per_slate_as_serving_fits_it(monkeypatch):
+    _, _, calls, evaluation = _served_fixture(monkeypatch)
+    assert "asof_fallback" in calls
+    assert evaluation.dispersion["fit"].startswith("as-of")
+    assert evaluation.dispersion["asof_nb_size_min"] == 3.5
+    assert evaluation.dispersion["asof_nb_size_max"] == 3.5
 
 
 def test_served_probability_blends_where_a_simulation_exists_and_falls_back_where_not(monkeypatch):
@@ -384,7 +427,7 @@ def test_served_config_records_what_was_blended(monkeypatch):
     assert config["run_model"] == "projected"
     assert config["simulations"] == 777
     assert config["n_blended"] + config["n_logistic_only"] == config["n_games"]
-    assert config["dispersion"]["team_games"] == 6
+    assert config["dispersion"]["training_side_team_games"] == 6
     summary = evaluation.summary()
     assert summary["log_loss"] == pytest.approx(evaluation.metrics.log_loss)
 

@@ -59,6 +59,17 @@ RELIEF_IP_PER_DAY_FLOOR = 1.5
 # Beyond this many days, a starter's layoff says nothing more about tonight.
 MAX_MEANINGFUL_REST = 10.0
 
+# A league rate for the season in progress is shrunk toward the previous
+# season's completed rate by this many team-games: the two carry equal weight
+# at 150 games, about ten days into April, and the previous season is a
+# twentieth of the answer by October. League rates move a tenth of a run a
+# year and a season's first week of them is noise; before the first pitch of
+# a season there is no current rate at all, and every prior that reads one —
+# every shrunk feature, the projections' league anchors, the run model's
+# league mean — was undefined until the store started counting spring
+# training, which is not a fix. Pre-registered, not fitted.
+LEAGUE_PRIOR_K_TEAM_GAMES = 300.0
+
 
 @dataclass(frozen=True, slots=True)
 class LeagueBaseline:
@@ -77,7 +88,36 @@ class LeagueBaseline:
     def_efficiency: float | None
     relief_era: float | None
     relief_k_minus_bb_pct: float | None
+    #: Team-games of the season in progress behind these rates. Zero before
+    #: the season's first pitch, when the rates are the previous season's.
     team_games: int
+
+    RATE_FIELDS = (
+        "runs_per_game", "era", "fip_constant", "whip", "k_pct", "bb_pct", "hr_per_9",
+        "woba_proxy", "batter_k_pct", "errors_per_game", "def_efficiency",
+        "relief_era", "relief_k_minus_bb_pct",
+    )
+
+    def shrunk_toward(self, prior: LeagueBaseline | None, k: float) -> LeagueBaseline:
+        """These rates, regressed toward ``prior``'s by this season's sample.
+
+        Field by field: ``(rate × n + prior × k) / (n + k)`` with ``n`` this
+        season's team-games. A rate this season has not produced yet is the
+        prior's; a rate the prior lacks is this season's alone.
+        """
+        if prior is None:
+            return self
+        n = float(self.team_games)
+        values: dict[str, Any] = {}
+        for name in self.RATE_FIELDS:
+            now, then = getattr(self, name), getattr(prior, name)
+            if then is None:
+                values[name] = now
+            elif now is None or n <= 0:
+                values[name] = then
+            else:
+                values[name] = (float(now) * n + float(then) * k) / (n + k)
+        return LeagueBaseline(team_games=self.team_games, **values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,12 +150,23 @@ class FeatureVector:
 
     @property
     def is_usable(self) -> bool:
-        """A vector with no team history at all cannot support a prediction."""
+        """A vector with no team history at all cannot support a prediction.
+
+        History is this season's regular-season games, or the prior seasons
+        the projections pool. Opening day has none of the former and plenty of
+        the latter, and a side whose projection stands on a real sample is
+        predictable — the season-to-date features are simply missing, as they
+        are for any team a week into April. A side with neither is not.
+        """
         return (
-            self.home.team_games_sample > 0
-            and self.away.team_games_sample > 0
+            self._has_history(self.home)
+            and self._has_history(self.away)
             and self.completeness > 0.0
         )
+
+    @staticmethod
+    def _has_history(side: SideFeatures) -> bool:
+        return side.team_games_sample > 0 or side.get("proj_off_rpg").sample_size > 0
 
 
 class FeatureBuilder:
@@ -145,6 +196,12 @@ class FeatureBuilder:
         it is strictly earlier than any prediction made that day, so a game
         played earlier the same day can never influence the prior used for a
         later game. Conservative by construction.
+
+        The season in progress is shrunk toward the previous season's
+        completed rates by `LEAGUE_PRIOR_K_TEAM_GAMES`, so the rates exist on
+        opening day and settle rather than lurch through April. The previous
+        season is read as of the first day of this one — every game of it is
+        knowable then and none of this one is.
         """
         day = as_of.astimezone(UTC).date()
         key = (season, day.isoformat())
@@ -153,6 +210,18 @@ class FeatureBuilder:
             return cached
 
         cut = datetime(day.year, day.month, day.day, tzinfo=UTC)
+        current = self._season_league_rates(season, cut)
+        previous = self._season_league_rates(season - 1, season_start_utc(season))
+        baseline = current.shrunk_toward(previous, LEAGUE_PRIOR_K_TEAM_GAMES)
+        self._league_cache[key] = baseline
+        return baseline
+
+    def _season_league_rates(self, season: int, cut: datetime) -> LeagueBaseline:
+        """One season's league rates from its regular-season games before ``cut``."""
+        key = (season, f"raw:{cut.isoformat()}")
+        cached = self._league_cache.get(key)
+        if cached is not None:
+            return cached
         start = season_start_utc(season)
         team_frame = self.store.league_team_games_asof(cut, start)
         pitch_frame = self.store.league_pitcher_games_asof(cut, start)

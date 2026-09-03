@@ -248,6 +248,14 @@ lock; the highest probability the served model has emitted on those three
 seasons is 87.6%, and it went past the market's forty-two-year maximum of
 73.7% on 0.06% of games.
 
+Those rates were, until September 2026, computed with spring-training games
+inside them, and the walk-forward could fit a calibrator on a single opening
+week. Correcting both ([MODELING_PLAN.md](MODELING_PLAN.md) § Spring
+training was inside every season-to-date rate) left the served log loss where
+it was — 0.68102 to 0.68121 on the same games, interval spanning zero — and
+halved its calibration error, 0.96% to 0.52%. It is adopted as a correction,
+and recorded as the null result it is on the scoring rule.
+
 Reliability of the served figure by probability band — the honest answer to
 "how often does a 62% pick actually win?" — on those same 6,900 games:
 

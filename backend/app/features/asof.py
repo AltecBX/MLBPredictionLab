@@ -83,8 +83,45 @@ def _ns_array(series: pd.Series) -> np.ndarray:
 
 
 def season_start_utc(season: int) -> datetime:
-    """Conservative season boundary. Spring training games are excluded by game_type."""
+    """Conservative season boundary.
+
+    January the first, so that every game of a season falls after it. That is
+    only a *season* boundary because the store admits nothing but regular-season
+    games into the frames the rates read (`RATE_GAME_TYPES`); it is not itself
+    what keeps spring training out.
+    """
     return datetime(season, 1, 1, tzinfo=UTC)
+
+
+#: Game types whose box scores feed the season-to-date rates, the projections
+#: and the run model: the regular season only. Spring training (S) is split
+#: squads and minor-league line-ups and it is a sixth of a team's games by the
+#: All-Star break; the postseason (F, D, L, W) is played after every
+#: regular-season prediction has been made and is not part of a season's
+#: statistics anywhere else. Neither belongs in a rate that claims to describe
+#: the regular season. This constant exists because for the first year of this
+#: repository they were in every one of them, and `season_start_utc` said
+#: otherwise.
+RATE_GAME_TYPES = frozenset({"R"})
+
+#: Game types Elo replays and the schedule index counts: every competitive
+#: game, the regular season and the postseason. Exhibitions do not move a
+#: rating, and the days since a team's last spring game are not rest.
+COMPETITIVE_GAME_TYPES = frozenset({"R", "F", "D", "L", "W"})
+
+
+def competitive_games(games: pd.DataFrame) -> pd.DataFrame:
+    """The competitive subset of a games frame; a frame with no type column is left whole."""
+    if games.empty or "game_type" not in games.columns:
+        return games
+    return games[games["game_type"].isin(COMPETITIVE_GAME_TYPES)]
+
+
+def rate_game_ids(games: pd.DataFrame) -> set[int] | None:
+    """Ids of the games whose lines feed the rates, or None when types are unknown."""
+    if games.empty or "game_type" not in games.columns:
+        return None
+    return set(games.loc[games["game_type"].isin(RATE_GAME_TYPES), "id"].astype(int).tolist())
 
 
 #: Seasons loaded BEFORE the earliest season a caller asks for. The
@@ -129,6 +166,15 @@ class AsOfStore:
         injuries: pd.DataFrame | None = None,
     ) -> None:
         self.games = games
+        # Only regular-season lines feed the rates. Applied here rather than in
+        # `load` so that a store built any other way — a test fixture, a
+        # measurement script — obeys the same rule as production.
+        keep = rate_game_ids(games)
+        if keep is not None:
+            team_games = self._regular_season(team_games, keep)
+            pitcher_games = self._regular_season(pitcher_games, keep)
+            batter_games = self._regular_season(batter_games, keep)
+            batting_orders = self._regular_season(batting_orders, keep)
         self.pitcher_games = pitcher_games
         self.players = players
         self.ballparks = ballparks
@@ -183,7 +229,7 @@ class AsOfStore:
         self._orders_index = self._build_index(self.batting_orders, "team_id")
         self._team_pitchers_index = self._build_index(pitcher_games, "team_id")
         self._team_batters_index = self._build_index(self.batter_games, "team_id")
-        self._schedule_index = self._build_schedule_index(games)
+        self._schedule_index = self._build_schedule_index(competitive_games(games))
         self._weather_index = (
             {}
             if self.weather.empty
@@ -344,6 +390,13 @@ class AsOfStore:
         )
 
     # -- preparation -------------------------------------------------------
+    @staticmethod
+    def _regular_season(frame: pd.DataFrame | None, keep: set[int]) -> pd.DataFrame | None:
+        """Drop the lines of games outside `RATE_GAME_TYPES`."""
+        if frame is None or frame.empty or "game_id" not in frame.columns:
+            return frame
+        return frame[frame["game_id"].isin(keep)].reset_index(drop=True)
+
     @staticmethod
     def _to_utc(frame: pd.DataFrame, *columns: str) -> pd.DataFrame:
         for column in columns:

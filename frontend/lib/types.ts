@@ -465,6 +465,9 @@ export interface SanityFlag {
   value: number;
   threshold: number;
   detail: string;
+  /** Which figure tripped the gate: "served" or "logistic". Absent on runs
+   *  from before the served figure was scored. */
+  figure?: string;
 }
 
 /** The figure the product serves — logistic blended with the run simulation —

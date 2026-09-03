@@ -16,6 +16,14 @@ Conventions used throughout:
 * All team-level features are computed for both sides and enter the model as a
   **home-minus-away difference** unless noted, which makes the model's sign
   convention unambiguous: positive → favors home.
+* **Which games count.** Every rate, projection and run mean is computed from
+  regular-season games only (`RATE_GAME_TYPES` in `app/features/asof.py`).
+  Spring training and the postseason never enter a season-to-date sample.
+  Elo and the schedule features count every competitive game, the regular
+  season and the postseason, and never an exhibition. The rule is enforced
+  once, in the as-of store, and pinned by `tests/test_game_types.py`; see
+  MODELING_PLAN.md § Spring training was inside every season-to-date rate for
+  the year it was not.
 
 ---
 

@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from app.features.asof import competitive_games
+
 BASE_RATING = 1500.0
 DEFAULT_K = 6.0
 DEFAULT_HOME_ADVANTAGE = 24.0
@@ -83,16 +85,22 @@ class EloEngine:
         return self.pregame.get((int(game_id), int(team_id)), self.rating(team_id))
 
 
+def _rated_games(games: pd.DataFrame) -> pd.DataFrame:
+    """Completed competitive games, in order. An exhibition moves no rating."""
+    games = competitive_games(games)
+    return games[
+        games["is_final"].fillna(False)
+        & games["home_score"].notna()
+        & games["away_score"].notna()
+    ].sort_values("game_date_utc")
+
+
 def build_elo_history(games: pd.DataFrame, **kwargs: float) -> EloEngine:
     """Single forward pass over completed games in chronological order."""
     engine = EloEngine(**kwargs)  # type: ignore[arg-type]
     if games.empty:
         return engine
-    completed = games[
-        games["is_final"].fillna(False)
-        & games["home_score"].notna()
-        & games["away_score"].notna()
-    ].sort_values("game_date_utc")
+    completed = _rated_games(games)
     for row in completed.itertuples():
         engine.observe(
             game_id=int(row.id),
@@ -124,11 +132,7 @@ class AsOfElo:
         self.engine = engine
         if games.empty:
             return
-        completed = games[
-            games["is_final"].fillna(False)
-            & games["home_score"].notna()
-            & games["away_score"].notna()
-        ].sort_values("game_date_utc")
+        completed = _rated_games(games)
         for row in completed.itertuples():
             # The rating is knowable only after the game has been played.
             knowable_at = row.knowledge_time

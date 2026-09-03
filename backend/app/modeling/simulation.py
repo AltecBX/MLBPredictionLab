@@ -181,10 +181,21 @@ def run_components(
     Computing each one by a separate pass over the as-of store would leave that to
     trust; computing the pieces once and combining them arithmetically makes it
     structural.
+
+    A game is simulable when *either* the base means or the projected means can
+    be formed. The serving path tries the projection first and falls back to the
+    season-to-date means, so a game the projection covers but the base gate
+    would reject — a team ten games into its season with three seasons behind
+    it — is served, and must be scored here as served. Only a game with neither
+    returns None.
     """
     means = expected_runs(store, builder, ctx, as_of)
-    if means is None or not means.is_usable:
+    base_usable = means is not None and means.is_usable
+    projected = projected_runs(builder, ctx, as_of)
+    projected_usable = projected is not None and projected.is_usable
+    if not base_usable and not projected_usable:
         return None
+    league = means.league if means is not None else projected.league  # type: ignore[union-attr]
 
     season_start = season_start_utc(ctx.season)
     park_factor, home_exposure, away_exposure, park_measured = 1.0, 1.0, 1.0, False
@@ -204,13 +215,12 @@ def run_components(
                 as_of,
             )
 
-    projected = projected_runs(builder, ctx, as_of)
     return RunComponents(
-        home=means.home,
-        away=means.away,
-        league=means.league,
-        home_games=means.home_games,
-        away_games=means.away_games,
+        home=means.home if base_usable else None,  # type: ignore[union-attr]
+        away=means.away if base_usable else None,  # type: ignore[union-attr]
+        league=league,
+        home_games=means.home_games if means is not None else 0,
+        away_games=means.away_games if means is not None else 0,
         park_factor=park_factor,
         home_exposure=home_exposure,
         away_exposure=away_exposure,
@@ -221,8 +231,10 @@ def run_components(
         away_pitching=pitching_split(
             store, ctx.away_team_id, ctx.away_starter_id, as_of, season_start
         ),
-        home_projected=None if projected is None else projected.home,
-        away_projected=None if projected is None else projected.away,
+        # Usable only, as serving requires: a projection with too thin a sample
+        # falls back to the base means there, so it must here.
+        home_projected=projected.home if projected_usable else None,  # type: ignore[union-attr]
+        away_projected=projected.away if projected_usable else None,  # type: ignore[union-attr]
     )
 
 
@@ -269,10 +281,16 @@ def simulate_slate(
         # serving time there is no training side to fit on.
         game_size = size if size_by_game is None else size_by_game.get(record.game_id, size)
         for model in models:
-            home, away = components.means(model)
+            means = components.means(model)
+            if means is None:
+                # This variant has no means for this game; another may.
+                row[f"sim_{model.name}"] = None
+                continue
+            home, away = means
             sim = simulate_game(home, away, game_size, simulations=simulations, seed=seed)
             row[f"sim_{model.name}"] = sim.home_win_prob
         row["sim_prob"] = row.get(f"sim_{SERVED.name}")
+        row["base_measured"] = components.base_measured
         row["park_measured"] = components.park_measured
         row["pitching_measured"] = (
             components.home_pitching.is_measured and components.away_pitching.is_measured

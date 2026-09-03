@@ -247,9 +247,12 @@ class RunComponents:
     they are supposed to differ in and nothing else.
     """
 
-    #: The base model's expected runs, before any refinement.
-    home: float
-    away: float
+    #: The base model's expected runs, before any refinement. None when the
+    #: season-to-date means cannot be formed — the opening fortnight — in
+    #: which case only a variant with its own means (the projected one) can
+    #: be simulated, exactly as the serving path falls through.
+    home: float | None
+    away: float | None
     league: float
     home_games: int
     away_games: int
@@ -272,6 +275,10 @@ class RunComponents:
         return self.home_projected is not None and self.away_projected is not None
 
     @property
+    def base_measured(self) -> bool:
+        return self.home is not None and self.away is not None
+
+    @property
     def park_adjustment(self) -> float:
         """One scalar, applied to both sides — a park acts on total runs.
 
@@ -285,11 +292,21 @@ class RunComponents:
             return 1.0
         return self.park_factor / denominator
 
-    def means(self, model: RunModel) -> tuple[float, float]:
-        """(home, away) expected runs under ``model``."""
-        home, away = self.home, self.away
+    def means(self, model: RunModel) -> tuple[float, float] | None:
+        """(home, away) expected runs under ``model``, or None if it has none.
+
+        The projected variant uses its own means and falls back to the base
+        means when the projection could not be formed; every other variant
+        needs the base means. A variant with no means for a game is not
+        simulated for that game — the same rule the serving path applies,
+        which serves the logistic alone rather than a made-up number.
+        """
         if model.projected and self.projected_measured:
             home, away = float(self.home_projected), float(self.away_projected)  # type: ignore[arg-type]
+        elif self.base_measured:
+            home, away = float(self.home), float(self.away)  # type: ignore[arg-type]
+        else:
+            return None
         if model.pitching:
             # The away team's pitching decides what the home team scores.
             home *= self.away_pitching.multiplier

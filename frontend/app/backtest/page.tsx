@@ -371,7 +371,8 @@ export default async function BacktestPage() {
           </p>
           <ul className="mt-2 flex flex-col gap-1.5 text-xs">
             {flags.map((flag) => (
-              <li key={`${flag.code}-${flag.gate}`}>
+              <li key={`${flag.figure ?? "run"}-${flag.code}-${flag.gate}`}>
+                {flag.figure ? <span className="muted">{flag.figure} · </span> : null}
                 <span className="font-medium">{flag.code}</span> · {flag.gate}{" "}
                 <span className="tnum">
                   {flag.value.toFixed(4)} vs threshold {flag.threshold}
