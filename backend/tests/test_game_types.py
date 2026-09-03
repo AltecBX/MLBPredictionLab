@@ -25,7 +25,7 @@ from app.features.asof import (
 from app.features.builder import FeatureVector, SideFeatures
 from app.features.elo import AsOfElo, build_elo_history
 from app.features.shrinkage import FeatureValue
-from tests.conftest import make_store
+from tests.conftest import SEASON, make_store
 
 SPRING_ID = 999_001
 PLAYOFF_ID = 999_002
@@ -119,6 +119,53 @@ def test_elo_ignores_the_exhibition_and_counts_the_playoff(fixture_frames):
     asof = AsOfElo(games)
     before_opening_day = min(games[games["game_type"] == "R"]["game_date_utc"]) - timedelta(hours=1)
     assert asof.games_rated(home, pd.Timestamp(before_opening_day)) == 0
+
+
+def test_the_offseason_regression_applies_before_a_seasons_first_game(fixture_frames):
+    """A rating read on opening day has crossed the season boundary.
+
+    The engine regresses when it observes the new season's first game; a
+    reading between the last game of one season and the first of the next
+    must be regressed just the same, or opening day carries last October's
+    rating in full — which spring training used to hide.
+    """
+    games = fixture_frames["games"]
+    asof = AsOfElo(games)
+    home = int(games.iloc[0]["home_team_id"])
+    after_last = max(games["knowledge_time"]) + timedelta(days=1)
+    final = asof.rating_at(home, pd.Timestamp(after_last))
+    assert final != pytest.approx(1500.0)  # the fixture is one-sided; the rating moved
+
+    next_spring = pd.Timestamp(datetime(SEASON + 1, 3, 27, tzinfo=UTC))
+    regressed = asof.rating_at(home, next_spring)
+    expected = final + (1500.0 - final) * asof.engine.season_regression
+    assert regressed == pytest.approx(expected)
+    assert regressed != pytest.approx(final)
+
+    # Within the same season nothing is regressed, and two boundaries regress twice.
+    assert asof.rating_at(home, pd.Timestamp(datetime(SEASON, 11, 15, tzinfo=UTC))) == pytest.approx(final)
+    twice = expected + (1500.0 - expected) * asof.engine.season_regression
+    assert asof.rating_at(home, pd.Timestamp(datetime(SEASON + 2, 4, 1, tzinfo=UTC))) == pytest.approx(twice)
+
+
+def test_the_regressed_reading_matches_what_the_engine_uses_for_the_first_game(fixture_frames):
+    """The as-of reading before opening day equals the engine's own pregame rating."""
+    games = fixture_frames["games"].copy()
+    template = games.iloc[-1].to_dict()
+    opener = dict(template)
+    opener.update(
+        id=777_001, season=SEASON + 1,
+        game_date_utc=datetime(SEASON + 1, 3, 28, 23, tzinfo=UTC),
+        official_date=datetime(SEASON + 1, 3, 28).date(),
+        knowledge_time=datetime(SEASON + 1, 3, 29, 3, tzinfo=UTC),
+    )
+    games = pd.concat([games, pd.DataFrame([opener])], ignore_index=True)
+    asof = AsOfElo(games)
+    home = int(opener["home_team_id"])
+    before_opener = pd.Timestamp(opener["game_date_utc"]) - timedelta(hours=3)
+    assert asof.rating_at(home, before_opener) == pytest.approx(
+        asof.engine.rating_before(777_001, home)
+    )
 
 
 def test_the_schedule_index_counts_competitive_games_only(store_with_extras, fixture_frames):

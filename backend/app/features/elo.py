@@ -128,6 +128,7 @@ class AsOfElo:
     def __init__(self, games: pd.DataFrame, **kwargs: float) -> None:
         self._times: dict[int, list[int]] = {}
         self._values: dict[int, list[float]] = {}
+        self._seasons: dict[int, list[int]] = {}
         engine = EloEngine(**kwargs)  # type: ignore[arg-type]
         self.engine = engine
         if games.empty:
@@ -148,6 +149,7 @@ class AsOfElo:
             for team_id in (int(row.home_team_id), int(row.away_team_id)):
                 self._times.setdefault(team_id, []).append(knowable_ns)
                 self._values.setdefault(team_id, []).append(engine.rating(team_id))
+                self._seasons.setdefault(team_id, []).append(int(row.season))
 
     def _cut(self, team_id: int, as_of: pd.Timestamp) -> int:
         times = self._times.get(int(team_id))
@@ -156,10 +158,25 @@ class AsOfElo:
         return bisect_right(times, self._ns(as_of))
 
     def rating_at(self, team_id: int, as_of: pd.Timestamp) -> float:
+        """The rating a team carries at ``as_of``.
+
+        The last snapshot before ``as_of``, regressed toward the mean once for
+        every season boundary between that snapshot and ``as_of``. The engine
+        applies the offseason regression when it observes a new season's first
+        game; a rating read between the last game of one season and the first
+        of the next has crossed the boundary just the same, and it is exactly
+        that reading — opening day's — which used to come back unregressed.
+        Spring training once hid this, because an exhibition in March was
+        "the first game of the season" as far as the engine could tell.
+        """
         cut = self._cut(team_id, as_of)
         if cut == 0:
             return BASE_RATING
-        return self._values[int(team_id)][cut - 1]
+        value = self._values[int(team_id)][cut - 1]
+        boundaries = pd.Timestamp(as_of).year - self._seasons[int(team_id)][cut - 1]
+        for _ in range(max(boundaries, 0)):
+            value = value + (BASE_RATING - value) * self.engine.season_regression
+        return value
 
     def games_rated(self, team_id: int, as_of: pd.Timestamp) -> int:
         """Completed games whose result was knowable by ``as_of``."""

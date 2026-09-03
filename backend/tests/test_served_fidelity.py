@@ -78,6 +78,63 @@ def test_means_are_none_only_for_variants_without_them():
     assert both.means(BASE) == (4.4, 4.1)
 
 
+def test_dispersion_is_fitted_once_per_slate_at_its_earliest_moment(monkeypatch):
+    """Two games on one card share one fit, taken before the earlier first pitch."""
+    import app.modeling.serving as serving
+
+    calls: list[datetime] = []
+
+    def fake_dispersion_asof(store, as_of, **kwargs):
+        calls.append(as_of)
+        return SimpleNamespace(size=3.0 + len(calls))
+
+    monkeypatch.setattr(serving, "dispersion_asof", fake_dispersion_asof)
+    frame = pd.DataFrame(
+        {
+            "game_id": [1, 2, 3],
+            "official_date": ["2025-06-01", "2025-06-01", "2025-06-02"],
+            "as_of": [
+                pd.Timestamp("2025-06-01 20:00", tz="UTC"),
+                pd.Timestamp("2025-06-01 16:00", tz="UTC"),
+                pd.Timestamp("2025-06-02 22:00", tz="UTC"),
+            ],
+        }
+    )
+    sizes = simulation._asof_sizes(object(), frame, None)
+    assert len(calls) == 2
+    assert calls[0] == datetime(2025, 6, 1, 16, 0, tzinfo=UTC)  # the card's earliest, not each game's
+    assert sizes[1] == sizes[2] == 4.0
+    assert sizes[3] == 5.0
+
+
+def test_a_slate_without_a_fit_is_served_logistic_only(monkeypatch):
+    import app.modeling.serving as serving
+
+    monkeypatch.setattr(serving, "dispersion_asof", lambda store, as_of, **k: None)
+    frame = pd.DataFrame(
+        {"game_id": [1, 2], "official_date": ["2025-04-01"] * 2,
+         "as_of": [pd.Timestamp("2025-04-01 20:00", tz="UTC")] * 2}
+    )
+    assert simulation._asof_sizes(object(), frame, None) == {1: None, 2: None}
+    # A measurement may still keep such a slate on the training-side value.
+    assert simulation._asof_sizes(object(), frame, 3.5) == {1: 3.5, 2: 3.5}
+
+
+def test_simulate_slate_declines_a_game_whose_slate_has_no_fit(store, monkeypatch):
+    _stub(monkeypatch, USABLE_BASE, USABLE_PROJECTION)
+    game = store.games.iloc[20]
+    frame = pd.DataFrame(
+        {"game_id": [int(game["id"])], "as_of": [pd.Timestamp(game["game_date_utc"]) - pd.Timedelta(hours=3)]}
+    )
+    sims = simulate_slate(
+        store, object(), frame, 3.5, 500, models=(BASE, PROJECTED),
+        size_by_game={int(game["id"]): None},
+    )
+    row = sims.iloc[0]
+    assert row["sim_prob"] is None or row["sim_prob"] != row["sim_prob"]
+    assert bool(row["dispersion_unavailable"]) is True
+
+
 def test_simulate_slate_scores_the_served_variant_and_leaves_the_base_null(store, monkeypatch):
     """An opening-fortnight game: served through the projection, base absent."""
     _stub(monkeypatch, THIN_BASE, USABLE_PROJECTION)

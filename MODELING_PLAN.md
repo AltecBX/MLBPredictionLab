@@ -1798,6 +1798,16 @@ loader so a store built any other way — a fixture, a measurement script —
 obeys it too. `tests/test_game_types.py` pins it: a 15–0 exhibition ten days
 before opening day moves no rate, no rating and no rest day.
 
+One thing the exhibitions had been doing by accident: the Elo engine applies
+its 30% offseason regression when it observes a new season's first game, and
+a March exhibition was that game. Without it, a rating read on opening day
+came back as last October's, unregressed, until the team's first result was
+knowable. `AsOfElo.rating_at` now regresses a reading once for every season
+boundary between the last snapshot and the moment asked for, which is the
+same number the engine itself uses as the pregame rating for that first
+game. It touches each team's first game of a season and nothing else — too
+few games to measure, and pinned by test instead.
+
 Nothing about the dataset's *scored* rows changes — those were always regular
 season only (`DEFAULT_GAME_TYPES`). What changes is what the features of those
 rows were computed from.

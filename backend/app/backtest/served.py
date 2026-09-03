@@ -12,11 +12,11 @@ the component was not a reliability report on the figure a reader acts on.
 This scores the served figure on the same games, with the same leak-free
 inputs the logistic's walk-forward already established:
 
-* The simulation's dispersion is fitted the way serving fits it: from every
-  team-game knowable at each slate's moment (`serving.dispersion_asof`), with
-  the training-side fit — every game before the first game that is scored —
-  as the fallback for a slate whose sample is still too small, which is when
-  serving declines to simulate at all.
+* The simulation's dispersion is fitted the way serving fits it: once per
+  slate, from every team-game knowable at the slate's earliest moment
+  (`serving.dispersion_asof`), and shared by every game on the slate. A slate
+  whose sample is too small for a fit is served as the logistic alone, which
+  is what serving does, rather than simulated on a substitute.
 * Each game's run means are as-of the same moment the logistic's features
   were, through the same store and builder, so nothing the simulation reads is
   later than what the logistic read. The projected means come first and the
@@ -135,10 +135,13 @@ def evaluate_served(
     first_scored = pd.Timestamp(frame["official_date"].min()).date()
     train = labelled[labelled["official_date"] < first_scored]
     dispersion = fit_dispersion(_observed_runs(store, train["game_id"].tolist()))
-    # Per slate, as serving fits it; the training-side value stands in where a
-    # slate's sample is too small.
-    size_by_game = _asof_sizes(store, frame, dispersion.size)
-    sizes = np.array([v for v in size_by_game.values() if np.isfinite(v)], dtype=float)
+    # Per slate, as serving fits it; a slate with no fit is served as the
+    # logistic alone, exactly as serving declines it.
+    size_by_game = _asof_sizes(store, frame, None)
+    sizes = np.array(
+        [v for v in size_by_game.values() if v is not None and np.isfinite(v)], dtype=float
+    )
+    n_dispersion_unavailable = sum(1 for v in size_by_game.values() if v is None)
 
     sims = simulate_slate(
         store, builder or FeatureBuilder(store), frame, dispersion.size, simulations,
@@ -167,13 +170,14 @@ def evaluate_served(
         run_model=SERVED.name,
         simulations=simulations,
         dispersion={
-            "fit": "as-of per slate, training-side fallback",
+            "fit": "as-of, once per slate; a slate without a fit is served logistic-only",
             "training_side_nb_size": (
                 None if not np.isfinite(dispersion.size) else round(dispersion.size, 2)
             ),
             "training_side_team_games": dispersion.n,
             "asof_nb_size_min": None if sizes.size == 0 else round(float(sizes.min()), 2),
             "asof_nb_size_max": None if sizes.size == 0 else round(float(sizes.max()), 2),
+            "games_without_a_fit": n_dispersion_unavailable,
             "variance_over_mean": round(dispersion.ratio, 3),
         },
         metrics=metrics,
