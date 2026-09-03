@@ -28,7 +28,8 @@ from app.db.models import (
     TeamGameStat,
 )
 from app.db.session import db_health
-from app.features.registry import DEFERRED, FS_V1
+from app.features.builder import active_specs
+from app.features.registry import DEFERRED
 from app.providers.registry import configured_categories
 from app.services.drift import drift_report
 from app.services.freshness import freshness_report, refresh_freshness
@@ -257,7 +258,7 @@ def diagnostics_snapshot(session: Session) -> dict[str, Any]:
         "api_usage": _api_usage(session),
         "feature_set": {
             "active_version": settings.feature_set_version,
-            "active_features": len(FS_V1),
+            "active_features": len(active_specs()),
             "deferred_features": len(DEFERRED),
             "deferred_by_phase": {
                 str(phase): len([f for f in DEFERRED if f.phase == phase])

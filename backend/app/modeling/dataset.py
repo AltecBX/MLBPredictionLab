@@ -78,11 +78,18 @@ def build_dataset(
     game_types: tuple[str, ...] = DEFAULT_GAME_TYPES,
     store: AsOfStore | None = None,
     feature_set_version: str | None = None,
+    elo: AsOfElo | None = None,
 ) -> Dataset:
-    """Build the model matrix for every eligible game."""
+    """Build the model matrix for every eligible game.
+
+    ``elo`` lets a measurement supply a rating engine with different constants
+    — the walk-forward that fits Elo's K, home advantage and regression scores
+    the feature the engine produces, so it needs to build the same dataset
+    twice with two engines and nothing else changed.
+    """
     policy: AsOfPolicy = as_of_policy or settings.prediction_as_of_policy  # type: ignore[assignment]
     store = store or AsOfStore.load(session, seasons)
-    elo = AsOfElo(store.games)
+    elo = elo if elo is not None else AsOfElo(store.games)
     version = feature_set_version or FEATURE_SET_VERSION
     builder = FeatureBuilder(store, elo, feature_set_version=version)
 
@@ -91,6 +98,10 @@ def build_dataset(
         return Dataset(pd.DataFrame(), feature_keys(version), version, policy)
 
     eligible = games[games["game_type"].isin(game_types)]
+    # The store carries the lookback seasons so prior-season features have
+    # something to read; the rows scored are only the seasons asked for.
+    if seasons:
+        eligible = eligible[eligible["season"].isin(seasons)]
     if not include_unplayed:
         eligible = eligible[eligible["home_win"].notna()]
     eligible = eligible.sort_values("game_date_utc")
@@ -134,7 +145,10 @@ def build_dataset(
         record.update({name: vector.features.get(name) for name in names})
         rows.append(record)
 
-    frame = pd.DataFrame(rows)
+    # Columns are named even when no row qualified, so an empty dataset is
+    # still a dataset — `labelled` and every consumer can read it as such
+    # rather than tripping over a frame with no columns at all.
+    frame = pd.DataFrame(rows, columns=META_COLUMNS + [LABEL_COLUMN] + names)
     if not frame.empty:
         frame["official_date"] = pd.to_datetime(frame["official_date"]).dt.date
         frame = frame.sort_values(["official_date", "game_id"]).reset_index(drop=True)

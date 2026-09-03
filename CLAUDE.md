@@ -59,6 +59,14 @@ Two operational workflows, both `workflow_dispatch` so they can be triggered
 from a phone: `seed.yml` (one-time database seed) and `refresh.yml` (daily at
 09:15 UTC — ingest, retrain, reissue predictions, prune the raw archive).
 
+**The database is a release asset, not a hosted service.** Every workflow
+that needs it runs a Postgres service container, restores the latest dump
+from the `data` release (`.github/actions/db-restore`), and — if it writes —
+saves a new dump back (`.github/actions/db-save`). No `DATABASE_URL` secret
+exists and none should be reintroduced; a hosted free instance expired once
+and silently froze the site for three days. `backend/tests/test_data_store_workflows.py`
+is the contract.
+
 ## Product rules that outrank convenience
 
 These are the owner's constraints from the original specification. They are not

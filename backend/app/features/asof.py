@@ -87,6 +87,25 @@ def season_start_utc(season: int) -> datetime:
     return datetime(season, 1, 1, tzinfo=UTC)
 
 
+#: Seasons loaded BEFORE the earliest season a caller asks for. The
+#: multi-season projections (features/projections.py) read up to three prior
+#: seasons of a starter's starts and two of a team's games; a store cut to
+#: exactly the seasons being scored would hand the earliest of them no history
+#: at all, and a measurement on that store would be measuring the cut rather
+#: than the feature. Production loads everything, so this is what makes a
+#: `--seasons` measurement look like production. A test pins it to the
+#: projection weights.
+LOOKBACK_SEASONS = 3
+
+
+def seasons_to_load(seasons: list[int] | None, lookback: int = LOOKBACK_SEASONS) -> list[int] | None:
+    """The requested seasons plus the lookback before the earliest of them."""
+    if not seasons:
+        return None
+    earliest = min(seasons)
+    return sorted(set(seasons) | set(range(earliest - lookback, earliest)))
+
+
 class AsOfStore:
     """In-memory, as-of-filtered view of the fact tables.
 
@@ -178,7 +197,21 @@ class AsOfStore:
 
     # -- construction ------------------------------------------------------
     @classmethod
-    def load(cls, session: Session, seasons: list[int] | None = None) -> AsOfStore:
+    def load(
+        cls,
+        session: Session,
+        seasons: list[int] | None = None,
+        lookback_seasons: int = LOOKBACK_SEASONS,
+    ) -> AsOfStore:
+        """Load the fact tables for ``seasons`` and the lookback before them.
+
+        ``seasons`` is which games a caller means to score; the store also
+        carries ``lookback_seasons`` before the earliest of them so that every
+        feature which reads prior seasons — projections, Elo's carried rating,
+        a starter's experience — sees what production sees. Restricting the
+        scored games back to ``seasons`` is the dataset builder's job.
+        """
+        seasons = seasons_to_load(seasons, lookback_seasons)
         game_cols = [
             Game.id, Game.season, Game.game_type, Game.game_date_utc, Game.official_date,
             Game.home_team_id, Game.away_team_id, Game.venue_id, Game.day_night,

@@ -9,10 +9,11 @@ name: Ingest Statcast
 # resumable: a cancelled run picks up at the first date that is not complete,
 # and a date that finished is never refetched.
 #
-# STORAGE IS THE CONSTRAINT, NOT TIME. One season is roughly 120 MB before
-# indexes, and a free Render Postgres is 1 GB with about 460 MB already used by
-# two seasons of schedule and box-score data. Ingest the seasons you will
-# actually train on. DEPLOYMENT.md § Sizing has the arithmetic.
+# The database is restored from and saved to the `data` release, like every
+# other job that touches it — see refresh.yml. Statcast is the one dataset
+# large enough to notice: a season is roughly 120 MB before indexes, which
+# compresses to a few tens of MB in the dump. Well inside a release asset's
+# 2 GB, but ingest the seasons you will actually train on.
 
 on:
   workflow_dispatch:
@@ -39,6 +40,9 @@ concurrency:
   group: jerry-data
   cancel-in-progress: false
 
+permissions:
+  contents: write   # to replace the dump on the `data` release
+
 jobs:
   statcast:
     name: Backfill and reconcile
@@ -47,8 +51,19 @@ jobs:
     # time: a full season is roughly an hour. Leave room for a slow day at the
     # source without letting a hung run burn the whole budget.
     timeout-minutes: 300
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jerry
+          POSTGRES_PASSWORD: jerry
+          POSTGRES_DB: jerry_mlb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jerry -d jerry_mlb" --health-interval 5s
+          --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql+psycopg://jerry:jerry@localhost:5432/jerry_mlb
       ENVIRONMENT: production
       LOG_FORMAT: console
       REDIS_URL: ""
@@ -58,15 +73,6 @@ jobs:
       # costs almost nothing here and keeps the audit trail intact.
       STORE_RAW_PAYLOADS: "true"
     steps:
-      - name: Check the database secret is set
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::The DATABASE_URL repository secret is not set."
-            echo "Copy the *External* Database URL from your Render Postgres page, then add it"
-            echo "under Settings -> Secrets and variables -> Actions as DATABASE_URL."
-            exit 1
-          fi
-
       - name: Check a range was given
         run: |
           if [ -z "${{ inputs.seasons }}" ] && \
@@ -88,6 +94,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
+
+      - name: Restore the data store
+        uses: ./.github/actions/db-restore
 
       - name: Apply migrations
         working-directory: backend
@@ -118,6 +127,12 @@ jobs:
         if: always()
         working-directory: backend
         run: python -m app.cli check-sources > /dev/null
+
+      # The rows are stored whatever the reconciliation said, so they are
+      # saved whatever it said too.
+      - name: Save the data store
+        if: always() && steps.ingest.outcome != 'cancelled'
+        uses: ./.github/actions/db-save
 
       - name: Summary
         if: always()

@@ -961,10 +961,53 @@ STREAKS: list[FeatureSpec] = [
     ),
 ]
 
+# --- Multi-season projections (fs_v9) ----------------------------------------
+#
+# Every rate in fs_v1 is season-to-date and shrunk toward the LEAGUE. The only
+# feature with a memory across seasons is Elo, and calibrated Elo on its own
+# matches the whole model — which says the other forty-one features spend the
+# spring relearning what the previous season already knew. FEATURE_DICTIONARY.md
+# §1 rule 2 has always required prior-season baselines as the prior; this is
+# the first group to build them. See features/projections.py for the pooling
+# and for why none of its constants were fitted on the win outcome.
+PROJECTIONS: list[FeatureSpec] = [
+    FeatureSpec(
+        "proj_off_rpg_diff", "Projected scoring edge", FeatureCategory.OFFENSE,
+        "Runs per game projected from the last two seasons and the season in "
+        "progress, each season measured against its own league rate, regressed "
+        "toward the league.",
+        unit="runs/g", window="3 seasons", min_sample=10, phase=2,
+        narrative="projects as the stronger offense once prior seasons are weighed",
+    ),
+    FeatureSpec(
+        "proj_ra_rpg_diff", "Projected run-prevention edge", FeatureCategory.DEFENSE,
+        "Runs allowed per game, projected the same way. Sign is inverted so a "
+        "positive value favors the home team.",
+        unit="runs/g", window="3 seasons", min_sample=10, phase=2,
+        narrative="projects to allow fewer runs once prior seasons are weighed",
+    ),
+    FeatureSpec(
+        "proj_sp_k_minus_bb_pct_diff", "Projected starter K−BB% edge",
+        FeatureCategory.STARTING_PITCHING,
+        "Strikeout rate minus walk rate for tonight's starter, pooled over up to "
+        "three prior seasons of starts plus this one, regressed toward the league.",
+        unit="%", window="4 seasons", min_sample=100, phase=2,
+        narrative="has the starter with the better projected command-and-miss profile",
+    ),
+    FeatureSpec(
+        "proj_sp_fip_diff", "Projected starter FIP edge",
+        FeatureCategory.STARTING_PITCHING,
+        "Fielding-independent pitching projected from up to three prior seasons "
+        "of starts plus this one, on this season's run environment. Inverted sign.",
+        unit="FIP", window="4 seasons", min_sample=100, phase=2,
+        narrative="has the better projected fielding-independent starter",
+    ),
+]
+
 REGISTRY: dict[str, FeatureSpec] = {
     s.key: s
     for s in FS_V1 + SC_SP + LINEUP + BULLPEN_AVAILABILITY + WEATHER + AVAILABILITY
-    + STREAKS + DEFERRED
+    + STREAKS + PROJECTIONS + DEFERRED
 }
 
 FEATURE_SET_VERSIONS: dict[str, list[str]] = {
@@ -999,6 +1042,9 @@ FEATURE_SET_VERSIONS: dict[str, list[str]] = {
     # fs_v1 + the processed streak story. On fs_v1 for the same reason as every
     # candidate since fs_v3: stacking on a rejected group measures the pair.
     "fs_v8": [s.key for s in FS_V1 + STREAKS],
+    # fs_v1 + multi-season projections. On fs_v1 for the same reason as every
+    # candidate since fs_v3.
+    "fs_v9": [s.key for s in FS_V1 + PROJECTIONS],
 }
 
 

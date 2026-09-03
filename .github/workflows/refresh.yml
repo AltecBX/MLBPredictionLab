@@ -1,66 +1,72 @@
 name: Daily refresh
 
 # The scheduler. Replaces the Render cron job in render.yaml, which could not
-# be there: Render has no free plan for cron jobs, and including one would fail
-# the whole blueprint.
+# run on the free plan, and runs against a database that lives here too.
 #
-# Runs at 09:15 UTC — after every previous-day game has a final boxscore, and
-# before the earliest first pitch.
+# THE DATABASE IS A RELEASE ASSET. There is no hosted Postgres any more: the
+# free instance this ran against expired thirty days after it was created and
+# every refresh and publish failed for three days before anyone could tell,
+# because the site is static and kept serving the last build. So each job now
+# starts its own Postgres service container, restores the latest dump from the
+# repository's `data` release (`.github/actions/db-restore`), does its work,
+# and saves a new dump back (`.github/actions/db-save`). Nothing expires, no
+# secret is needed, and the 1 GB free-tier ceiling that limited the model to
+# two seasons of history is gone.
 #
-# Training runs on every pass rather than only when the model is stale. A CI
-# runner starts with an empty filesystem and `predict` loads the pickled model
-# from disk, so training in the same job is what puts the artifact there. It is
-# also the better default: a model refit on last night's completed games beats
+# It retrains on every pass rather than only when the model is stale. A runner
+# starts with an empty filesystem and `predict` needs a loadable artifact, so
+# training in the same job is what puts the artifact there. It is also the
+# better default: a model refit on last night's completed games beats
 # yesterday's.
 
 on:
   schedule:
+    # 09:15 UTC — after every previous-day game is final, before the earliest
+    # first pitch of the day.
     - cron: "15 9 * * *"
   workflow_dispatch:
+    inputs:
+      backtest:
+        description: "Also run the walk-forward backtest (fills the Backtest screen; ~15 min)"
+        type: boolean
+        default: false
 
 concurrency:
-  # Shared with the seed workflow — these two must never write at once.
+  # Shared with the seeder, the pregame poller and the Statcast backfill: every
+  # writer restores, writes and saves the same dump, so two must never overlap.
   group: jerry-data
   cancel-in-progress: false
+
+permissions:
+  contents: write   # to replace the dump on the `data` release
 
 jobs:
   refresh:
     name: Ingest, retrain, reissue
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jerry
+          POSTGRES_PASSWORD: jerry
+          POSTGRES_DB: jerry_mlb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jerry -d jerry_mlb" --health-interval 5s
+          --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql+psycopg://jerry:jerry@localhost:5432/jerry_mlb
       ENVIRONMENT: production
       LOG_FORMAT: console
       REDIS_URL: ""
-      # These must match `pregame.yml`, and the reason is not tidiness.
-      #
-      # `check-sources` below recomputes every row of the Diagnostics source
-      # table from `configured_categories()`, which reads exactly these
-      # variables. Running it in a job that does not set them wrote
-      # "No provider configured" over categories that were being ingested
-      # successfully every hour: the deployed site reported lineups and weather
-      # as UNAVAILABLE on the same screen whose job log showed poll_lineups
-      # writing 180 rows and ingest_weather writing 15.
-      #
-      # That is the failure this product cares about most — UNAVAILABLE means
-      # "not measured", and claiming it for something measured is the same lie
-      # as the reverse.
-      #
-      # The pollers themselves construct `MlbStatsApiClient` directly and never
-      # consult these, so setting them changes what is *reported* and nothing
-      # about what is fetched.
+      # Named here because `check-sources` rewrites the Diagnostics source
+      # table from these. pregame.yml must agree — a test asserts it.
       LINEUP_PROVIDER: mlb_statsapi
       INJURY_PROVIDER: mlb_statsapi
       WEATHER_PROVIDER: open_meteo
     steps:
-      - name: Check the database secret is set
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::The DATABASE_URL repository secret is not set. See DEPLOYMENT.md."
-            exit 1
-          fi
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -75,6 +81,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
+      - name: Restore the data store
+        uses: ./.github/actions/db-restore
+
       # Cheap when there is nothing to apply, and it means a schema change
       # ships with the first refresh after a merge rather than needing a
       # separate step someone has to remember.
@@ -85,26 +94,19 @@ jobs:
       # Schedule window and missing boxscores, then enforce the raw-payload
       # retention bound.
       #
-      # `--skip-predictions` is load-bearing, not tidiness. `daily` used to
-      # predict here as well, which the comment this replaces waved off as
-      # superseded by the explicit predict below. It was worse than redundant:
-      # predicting requires a trained model, the step that trains one comes
-      # after, and on a fresh runner with no loadable artifact this raised and
-      # took the retrain down with it. Every run of this workflow had failed
-      # for that reason.
+      # `--skip-predictions` is load-bearing, not tidiness. Predicting requires
+      # a trained model, the step that trains one comes after, and on a fresh
+      # runner with no loadable artifact this raised and took the retrain down
+      # with it.
       - name: Refresh data
         working-directory: backend
         run: python -m app.cli daily --skip-predictions
 
-      # Injured-list moves from the transactions feed. Not in any workflow
-      # before this, which is why the production table was empty and the site
-      # said "Injuries unavailable" — honestly, but only because nothing was
-      # ever fetching them.
-      #
-      # A fortnight rather than a day. A transaction is reported roughly a day
-      # after it takes effect, the feed is occasionally amended afterwards, and
-      # the upsert is keyed on (player, effective_from, status) so re-reading a
-      # window costs one request and writes nothing new.
+      # Injured-list moves from the transactions feed. A fortnight rather than
+      # a day: a transaction is reported roughly a day after it takes effect,
+      # the feed is occasionally amended afterwards, and the upsert is keyed on
+      # (player, effective_from, status) so re-reading a window writes nothing
+      # new.
       - name: Ingest injured-list moves
         working-directory: backend
         run: |
@@ -124,6 +126,21 @@ jobs:
         working-directory: backend
         run: python -m app.cli check-sources
 
+      # Weekly on Mondays, or on request. The Backtest screen and the
+      # confidence score's historical-calibration signal both read the most
+      # recent run; a week is fresh enough for either.
+      - name: Decide whether to backtest
+        id: when
+        run: echo "dow=$(date -u +%u)" >> "$GITHUB_OUTPUT"
+
+      - name: Backtest
+        if: steps.when.outputs.dow == '1' || inputs.backtest == true
+        working-directory: backend
+        run: python -m app.cli backtest
+
+      - name: Save the data store
+        uses: ./.github/actions/db-save
+
       # A silent scheduler is worse than none: if this has been failing for a
       # week, the site quietly serves week-old predictions with a stale
       # freshness badge and nothing says so.
@@ -137,6 +154,7 @@ jobs:
             echo "Diagnostics screen will show the sources ageing. Re-run this workflow once"
             echo "the cause is fixed."
             echo ""
-            echo "First thing to check: a free Render Postgres instance expires 30 days after"
-            echo "it is created, and every connection fails once it does."
+            echo "If the restore step failed because there is no dump on the \`data\`"
+            echo "release, run the **Seed the database** workflow once; it rebuilds the"
+            echo "data store from MLB history and saves it there."
           } >> "$GITHUB_STEP_SUMMARY"

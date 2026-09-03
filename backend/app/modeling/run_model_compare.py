@@ -183,6 +183,7 @@ def compare_run_models(
     coverage = {
         "park_measured": _share(merged, "park_measured"),
         "pitching_measured": _share(merged, "pitching_measured"),
+        "projected_measured": _share(merged, "projected_measured"),
     }
     verdict, reading = _judge_variants(results, coverage)
     return RunModelComparison(
@@ -221,13 +222,17 @@ def _judge_variants(
 ) -> tuple[str, str]:
     """One verdict over the whole ablation.
 
-    Deliberately blunt about multiplicity. Three refinements were tried, so three
-    intervals were drawn, and the chance that at least one clears a 95% bar by
-    luck alone is around one in seven. A single season saying yes is a lead; two
-    seasons saying yes is the finding.
+    Deliberately blunt about multiplicity. Every refinement tried is an interval
+    drawn, and with k of them the chance that at least one clears a 95% bar by
+    luck alone is 1 − 0.95^k — about one in seven for three, nearly one in five
+    for four. The count is taken from the variants actually judged rather than
+    written down, so adding a variant cannot quietly understate it. A single
+    season saying yes is a lead; two seasons saying yes is the finding.
     """
     improved = [r for r in results if r.verdict == "IMPROVES"]
     rejected = [r for r in results if r.verdict == "REJECT"]
+    tried = len([r for r in results if r.verdict != "INCUMBENT"])
+    by_luck = 1.0 - 0.95 ** tried if tried else 0.0
 
     unmeasured = [
         name for name, share in coverage.items()
@@ -257,10 +262,10 @@ def _judge_variants(
         )
     names = ", ".join(r.name for r in improved)
     return "IMPROVES", (
-        f"Beat the base run model on this season: {names}. Three refinements were "
-        f"tried, so three intervals were drawn and one clearing a 95% bar by luck "
-        f"is roughly a one-in-seven event. Re-measure on a second season before "
-        f"believing it." + caveat
+        f"Beat the base run model on this season: {names}. {tried} refinements "
+        f"were tried, so {tried} intervals were drawn and at least one clearing "
+        f"a 95% bar by luck is a {by_luck:.0%} event. Re-measure on a second "
+        f"season before believing it." + caveat
     )
 
 

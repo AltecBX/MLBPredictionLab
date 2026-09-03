@@ -81,6 +81,14 @@ jobs:
   e2e:
     name: End-to-end (layout and iPhone contract)
     runs-on: ubuntu-latest
+    env:
+      # The specs navigate to fixed dates around 2026-08-01, and a date page
+      # exists only for dates inside the build window around "today". Pinned
+      # at the JOB level: the export bakes the date in, but `next start`
+      # renders the front page per request and reads it again at run time —
+      # left to the clock there, the front page called a different day
+      # "today" and tried to redirect to a page the build never made.
+      BUILD_DATE: "2026-08-01"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

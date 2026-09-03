@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import db_session
 from app.core.config import settings
 from app.db.models import ModelVersion
-from app.features.registry import CATEGORY_LABELS, DEFERRED, FS_V1
+from app.features.builder import active_specs
+from app.features.registry import CATEGORY_LABELS, DEFERRED
 
 router = APIRouter(prefix="/meta", tags=["meta"])
 
@@ -36,7 +37,7 @@ def _spec_payload(spec: Any) -> dict[str, Any]:
 def features() -> dict[str, Any]:
     return {
         "feature_set_version": settings.feature_set_version,
-        "active": [_spec_payload(s) for s in FS_V1],
+        "active": [_spec_payload(s) for s in active_specs()],
         "deferred": [_spec_payload(s) for s in DEFERRED],
         "categories": CATEGORY_LABELS,
     }

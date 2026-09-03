@@ -211,15 +211,21 @@ class RunModel:
     name: str
     park: bool = False
     pitching: bool = False
+    #: Replace the season-to-date, league-shrunk team rates with the
+    #: multi-season projections (features/projections.py). The base model's
+    #: rates start every April at the league average; the projection starts
+    #: where the previous seasons left off.
+    projected: bool = False
 
 
 BASE = RunModel("base")
 PARK_ONLY = RunModel("park", park=True)
 PITCHING_ONLY = RunModel("pitching", pitching=True)
 PARK_AND_PITCHING = RunModel("park+pitching", park=True, pitching=True)
+PROJECTED = RunModel("projected", projected=True)
 
 #: The order they are reported in. Base first, because it is the incumbent.
-VARIANTS = (BASE, PARK_ONLY, PITCHING_ONLY, PARK_AND_PITCHING)
+VARIANTS = (BASE, PARK_ONLY, PITCHING_ONLY, PARK_AND_PITCHING, PROJECTED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +252,15 @@ class RunComponents:
     #: Each team's own pitching, which acts on the OPPOSING side's runs.
     home_pitching: PitchingSplit = NO_SPLIT
     away_pitching: PitchingSplit = NO_SPLIT
+    #: The same expected runs from the multi-season projections. None when a
+    #: projection could not be formed, in which case the variant falls back to
+    #: the base means and says so through `projected_measured`.
+    home_projected: float | None = None
+    away_projected: float | None = None
+
+    @property
+    def projected_measured(self) -> bool:
+        return self.home_projected is not None and self.away_projected is not None
 
     @property
     def park_adjustment(self) -> float:
@@ -264,6 +279,8 @@ class RunComponents:
     def means(self, model: RunModel) -> tuple[float, float]:
         """(home, away) expected runs under ``model``."""
         home, away = self.home, self.away
+        if model.projected and self.projected_measured:
+            home, away = float(self.home_projected), float(self.away_projected)  # type: ignore[arg-type]
         if model.pitching:
             # The away team's pitching decides what the home team scores.
             home *= self.away_pitching.multiplier
@@ -286,6 +303,7 @@ __all__ = [
     "PARK_AND_PITCHING",
     "PARK_ONLY",
     "PITCHING_ONLY",
+    "PROJECTED",
     "VARIANTS",
     "PitchingSplit",
     "RunComponents",
