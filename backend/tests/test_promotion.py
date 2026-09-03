@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -175,15 +176,46 @@ def test_a_clearly_worse_configuration_is_registered_but_not_served(monkeypatch)
     assert decision.delta.ci_high < 0
 
 
-def test_a_tie_holds_the_incumbent(monkeypatch):
-    """A tie is not a reason to swap the served model."""
+def test_a_tie_on_C_alone_refreshes_at_the_incumbents_C(monkeypatch):
+    """The regularisation choice is immaterial; the newer games are not.
+
+    Holding here would freeze the model at the last day the grid happened to
+    agree with the active C. Production did exactly that on the first retrain
+    after a data correction: grid 0.001, active 0.003, a tie, HOLD, and the
+    model fitted on the old features stayed served.
+    """
     _stub_walk_forward(monkeypatch, base=0.10, cand=0.10)
     decision = decide_promotion(
         _Dataset(), [_step()], candidate_C=0.05, incumbent=_incumbent(0.01)
     )
+    assert decision.verdict == REFRESH
+    assert decision.should_activate is True
+    assert decision.fit_C == 0.01
+    assert not decision.delta.is_distinguishable_from_zero
+    assert decision.to_dict()["fit_C"] == 0.01
+
+
+def test_a_tie_between_feature_sets_holds_the_incumbent(monkeypatch):
+    """A tie is not a reason to swap the served model's columns."""
+    _stub_walk_forward(monkeypatch, base=0.10, cand=0.10)
+    decision = decide_promotion(
+        _Dataset(feature_set_version="fs_v9", feature_names=["a", "b", "c"],
+                 frame=pd.DataFrame(columns=["a", "b", "c"])),
+        [_step()],
+        candidate_C=0.01,
+        incumbent=_incumbent(0.01, feature_set="fs_v1", feature_names=["a", "b"]),
+    )
     assert decision.verdict == HOLD
     assert decision.should_activate is False
-    assert not decision.delta.is_distinguishable_from_zero
+    assert decision.fit_C is None
+
+
+def test_a_promotion_or_rejection_fits_the_candidates_C(monkeypatch):
+    _stub_walk_forward(monkeypatch, base=0.02, cand=0.20)
+    promoted = decide_promotion(
+        _Dataset(), [_step()], candidate_C=0.05, incumbent=_incumbent(0.01)
+    )
+    assert promoted.verdict == PROMOTE and promoted.fit_C is None
 
 
 def test_the_comparison_pairs_on_the_same_games(monkeypatch):
@@ -231,6 +263,62 @@ def test_a_refresh_serialises_without_an_interval():
     ).to_dict()
     assert payload["paired_95_ci"] is None
     assert payload["should_activate"] is True
+
+
+def test_train_refits_at_the_incumbents_C_on_a_tie(monkeypatch):
+    """`train_model` fits and registers the C the decision says, not the grid's."""
+    import app.modeling.train as train_module
+    from app.modeling.promotion import PromotionDecision
+
+    fitted: dict[str, Any] = {}
+    fake_dataset = SimpleNamespace(
+        frame=pd.DataFrame({"x": [1.0]}), feature_set_version="fs_v9",
+        labelled=pd.DataFrame({"official_date": [date(2025, 6, 1)], "x": [1.0]}),
+        feature_names=["x"], as_of_policy="T_MINUS_3H",
+    )
+    monkeypatch.setattr(train_module.AsOfStore, "load", staticmethod(lambda session, seasons: None))
+    monkeypatch.setattr(train_module, "build_dataset", lambda *a, **k: fake_dataset)
+    monkeypatch.setattr(train_module, "select_hyperparameters", lambda *a, **k: (0.001, {}))
+    monkeypatch.setattr(train_module, "make_steps", lambda *a, **k: [_step()])
+    monkeypatch.setattr(train_module, "run_walk_forward", lambda *a, **k: [])
+    monkeypatch.setattr(train_module, "collect_predictions", lambda results: pd.DataFrame())
+    monkeypatch.setattr(train_module, "get_active_version", lambda *a, **k: _incumbent(0.003, "fs_v9"))
+    monkeypatch.setattr(
+        train_module, "decide_promotion",
+        lambda *a, **k: PromotionDecision(verdict=REFRESH, should_activate=True, reason="tie", fit_C=0.003),
+    )
+    monkeypatch.setattr(train_module, "incumbent_matrix", lambda *a, **k: None)
+
+    def fake_fit(dataset, C):
+        fitted["C"] = C
+        return SimpleNamespace(train_rows=1, calibrator=None, feature_names=["x"])
+
+    monkeypatch.setattr(train_module, "fit_final_model", fake_fit)
+    monkeypatch.setattr(train_module, "next_version", lambda *a, **k: "v9")
+
+    def fake_register(session, model, **kwargs):
+        fitted["registered_C"] = kwargs["hyperparameters"]["C"]
+        fitted["activate"] = kwargs["activate"]
+        return SimpleNamespace(id=1)
+
+    monkeypatch.setattr(train_module, "register_model", fake_register)
+
+    class _Run:
+        rows_written = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(train_module, "job_run", lambda *a, **k: _Run())
+    summary = train_module.train_model(object(), activate=True)
+    assert fitted["C"] == 0.003
+    assert fitted["registered_C"] == 0.003
+    assert fitted["activate"] is True
+    assert summary["C"] == 0.003
+    assert summary["activated"] is True
 
 
 @pytest.mark.parametrize("verdict_case", [(0.02, 0.20, True), (0.20, 0.02, False)])

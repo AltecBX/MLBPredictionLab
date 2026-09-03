@@ -29,6 +29,17 @@ walk-forward metrics against the incumbent's *registered* metrics would compare
 two numbers computed over different games, different windows and different
 amounts of history, and the difference between them would be mostly calendar.
 
+**A tie on `C` alone is a refresh at the incumbent's `C`.** When the feature
+set is unchanged and the grid's `C` differs from the active model's by less
+than the noise band, the regularisation choice is immaterial and the only
+real difference is that the candidate was fitted on newer games. Holding
+there would freeze the model at the last day the grid happened to agree with
+the incumbent's `C` — the grid dithers between neighbouring values from one
+night to the next — which is the failure this module's opening paragraph
+describes. So the model is refitted at the incumbent's `C` and activated. A
+tie between two *feature sets* still holds: there the incumbent's columns
+are the thing being defended.
+
 **The incumbent is scored on its own columns.** A feature-set change usually
 adds columns, and the candidate's matrix carries the incumbent's columns as a
 subset, so the incumbent arm is the candidate's matrix restricted to the
@@ -74,6 +85,9 @@ class PromotionDecision:
     verdict: str
     should_activate: bool
     reason: str
+    #: The regularisation the final model should be fitted at. The candidate's
+    #: unless a tie on C alone sends the refit back to the incumbent's.
+    fit_C: float | None = None
     incumbent_version: str | None = None
     incumbent_C: float | None = None
     candidate_C: float | None = None
@@ -91,6 +105,7 @@ class PromotionDecision:
             "verdict": self.verdict,
             "should_activate": self.should_activate,
             "reason": self.reason,
+            "fit_C": self.fit_C,
             "incumbent": {
                 "version": self.incumbent_version,
                 "C": self.incumbent_C,
@@ -321,13 +336,27 @@ def decide_promotion(
     }
 
     if not delta.is_distinguishable_from_zero:
+        if incumbent_features == candidate_features:
+            return PromotionDecision(
+                verdict=REFRESH,
+                should_activate=True,
+                fit_C=incumbent_C,
+                reason=(
+                    f"Same feature set; the grid's C={candidate_C} and the active "
+                    f"model's C={incumbent_C} are inside the noise band of each "
+                    f"other on the same games, so the choice is immaterial. The model "
+                    f"is refitted on the newer games at the active C rather than "
+                    f"frozen at the day the grid last agreed with it."
+                ),
+                **common,
+            )
         return PromotionDecision(
             verdict=HOLD,
             should_activate=False,
             reason=(
-                "The configuration changed but the difference is inside the noise "
+                "The feature set changed but the difference is inside the noise "
                 "band, so the incumbent stays. A tie is not a reason to swap the "
-                "served model."
+                "served model's columns."
             ),
             **common,
         )

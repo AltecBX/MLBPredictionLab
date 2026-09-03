@@ -251,7 +251,11 @@ and the UI hides the market comparison entirely rather than showing zeros.
   refresh and is activated; a changed `C` or feature set is a challenger and is
   scored against the active model on the same walk-forward games, paired, with
   the incumbent on the columns it registered — and activated only if the
-  interval excludes zero (`app/modeling/promotion.py`).
+  interval excludes zero (`app/modeling/promotion.py`). A tie on `C` alone,
+  with the feature set unchanged, is a refresh at the incumbent's `C`: the
+  first retrain after the spring-training correction held on exactly such a
+  tie (grid 0.001, active 0.003) and left the model fitted on the old features
+  served, which is the freeze the gate exists to prevent.
 * **Feature drift** — population stability index per feature versus the training
   distribution; alert above 0.2.
 * **Calibration drift** — rolling 30-day ECE; alert when it exceeds the backtest

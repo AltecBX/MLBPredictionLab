@@ -201,6 +201,18 @@ def train_model(
         )
         should_activate = activate and decision.should_activate
 
+        # A tie on C alone sends the refit back to the incumbent's C; the
+        # registered out-of-sample figures then describe the C that was fitted.
+        if decision.fit_C is not None and abs(decision.fit_C - C) > 1e-12:
+            C = decision.fit_C
+            results = run_walk_forward(dataset, steps, C=C)
+            oos = collect_predictions(results)
+            metrics = (
+                evaluate(oos["actual"].to_numpy(), oos["prob"].to_numpy())
+                if not oos.empty
+                else None
+            )
+
         model = fit_final_model(dataset, C)
         version = next_version(session, name)
         labelled = dataset.labelled
