@@ -1,37 +1,24 @@
 name: Uptime
 
-# Keeps the deployment warm, and makes a real outage visible.
+# Makes a real outage visible.
 #
-# Two separate problems, one workflow.
+# The site is static files on GitHub Pages, so nothing in the read path can be
+# down in the ordinary sense. What CAN happen — and did, for three days — is
+# that every job that refreshes and republishes it fails, and the site keeps
+# serving its last build with nobody the wiser, because a static page cannot
+# say it is stale. This checks the one thing that distinguishes "publishing"
+# from "frozen": the build stamp pages.yml writes into the site.
 #
-# **The cold start.** Render's free plan sleeps a service after fifteen minutes
-# idle and takes about a minute to wake. For a site read a few times a day that
-# means almost every visit is a cold start, and a cold start returns 502 while
-# it happens — which is exactly what a reader reported seeing. The client now
-# retries through it, but not waking in the first place is better than waking
-# gracefully. A request every ten minutes keeps the fifteen-minute idle timer
-# from ever expiring.
+# Hourly rather than every ten minutes. GitHub throttles scheduled workflows
+# regardless of the cron, and a stamp that is refreshed at most hourly does not
+# need reading more often than that.
 #
-# **The real outage.** When the API is genuinely down — an expired free
-# database, a failed deploy — this fails and says so, rather than the first
-# notice being somebody opening the site and finding nothing. The API's health
-# endpoint is process liveness, so it answers even when the database is
-# unreachable; the readiness check below is what distinguishes "running" from
-# "actually able to serve data".
-#
-# WEB_URL defaults to this repository's own deployment, because a keep-warm that
-# only works once somebody sets a variable does not keep anything warm — which is
-# exactly how the first version of this failed. Override either URL with a
-# repository variable (Settings → Secrets and variables → Actions → Variables).
-#
-# Pinging the web app is what matters most: every page is server-rendered and
-# fetches the API, so one request to the front page wakes BOTH services. API_URL
-# is optional and only adds the readiness check, which is the one that can tell
-# a running API from one whose database has gone.
+# The earlier version of this workflow kept a Render deployment warm. There is
+# no Render deployment in the read path any more; DEPLOYMENT.md path 0.
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -39,83 +26,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ping:
-    name: Keep warm and check health
+  check:
+    name: Is the site still publishing?
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     env:
-      API_URL: ${{ vars.API_URL }}
-      WEB_URL: ${{ vars.WEB_URL || 'https://jerry-web.onrender.com' }}
+      SITE_URL: ${{ vars.SITE_URL || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
+      # The daily refresh publishes around 09:30 UTC and the pregame poller
+      # through the evening. A stamp older than this means at least one whole
+      # daily cycle has been missed.
+      MAX_AGE_HOURS: "30"
     steps:
-      - name: Report what will be checked
-        id: guard
+      - name: Read the build stamp
         run: |
-          echo "WEB_URL=$WEB_URL"
-          echo "API_URL=${API_URL:-(unset; readiness check skipped)}"
-          if [ -z "$WEB_URL" ] && [ -z "$API_URL" ]; then
-            echo "::notice::Both URLs are empty; nothing to check."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          url="${SITE_URL%/}/build.json"
+          echo "Checking $url"
+          if ! body=$(curl -sS --fail --max-time 20 -H 'Cache-Control: no-cache' "$url"); then
+            echo "::error::The site did not serve build.json. Either it has never been published since the stamp was introduced, or Pages is down."
+            exit 1
           fi
-
-      # First, and with a generous timeout: waking IS the normal case here, and
-      # a wake taking fifty seconds is a healthy free-tier service rather than an
-      # outage. This request also wakes the API, because the page it renders
-      # fetches it server-side.
-      - name: Wake the web app
-        if: steps.guard.outputs.configured == 'true' && env.WEB_URL != ''
-        run: |
-          code=$(curl -sS -o /dev/null -w '%{http_code}' \
-                   --max-time 120 --retry 4 --retry-delay 10 --retry-all-errors \
-                   "${WEB_URL%/}/" || echo 000)
-          echo "GET / -> $code"
-          if [ "$code" != "200" ]; then
-            echo "::error::The web app did not answer (status $code)."
+          echo "$body"
+          built_at=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin)["built_at"])')
+          age_hours=$(( ( $(date -u +%s) - $(date -u -d "$built_at" +%s) ) / 3600 ))
+          echo "Built $built_at, ${age_hours}h ago"
+          if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
+            echo "::error::The site was last built ${age_hours} hours ago (limit ${MAX_AGE_HOURS}h). The refresh or publish workflows are failing; check the Actions tab."
             exit 1
           fi
 
-      - name: Wake the API
-        if: steps.guard.outputs.configured == 'true' && env.API_URL != ''
+      - name: Check the front page renders a slate
         run: |
-          code=$(curl -sS -o /tmp/health.txt -w '%{http_code}' \
-                   --max-time 90 --retry 3 --retry-delay 5 --retry-all-errors \
-                   "${API_URL%/}/health" || echo 000)
-          echo "GET /health -> $code"
-          head -c 300 /tmp/health.txt || true
-          if [ "$code" != "200" ]; then
-            echo "::error::The API did not answer /health (status $code). The" \
-                 "service is not running: check the Render dashboard for a" \
-                 "failed deploy, and DEPLOYMENT.md for the free-database" \
-                 "expiry, which is the usual cause."
+          set -euo pipefail
+          html=$(curl -sS --fail --max-time 20 "${SITE_URL%/}/")
+          if ! printf '%s' "$html" | grep -q 'Primary'; then
+            echo "::error::The front page came back without its navigation; the export is broken."
             exit 1
           fi
-
-      # /health is liveness and answers with no database at all. This one asks
-      # whether the API can actually serve, so a database that has expired or
-      # gone unreachable surfaces here rather than on the reader's screen.
-      - name: Check the API can reach its data
-        if: steps.guard.outputs.configured == 'true' && env.API_URL != ''
-        run: |
-          code=$(curl -sS -o /tmp/ready.json -w '%{http_code}' \
-                   --max-time 90 --retry 2 --retry-delay 5 --retry-all-errors \
-                   "${API_URL%/}/api/v1/diagnostics/health" || echo 000)
-          echo "GET /api/v1/diagnostics/health -> $code"
-          head -c 500 /tmp/ready.json || true
-          if [ "$code" != "200" ]; then
-            echo "::error::The API is running but cannot serve data (status" \
-                 "$code). The process is up and its database is not."
-            exit 1
-          fi
-          # Specifically the database. The cache reports reachable=false too
-          # whenever REDIS_URL is blank, which render.yaml does on purpose --
-          # matching on the bare field would fail every run of a healthy
-          # deployment.
-          if [ "$(jq -r '.database.reachable' /tmp/ready.json)" != "true" ]; then
-            echo "::error::The API is up but reports its database as" \
-                 "unreachable. Predictions cannot be read. DEPLOYMENT.md" \
-                 "§ Sizing covers the free-database expiry, which is the" \
-                 "usual cause."
-            exit 1
-          fi
-

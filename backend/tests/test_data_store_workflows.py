@@ -130,3 +130,23 @@ def test_the_composite_actions_exist_and_use_the_same_release():
     # The restore must be able to say "nothing there yet" without failing,
     # or the seeder can never run for the first time.
     assert "restored=false" in restore["runs"]["steps"][0]["run"]
+
+
+def test_the_publish_stamps_the_build_and_uptime_reads_the_stamp():
+    """The failure this guards is silence: a static site that stopped updating.
+
+    Every refresh failed for three days and the site kept serving its last
+    build. pages.yml now writes build.json and uptime.yml fails when that stamp
+    is older than a daily cycle, so the next freeze is a red workflow within a
+    day rather than a discovery.
+    """
+    pages = (WORKFLOWS / "pages.yml").read_text(encoding="utf-8")
+    assert "out/build.json" in pages and "built_at" in pages
+    uptime = _load("uptime.yml")
+    job = next(iter(uptime["jobs"].values()))
+    script = "\n".join(s.get("run") or "" for s in job["steps"])
+    assert "build.json" in script and "built_at" in script
+    assert "MAX_AGE_HOURS" in script
+    assert "onrender.com" not in (WORKFLOWS / "uptime.yml").read_text(encoding="utf-8"), (
+        "Render is not in the read path; the uptime check watches the Pages site"
+    )

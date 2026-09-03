@@ -168,6 +168,11 @@ jobs:
           # Next writes _next/, and Jekyll drops any path beginning with an
           # underscore. Without this the site deploys with no CSS or JS.
           touch out/.nojekyll
+          # A machine-readable build stamp, so uptime.yml can tell a site
+          # that is still publishing from one that quietly froze — which is
+          # how three days of failed refreshes went unnoticed once.
+          printf '{"built_at":"%s","build_date":"%s","sha":"%s"}\n' \
+            "$(date -u +%FT%TZ)" "$BUILD_DATE" "$GITHUB_SHA" > out/build.json
 
       - name: Check the export actually contains a slate
         working-directory: frontend
