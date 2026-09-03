@@ -12,7 +12,12 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.backtest.metrics import evaluate
-from app.backtest.walkforward import collect_predictions, make_steps, run_walk_forward
+from app.backtest.walkforward import (
+    MIN_CALIBRATION_ROWS,
+    collect_predictions,
+    make_steps,
+    run_walk_forward,
+)
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import ModelVersion
@@ -112,7 +117,7 @@ def fit_final_model(dataset: Dataset, C: float) -> LogisticWinModel:
     core = frame[frame["official_date"] < cutoff]
     validation = frame[frame["official_date"] >= cutoff]
 
-    if len(core) < settings.min_train_rows or len(validation) < 50:
+    if len(core) < settings.min_train_rows or len(validation) < MIN_CALIBRATION_ROWS:
         core, validation = frame, frame.iloc[:0]
 
     calibrated = LogisticWinModel(feature_names=list(dataset.feature_names), C=C)

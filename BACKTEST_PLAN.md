@@ -35,6 +35,15 @@ Guarantees:
 the training window has fewer than `MIN_TRAIN_ROWS` (default 500) usable games.
 Skipped steps are reported, not hidden.
 
+**Minimum calibration volume.** A step's calibrator is fitted only when the
+validation slice holds at least `MIN_CALIBRATION_ROWS` (300) games; below
+that the step serves the model's raw probability. The slice is the last
+forty-five days of the training window, which for the first step of a season
+is the opening week, and a Platt fit on one opening week once pulled every
+prediction for the following month toward the visitor (MODELING_PLAN.md
+§ The opening-week calibrator). The final served model's calibrator obeys the
+same floor.
+
 ---
 
 ## 2. Row-level output
@@ -219,8 +228,15 @@ points less often than stated, the simulation's about ten points more, and the
 blend landed within two points of its word — so a reliability report on the
 component alone was not a reliability report on the number a reader acts on.
 `app/backtest/served.py` scores the served figure on the same walk-forward
-games, with the simulation's dispersion fitted on the training side and each
-game's run means read as-of the same moment the logistic's features were.
+games, the way serving produces it: the simulation's dispersion is fitted
+per slate from everything knowable at that moment (the training-side fit
+stands in where a slate's sample is too small), each game's run means are
+read as-of the same moment the logistic's features were, and the projected
+means come first with the season-to-date means as the fallback — so a game
+the projection covers in a team's opening fortnight is scored as served
+rather than dropped at the base model's ten-game gate. The sanity gates run
+on the served figure as well as on the component, and a tripped flag names
+which figure tripped it.
 Every backtest row stores the served and simulated probabilities beside the
 logistic's, and the served slices are stored under a `served_` slice type
 beside the component's. A run that skipped the served evaluation

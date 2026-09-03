@@ -87,13 +87,24 @@ def run_backtest(
         # model's weight is. Never reported as performance.
         reference = LogisticWinModel(feature_names=list(dataset.feature_names), C=C)
         reference.fit(dataset.labelled, LABEL_COLUMN)
-        flags = sanity_flags(frame, metrics, dominant_feature_share(reference))
+        flags = [
+            {**flag, "figure": "logistic"}
+            for flag in sanity_flags(frame, metrics, dominant_feature_share(reference))
+        ]
 
         served_evaluation: ServedEvaluation | None = None
         if served:
             served_evaluation = evaluate_served(
                 store, dataset, frame, simulations=simulations
             )
+            # The served figure is what the page reports first, so it passes
+            # through the same tripwires; a flag names which figure tripped it.
+            flags += [
+                {**flag, "figure": "served"}
+                for flag in sanity_flags(
+                    served_evaluation.as_served(), served_evaluation.metrics
+                )
+            ]
 
         run_id = uuid.uuid4()
         skipped = [r for r in results if r.skipped]

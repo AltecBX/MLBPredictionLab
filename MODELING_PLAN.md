@@ -1763,6 +1763,152 @@ on synthetic games where the old gate returned a zero delta at equal `C`.
 
 ---
 
+## Spring training was inside every season-to-date rate
+
+### Diagnosis
+
+`season_start_utc` returns January the first and its docstring said "spring
+training games are excluded by game_type". Nothing excluded them. The as-of
+store loaded every game type — 355 to 403 spring-training games a season (type
+`S`), the postseason (`F`, `D`, `L`, `W`), the odd exhibition — into the team,
+pitcher and batter frames that every season-to-date rate reads, and Elo
+replayed all of them. On 28 March 2025, a day into the regular season, the
+Yankees' "season-to-date" aggregate held 27 games: 26 of them spring training,
+at 5.56 runs a game. Split squads, minor-league line-ups and pitchers working
+on a change-up were a sixth of every team's sample at the All-Star break and a
+seventh at the end of the season, in the offence rates, the run-prevention
+rates, the bullpen and starter lines, the platoon splits, the run model's
+means, the projections' current-season term, and the rating.
+
+It was also why the run model's ten-game gate never bit in April: by opening
+day every team had "played" twenty-five games. The base run model was served
+on spring-training rates for the first fortnight of every season measured.
+
+### The rule, and where it lives
+
+`AsOfStore` now admits only regular-season lines (`RATE_GAME_TYPES = {"R"}`)
+into the frames the rates read, and Elo and the schedule index see only
+competitive games (`COMPETITIVE_GAME_TYPES`: the regular season and the
+postseason). The rule is applied in the store's constructor rather than in its
+loader so a store built any other way — a fixture, a measurement script —
+obeys it too. `tests/test_game_types.py` pins it: a 15–0 exhibition ten days
+before opening day moves no rate, no rating and no rest day.
+
+Nothing about the dataset's *scored* rows changes — those were always regular
+season only (`DEFAULT_GAME_TYPES`). What changes is what the features of those
+rows were computed from.
+
+### Measured
+
+The whole `fs_v9` matrix was rebuilt from the corrected store and walked
+forward against the matrix built from the old one: same games, same C
+(0.003), same steps, paired per game, 2024–26, trained from 2021. The first
+rebuild excluded spring training and nothing else.
+
+| 6,869 games | Log loss | Brier | ECE | Δ log loss, paired 95% |
+|---|---|---|---|---|
+| Logistic, spring inside the rates | 0.68463 | 0.24574 | 1.89% | |
+| Logistic, regular season only | 0.68361 | 0.24527 | 1.27% | +0.00103 [−0.00096, +0.00307] |
+| Simulation (projected means), before | 0.68211 | 0.24455 | 1.67% | |
+| Simulation, after | 0.68213 | 0.24456 | 1.49% | ≈ 0 |
+| **Served blend, before** | 0.68102 | 0.24403 | 0.96% | |
+| **Served blend, after** | 0.68112 | 0.24408 | **0.50%** | −0.00010 [−0.00119, +0.00101] |
+
+By season the logistic gained 0.0047 in 2024 (interval just touching zero),
+nothing in 2025 and lost 0.0021 in 2026 (interval just touching zero); by
+month the gain sits in April and May and the one loss is the first week of
+each season, where a vector now has missing season-to-date features instead
+of spring-training ones. The served figure did not move on log loss and its
+calibration error halved: the 65–70% band went from winning 73.7% of the time
+against 66.9% stated to 71.0%.
+
+### The opening-week calibrator
+
+The second rebuild added the league prior, and its walk-forward lost 0.046
+of log loss in April 2024 — one month, nothing else — with the features of
+those games moved by a hundredth of a standard deviation. The features were
+not the cause. The walk-forward fits each step's Platt calibrator on the last
+forty-five days of its training window, and for the first step of a season
+that slice is the opening week. With opening day now predictable the April
+2024 slice held 55 games instead of 39, crossed the fifty-row floor that
+existed, and the home side had won 38% of them. The calibrator fitted slope
+1.93 and intercept −0.80 on that week and pulled every prediction for the
+following month toward the visitor: the step's mean probability went from
+0.536 raw to 0.371 calibrated.
+
+That is a defect in the protocol, not in the prior, and it was latent: the
+same step on the original matrix was calibrated on 49 games and cost 0.004.
+The floor is now `MIN_CALIBRATION_ROWS = 300` (`app/backtest/walkforward.py`),
+about three weeks of a season; a step whose slice is thinner serves the raw
+fit, which is a probability already, rather than a two-parameter guess at
+how to bend it. The final model's calibrator obeys the same floor. Measured
+paired, the floor alone is worth +0.00268 [+0.00066, +0.00484] on the matrix
+with the prior and +0.00146 [−0.00013, +0.00314] on the original one, all of
+it April 2024, zero elsewhere. Pinned by
+`test_a_thin_validation_slice_leaves_a_step_uncalibrated`.
+
+### The league prior, with the floor
+
+| 6,869 games, paired | Δ log loss | 95% |
+|---|---|---|
+| Regular season only → plus the league prior (logistic) | +0.00003 | [−0.00017, +0.00021] |
+| Same, served figure | +0.00002 | [−0.00008, +0.00011] |
+
+A null to four decimals. What it buys is not accuracy but existence: the
+league rates are defined before a season's first pitch, so opening day is
+predicted — 77 more games in the six seasons, 16 of them still skipped in
+2021 which has no season before it in the store.
+
+### All of it together
+
+| 6,869 games, paired | Log loss | Brier | ECE | Δ log loss, paired 95% |
+|---|---|---|---|---|
+| Logistic, as it was | 0.68463 | 0.24574 | 1.89% | |
+| Logistic, corrected store + prior + floor | 0.68346 | 0.24519 | 1.48% | +0.00105 [−0.00095, +0.00312] |
+| **Served, as it was** | 0.68102 | 0.24403 | 0.96% | |
+| **Served, corrected** | 0.68121 | 0.24413 | **0.52%** | −0.00019 [−0.00127, +0.00092] |
+
+By month the served figure gives up 0.007 in the first week of a season
+(112 games) and gains 0.002 in May; the rest is inside a thousandth. Its
+favourites at 65–70% won 71.0% against 66.9% stated (n=248), at 70% and
+above 74.4% against 72.3% (n=43).
+
+**Verdict: adopted, as a correction.** On the product's own scoring rule the
+three changes together are a measured NO_EFFECT with a calibration
+improvement, and they are recorded as such. They are adopted because the
+rates now mean what FEATURE_DICTIONARY.md says they mean and what every
+downstream constant — the shrinkage `k`s, `MIN_TEAM_GAMES`, the ten-game
+run-model gate — was set for; because the base run model no longer starts a
+season on split-squad box scores; and because a calibrator fitted on an
+opening week is a bug whichever matrix exposes it. The first-week loss is the
+same finding as before, stated more sharply: only four features carry memory
+across seasons, and every other rate is imputed until a team has played.
+Extending the projections to the bullpen, the platoon splits and the team's
+own strikeout and walk rates is the next measured lead.
+
+Two consequences handled deliberately. With no spring games to count, a team
+has zero games of history on opening day, and `FeatureVector.is_usable` used
+to withhold the whole vector. It now accepts a side whose projection stands
+on a real prior-season sample, so opening day is predicted — from the
+projections and the rating, with the season-to-date features honestly
+missing — rather than served as UNAVAILABLE or, as before, from spring
+training.
+
+And before a season's first pitch there is no *league* rate for that season
+either: every shrinkage prior, the projections' league anchors and the run
+model's league mean read one, and all of them were undefined on opening day
+— which the spring games had hidden. `FeatureBuilder.league_baseline` now
+shrinks the season in progress toward the previous season's completed rates
+by a pre-registered `LEAGUE_PRIOR_K_TEAM_GAMES = 300` team-games: on opening
+day the rates are last season's, the two carry equal weight ten days in, and
+the previous season is a twentieth of the answer by October. League rates
+move about a tenth of a run a year, so the pull is small where it lingers and
+large only where this season has nothing to say. `tests/test_league_prior.py`
+pins it. The rebuilt matrix with this prior was walked forward against the
+one without it; the result is in the table below.
+
+---
+
 ## Elo's constants: measured, and left alone
 
 MODELING_PLAN.md §3 has always said that K, the home-field constant and the
