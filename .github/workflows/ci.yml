@@ -96,8 +96,14 @@ jobs:
       - name: Install Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+      # The specs navigate to fixed dates around 2026-08-01, and a page exists
+      # only for dates inside the build window around "today". Pinned, so the
+      # suite means the same thing on every day it runs — it broke on its own
+      # a month after the dates were written, with nothing in the diff.
       - name: Build
         working-directory: frontend
+        env:
+          BUILD_DATE: "2026-08-01"
         run: npm run build
       # No API here on purpose. Every page renders an explicit unavailable
       # state without one, and a layout that breaks on a phone breaks in that
