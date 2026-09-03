@@ -1802,11 +1802,16 @@ One thing the exhibitions had been doing by accident: the Elo engine applies
 its 30% offseason regression when it observes a new season's first game, and
 a March exhibition was that game. Without it, a rating read on opening day
 came back as last October's, unregressed, until the team's first result was
-knowable. `AsOfElo.rating_at` now regresses a reading once for every season
-boundary between the last snapshot and the moment asked for, which is the
-same number the engine itself uses as the pregame rating for that first
-game. It touches each team's first game of a season and nothing else — too
-few games to measure, and pinned by test instead.
+knowable. `AsOfElo.rating_at` now regresses a reading the same number of
+times the engine does between the last snapshot and the moment asked for:
+once for every season the league opened after the snapshot, plus once more
+when the moment falls in a later year than the last opened season, because
+the next game the engine sees will open a new one. That count is per season
+opened, not per calendar year — a history loaded with a season missing
+regresses once at the next opener, as the engine does — and it is exactly
+the pregame rating the engine uses for that first game. It touches each
+team's first game of a season and nothing else — too few games to measure,
+and pinned by test instead.
 
 Nothing about the dataset's *scored* rows changes — those were always regular
 season only (`DEFAULT_GAME_TYPES`). What changes is what the features of those

@@ -129,6 +129,10 @@ class AsOfElo:
         self._times: dict[int, list[int]] = {}
         self._values: dict[int, list[float]] = {}
         self._seasons: dict[int, list[int]] = {}
+        # The seasons the engine has opened, in order, and the moment each
+        # opened: when its first rated game's result became knowable.
+        self._league_seasons: list[int] = []
+        self._season_opens: list[int] = []
         engine = EloEngine(**kwargs)  # type: ignore[arg-type]
         self.engine = engine
         if games.empty:
@@ -137,19 +141,23 @@ class AsOfElo:
         for row in completed.itertuples():
             # The rating is knowable only after the game has been played.
             knowable_at = row.knowledge_time
+            season = int(row.season)
             engine.observe(
                 game_id=int(row.id),
-                season=int(row.season),
+                season=season,
                 home_team_id=int(row.home_team_id),
                 away_team_id=int(row.away_team_id),
                 home_score=int(row.home_score),
                 away_score=int(row.away_score),
             )
             knowable_ns = self._ns(knowable_at)
+            if not self._league_seasons or season != self._league_seasons[-1]:
+                self._league_seasons.append(season)
+                self._season_opens.append(knowable_ns)
             for team_id in (int(row.home_team_id), int(row.away_team_id)):
                 self._times.setdefault(team_id, []).append(knowable_ns)
                 self._values.setdefault(team_id, []).append(engine.rating(team_id))
-                self._seasons.setdefault(team_id, []).append(int(row.season))
+                self._seasons.setdefault(team_id, []).append(season)
 
     def _cut(self, team_id: int, as_of: pd.Timestamp) -> int:
         times = self._times.get(int(team_id))
@@ -157,24 +165,44 @@ class AsOfElo:
             return 0
         return bisect_right(times, self._ns(as_of))
 
+    def _regressions_since(self, snapshot_season: int, as_of: pd.Timestamp) -> int:
+        """How many offseason regressions the engine applies between a snapshot and ``as_of``.
+
+        The engine regresses every rating once each time it observes a game
+        whose season differs from the last one it saw — once per season it
+        opens, however many calendar years the two are apart. So a snapshot
+        carries one regression for every season the league opened after it
+        by ``as_of``, plus one more when ``as_of`` falls in a later year than
+        the last opened season: the next game the engine sees will open a new
+        season, and the rating it uses for that game is the regressed one.
+        """
+        as_of = pd.Timestamp(as_of)
+        opened = bisect_right(self._season_opens, self._ns(as_of))
+        if opened == 0:
+            return 0
+        after_snapshot = opened - bisect_right(self._league_seasons, snapshot_season)
+        pending = 1 if as_of.year > self._league_seasons[opened - 1] else 0
+        return max(after_snapshot, 0) + pending
+
     def rating_at(self, team_id: int, as_of: pd.Timestamp) -> float:
         """The rating a team carries at ``as_of``.
 
-        The last snapshot before ``as_of``, regressed toward the mean once for
-        every season boundary between that snapshot and ``as_of``. The engine
-        applies the offseason regression when it observes a new season's first
-        game; a rating read between the last game of one season and the first
-        of the next has crossed the boundary just the same, and it is exactly
-        that reading — opening day's — which used to come back unregressed.
-        Spring training once hid this, because an exhibition in March was
-        "the first game of the season" as far as the engine could tell.
+        The last snapshot before ``as_of``, regressed toward the mean the same
+        number of times the engine regresses it between that snapshot and
+        ``as_of`` (`_regressions_since`). The engine applies the offseason
+        regression when it observes a new season's first game; a rating read
+        between the last game of one season and the first of the next has
+        crossed the boundary just the same, and it is exactly that reading —
+        opening day's — which used to come back unregressed. Spring training
+        once hid this, because an exhibition in March was "the first game of
+        the season" as far as the engine could tell.
         """
         cut = self._cut(team_id, as_of)
         if cut == 0:
             return BASE_RATING
         value = self._values[int(team_id)][cut - 1]
-        boundaries = pd.Timestamp(as_of).year - self._seasons[int(team_id)][cut - 1]
-        for _ in range(max(boundaries, 0)):
+        snapshot_season = self._seasons[int(team_id)][cut - 1]
+        for _ in range(self._regressions_since(snapshot_season, as_of)):
             value = value + (BASE_RATING - value) * self.engine.season_regression
         return value
 
