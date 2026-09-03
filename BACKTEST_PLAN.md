@@ -210,22 +210,45 @@ a small fixture window.
 
 ## 10. What the backtest is shown as, in the product
 
+**The figure reported first is the figure that is served.** The product
+serves the calibrated logistic model blended in log-odds with the run
+simulation at the pre-registered weight, or the logistic alone for a game the
+simulation cannot form (`app/modeling/serving.py`). The two do not calibrate
+the same way — over 2024–26 the logistic's favourites above 65% won about five
+points less often than stated, the simulation's about ten points more, and the
+blend landed within two points of its word — so a reliability report on the
+component alone was not a reliability report on the number a reader acts on.
+`app/backtest/served.py` scores the served figure on the same walk-forward
+games, with the simulation's dispersion fitted on the training side and each
+game's run means read as-of the same moment the logistic's features were.
+Every backtest row stores the served and simulated probabilities beside the
+logistic's, and the served slices are stored under a `served_` slice type
+beside the component's. A run that skipped the served evaluation
+(`backtest --no-served`) shows the component and says so; it never presents
+the component's figures as the served figure's.
+
 The Backtest page presents, in this order:
 
-1. **Headline** — n games, log loss, Brier, ECE, accuracy, with the always-50%
-   baseline beside them for context, plus any sanity flag.
+1. **Headline** — n games, log loss, Brier, ECE, accuracy of the served figure,
+   with the always-50% baseline beside them for context, plus any sanity flag,
+   and how many games were blended versus served as the logistic alone.
 2. **Calibration chart** — predicted vs. observed with per-bin counts.
 3. **Probability band table** — the honest answer to "how reliable have similar
    predictions been?", which is what the game detail page links into.
-4. **Slice tables** — season, month, favorite/underdog, home/away, starter
-   quality.
-5. **Ablation table** — which feature groups earn their place.
-6. **Run metadata** — model version, feature set, date range, git SHA.
+4. **The logistic component alone** — the same three readouts for the
+   component before blending, so the two can be compared on the page.
+5. **Ablation table** — which feature groups of the component earn their place.
+6. **Slice tables** — season, month, favorite/underdog, home/away, starter
+   quality, for the served figure.
+7. **Run metadata** — model version, feature set, date range, git SHA, and the
+   served figure's blend weight, run model and draw count.
 
 The game detail page's *Backtest evidence* tab shows only the probability band
 that the current prediction falls into, with its n and observed frequency, so
 the user gets the directly relevant historical reliability without reading the
-whole report.
+whole report. That band, the health screen's backtest summary and the
+confidence score's historical-calibration component all read the served rows
+when the latest run has them and the component's rows when it does not.
 
 ---
 

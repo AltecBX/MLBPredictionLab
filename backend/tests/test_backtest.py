@@ -296,6 +296,106 @@ def test_gate_thresholds_match_the_documented_values():
     assert NOISE_BAND > 0
 
 
+# --- the served figure --------------------------------------------------------
+#
+# The product serves the logistic blended with the run simulation, or the
+# logistic alone where no simulation can be formed. The backtest scores that
+# figure on the same games, and its slices sit beside the component's.
+
+
+def _served_fixture(monkeypatch):
+    """A walk-forward frame and a stubbed simulation covering half the games."""
+    import app.backtest.served as served_module
+    from app.backtest.served import evaluate_served
+
+    dataset = _dataset(days=200)
+    steps = make_steps(dataset.labelled, step_days=30)
+    frame = collect_predictions(run_walk_forward(dataset, steps, C=0.1, min_train_rows=200))
+    assert len(frame) > 300
+
+    simulated = {}
+    rows = []
+    for i, game_id in enumerate(frame["game_id"].tolist()):
+        # Every other game cannot be simulated: the product serves the
+        # logistic alone for those, and so must the backtest.
+        value = None if i % 2 else 0.5 + 0.1 * ((i % 5) - 2)
+        simulated[game_id] = value
+        rows.append({"game_id": game_id, "sim_projected": value, "sim_prob": value})
+    calls = {}
+
+    def fake_simulate_slate(store, builder, predictions, size, simulations, **kwargs):
+        calls["simulations"] = simulations
+        calls["models"] = kwargs.get("models")
+        return pd.DataFrame(rows)
+
+    monkeypatch.setattr(served_module, "simulate_slate", fake_simulate_slate)
+    monkeypatch.setattr(served_module, "_observed_runs", lambda store, ids: np.array([4.0, 5.0, 3.0, 6.0, 4.0, 2.0]))
+    monkeypatch.setattr(served_module, "FeatureBuilder", lambda store: object())
+    evaluation = evaluate_served(object(), dataset, frame, simulations=777)
+    return frame, simulated, calls, evaluation
+
+
+def test_served_probability_blends_where_a_simulation_exists_and_falls_back_where_not(monkeypatch):
+    from app.modeling.simulation import _blend
+
+    frame, simulated, calls, evaluation = _served_fixture(monkeypatch)
+    assert calls["simulations"] == 777
+    assert evaluation.n_games == len(frame)
+    assert evaluation.n_blended == sum(1 for v in simulated.values() if v is not None)
+    assert evaluation.n_logistic_only == evaluation.n_games - evaluation.n_blended
+
+    merged = evaluation.frame.set_index("game_id")
+    for game_id, sim in simulated.items():
+        row = merged.loc[game_id]
+        if sim is None:
+            assert row["served_prob"] == pytest.approx(row["prob"])
+            assert not row["served_blended"]
+            assert np.isnan(row["sim_prob"])
+        else:
+            expected = _blend(np.array([row["prob"]]), np.array([sim]), evaluation.weight)[0]
+            assert row["served_prob"] == pytest.approx(expected)
+            assert row["served_blended"]
+    assert evaluation.metrics.n == evaluation.n_games
+    assert evaluation.weight == 0.5
+    assert evaluation.run_model == "projected"
+
+
+def test_served_slices_are_the_same_dimensions_under_a_prefix(monkeypatch):
+    from app.backtest.served import SERVED_SLICE_PREFIX
+
+    _, _, _, evaluation = _served_fixture(monkeypatch)
+    component = {s.slice_type for s in compute_slices(evaluation.frame)}
+    served = {s.slice_type for s in compute_slices(evaluation.as_served())}
+    assert served == component
+    assert SERVED_SLICE_PREFIX == "served_"
+    # The served overall row is scored on the served figure, not the component's.
+    overall = next(s for s in compute_slices(evaluation.as_served()) if s.slice_type == "overall")
+    assert overall.metrics.log_loss == pytest.approx(evaluation.metrics.log_loss)
+    assert overall.metrics.log_loss != pytest.approx(
+        evaluate(evaluation.frame["actual"], evaluation.frame["prob"]).log_loss
+    )
+
+
+def test_served_config_records_what_was_blended(monkeypatch):
+    _, _, _, evaluation = _served_fixture(monkeypatch)
+    config = evaluation.to_config()
+    assert config["available"] is True
+    assert config["blend_weight"] == 0.5
+    assert config["run_model"] == "projected"
+    assert config["simulations"] == 777
+    assert config["n_blended"] + config["n_logistic_only"] == config["n_games"]
+    assert config["dispersion"]["team_games"] == 6
+    summary = evaluation.summary()
+    assert summary["log_loss"] == pytest.approx(evaluation.metrics.log_loss)
+
+
+def test_an_empty_walk_forward_cannot_be_served():
+    from app.backtest.served import evaluate_served
+
+    with pytest.raises(ValueError):
+        evaluate_served(object(), _dataset(days=30), pd.DataFrame())
+
+
 def test_ablation_reports_the_group_alone_view_and_a_combined_reading():
     """Leave-one-out and group-alone are reported together (BACKTEST_PLAN.md §6)."""
     from app.backtest.ablation import run_ablation

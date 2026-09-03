@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.backtest.ablation import run_ablation, sanity_flags
 from app.backtest.metrics import evaluate
+from app.backtest.served import SERVED_SLICE_PREFIX, ServedEvaluation, evaluate_served
 from app.backtest.slices import compute_slices
 from app.backtest.walkforward import (
     collect_predictions,
@@ -28,9 +29,11 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import BacktestPrediction, BacktestResult, BacktestRun
 from app.db.upsert import upsert
+from app.features.asof import AsOfStore
 from app.ingestion.status import job_run
 from app.modeling.dataset import LABEL_COLUMN, build_dataset
 from app.modeling.logistic import LogisticWinModel
+from app.modeling.runs import DEFAULT_SIMULATIONS
 from app.modeling.train import dominant_feature_share, select_hyperparameters
 
 log = get_logger(__name__)
@@ -45,10 +48,21 @@ def run_backtest(
     ablation: bool = True,
     feature_set_version: str | None = None,
     C: float | None = None,
+    served: bool = True,
+    simulations: int = DEFAULT_SIMULATIONS,
 ) -> dict[str, Any]:
+    """Walk the logistic model forward, then score what would have been served.
+
+    ``served`` scores the product's figure — the logistic blended with the run
+    simulation — on the same games; ``simulations`` is the draw count per game,
+    serving's own by default. Off only for a quick component-only run.
+    """
     with job_run(session, "run_backtest", step_days=step_days) as job:
+        # One store for the dataset and the served evaluation, so the
+        # simulation reads the same games the features were built from.
+        store = AsOfStore.load(session, seasons)
         dataset = build_dataset(
-            session, seasons=seasons, feature_set_version=feature_set_version
+            session, seasons=seasons, feature_set_version=feature_set_version, store=store
         )
         if dataset.frame.empty:
             raise ValueError(
@@ -74,6 +88,12 @@ def run_backtest(
         reference = LogisticWinModel(feature_names=list(dataset.feature_names), C=C)
         reference.fit(dataset.labelled, LABEL_COLUMN)
         flags = sanity_flags(frame, metrics, dominant_feature_share(reference))
+
+        served_evaluation: ServedEvaluation | None = None
+        if served:
+            served_evaluation = evaluate_served(
+                store, dataset, frame, simulations=simulations
+            )
 
         run_id = uuid.uuid4()
         skipped = [r for r in results if r.skipped]
@@ -105,13 +125,28 @@ def run_backtest(
                     for r in skipped
                 ],
                 "importance_stability": importance_stability(results),
+                "served": (
+                    served_evaluation.to_config()
+                    if served_evaluation is not None
+                    else {
+                        "available": False,
+                        "reason": "The served figure was not scored in this run.",
+                    }
+                ),
             },
         )
         session.add(run_row)
         session.flush()
 
-        _store_predictions(session, run_id, frame)
+        _store_predictions(session, run_id, frame, served_evaluation)
         _store_slices(session, run_id, compute_slices(frame))
+        if served_evaluation is not None:
+            _store_slices(
+                session,
+                run_id,
+                compute_slices(served_evaluation.as_served()),
+                prefix=SERVED_SLICE_PREFIX,
+            )
 
         if ablation:
             rows = run_ablation(
@@ -139,18 +174,41 @@ def run_backtest(
             "baseline_log_loss": metrics.baseline_log_loss,
         },
         "sanity_flags": flags,
+        "served": (
+            served_evaluation.summary()
+            if served_evaluation is not None
+            else {"available": False, "reason": "not scored in this run"}
+        ),
     }
-    log.info("backtest.complete", **{k: v for k, v in summary.items() if k != "metrics"})
+    log.info(
+        "backtest.complete",
+        **{k: v for k, v in summary.items() if k not in ("metrics", "served")},
+    )
     return summary
 
 
-def _store_predictions(session: Session, run_id: uuid.UUID, frame) -> None:
+def _store_predictions(
+    session: Session,
+    run_id: uuid.UUID,
+    frame,
+    served: ServedEvaluation | None = None,
+) -> None:
+    served_by_game: dict[int, tuple[float, float | None]] = {}
+    if served is not None:
+        for row in served.frame.itertuples():
+            simulated = float(row.sim_prob)
+            served_by_game[int(row.game_id)] = (
+                float(row.served_prob),
+                simulated if simulated == simulated else None,
+            )
     rows = [
         {
             "run_id": run_id,
             "game_id": int(row.game_id),
             "as_of": row.as_of,
             "predicted_home_win_prob": float(row.prob),
+            "served_home_win_prob": served_by_game.get(int(row.game_id), (None, None))[0],
+            "simulated_home_win_prob": served_by_game.get(int(row.game_id), (None, None))[1],
             "actual_home_win": bool(row.actual),
             "train_end_date": row.train_end,
             "n_train_rows": int(row.n_train),
@@ -170,14 +228,15 @@ def _store_predictions(session: Session, run_id: uuid.UUID, frame) -> None:
     upsert(session, BacktestPrediction, rows, ["run_id", "game_id"], update=False)
 
 
-def _store_slices(session: Session, run_id: uuid.UUID, slices) -> None:
+def _store_slices(session: Session, run_id: uuid.UUID, slices, prefix: str = "") -> None:
+    """Persist slices; ``prefix`` keeps the served figure's apart from the component's."""
     rows = []
     for item in slices:
         m = item.metrics
         rows.append(
             {
                 "run_id": run_id,
-                "slice_type": item.slice_type,
+                "slice_type": prefix + item.slice_type,
                 "slice_key": item.slice_key,
                 "n_games": m.n,
                 "accuracy": m.accuracy,

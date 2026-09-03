@@ -248,38 +248,30 @@ lock; the highest probability the served model has emitted on those three
 seasons is 87.6%, and it went past the market's forty-two-year maximum of
 73.7% on 0.06% of games.
 
-**The logistic model alone**, walk-forward over four seasons of real MLB
-games (2023–2026) on the previous feature set `fs_v1`, trained only on games
-before each prediction date — kept as the reference the ablation below reads
-against:
+Reliability of the served figure by probability band — the honest answer to
+"how often does a 62% pick actually win?" — on those same 6,900 games:
 
-| Metric | Value | Reference |
-|---|---|---|
-| Games evaluated | 8,134 (26 steps; 14 early steps skipped for too little training data) | |
-| **Log loss** | **0.6845** | 0.6931 = always 50% · 0.679–0.681 = market close |
-| **Brier score** | **0.2457** | |
-| **Calibration error** | **1.12%** (max 6.72%) | |
-| Accuracy | 55.6% | ~58–60% = market close |
-| ROC AUC | 0.570 | |
-
-Reliability by probability band — the honest answer to "how often does a 62%
-pick actually win?":
-
-| Band (favorite) | Games | Model said | Actually won | Gap |
+| Band (favorite) | Games | Served said | Actually won | Gap |
 |---|---|---|---|---|
-| 50–55% | 3,634 | 52.5% | 52.9% | +0.4 |
-| 55–60% | 2,714 | 56.9% | 55.4% | −1.5 |
-| 60–65% | 1,081 | 62.1% | 58.5% | −3.7 |
-| 65–70% | 505 | 66.9% | 64.0% | −2.9 |
-| 70–75% | 153 | 71.9% | 67.3% | −4.6 |
-| 75%+ | 47 | 78.0% | 72.3% | −5.7 |
+| 50–55% | 3,651 | 52.4% | 52.7% | +0.3 |
+| 55–60% | 2,252 | 57.1% | 56.4% | −0.7 |
+| 60–65% | 750 | 62.1% | 63.9% | +1.8 |
+| 65–70% | 216 | 66.8% | 72.2% | +5.4 |
+| 70%+ | 31 | 72.6% | 71.0% | −1.6 |
 
-The model is well calibrated where most of the volume sits and **mildly
-overconfident in its strongest picks**. That is a real, measured limitation, not
-a rounding artefact: the per-step Platt calibrator is fit on a 45-day validation
-window, which is thin in the tails. It is surfaced in the product rather than
-smoothed over — the backtest page shows this table with its gap column, and the
-game detail page links each prediction to the band it falls in.
+**The logistic component alone** runs the other way. On the first production
+backtest of `fs_v9` — 13,461 games from May 2021 to September 2026, trained
+only on games before each prediction date — the component reads log loss
+0.6810, Brier 0.2439, calibration error 1.01%, accuracy 56.7%, and its
+favourites above 65% won about five points less often than stated (70–75%:
+said 72.0%, won 65.5%, n=385). The simulation it is blended with compresses
+toward .500 and errs the other way, and the blend lands between the two. That
+is why the backtest scores the served figure on the same games and reports it
+first, with the component shown beside it rather than instead of it
+([BACKTEST_PLAN.md](BACKTEST_PLAN.md) §10). The strongest served picks are
+few — 31 games in three seasons above 70% — and are reported with their
+counts, not smoothed over; the game detail page links each prediction to the
+band it falls in.
 
 ### The ensemble question, answered
 

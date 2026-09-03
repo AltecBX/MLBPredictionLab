@@ -467,10 +467,25 @@ export interface SanityFlag {
   detail: string;
 }
 
+/** The figure the product serves — logistic blended with the run simulation —
+ *  scored on the same walk-forward games as the logistic component. */
+export interface ServedBacktest {
+  available: boolean;
+  reason: string | null;
+  overall: BacktestSlice | null;
+  calibration_bins: CalibrationBin[];
+  slices: Record<string, BacktestSlice[]>;
+  config: Record<string, unknown>;
+}
+
 export interface BacktestReport {
   run_id: string;
   model_name: string;
   algorithm: string;
+  /** Which model the top-level figures describe. Always "logistic"; the
+   *  served figure lives under `served`. */
+  component: string;
+  served: ServedBacktest;
   feature_set_version: string;
   as_of_policy: string;
   start_date: string;

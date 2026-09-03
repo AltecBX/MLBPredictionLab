@@ -1732,6 +1732,19 @@ refresh after this change trains `fs_v9`, scores it against the active
 `fs_v1` model on the same walk-forward steps, and activates it only if the
 paired interval excludes zero there too.
 
+The first production backtest of `fs_v9` (13,461 games, 2021-05-31 to
+2026-09-02) read log loss 0.6810, Brier 0.2439, ECE 1.01%, accuracy 56.7% for
+the logistic component alone — and a probability-band table that ran
+overconfident from 65% up (70–75%: said 72.0%, won 65.5%; 80–100%: said 83.2%,
+won 66.7%, n=45). That is the component, not the served figure: on the local
+2024–26 walk-forward the served blend's favourites at 65–70% *won* 72.2% against
+66.8% stated, because the simulation's compression toward .500 more than
+offsets the logistic's stretch. So the backtest now scores the served figure on
+the same games (`app/backtest/served.py`; BACKTEST_PLAN.md §10) and the
+product's reliability readouts — the backtest page, the game page's evidence
+band, the health screen — describe what is served, with the component shown
+beside it rather than instead of it.
+
 Wiring that up exposed a defect in the gate itself. Both arms were being run
 on the *candidate's* matrix — the incumbent arm was "the candidate's columns
 at the incumbent's C". For a `C` change that is the right comparison; for a

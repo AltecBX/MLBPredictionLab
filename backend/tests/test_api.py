@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
 pytest.importorskip("fastapi")
@@ -165,6 +165,10 @@ def seeded(test_engine):
             start_date=date(2023, 4, 1), end_date=date(2025, 10, 1), step_days=30,
             validation_days=45, min_train_rows=500, seed=1, n_games=6000, n_steps=30,
             sanity_flags=[],
+            config={"served": {"available": True, "blend_weight": 0.5,
+                               "run_model": "projected", "simulations": 20000,
+                               "n_games": 6000, "n_blended": 5900,
+                               "n_logistic_only": 100}},
         )
         session.add(run)
         session.flush()
@@ -182,6 +186,21 @@ def seeded(test_engine):
                     run_id=run.id, slice_type="probability_band", slice_key="60-65",
                     n_games=400, accuracy=0.61, log_loss=0.66, brier_score=0.23,
                     extra={"mean_predicted": 0.621, "observed": 0.607},
+                ),
+                # The served figure's rows sit beside the component's under a
+                # prefixed slice type; the product readouts prefer them.
+                BacktestResult(
+                    run_id=run.id, slice_type="served_overall", slice_key="all",
+                    n_games=6000, accuracy=0.561, log_loss=0.6790, brier_score=0.2436,
+                    calibration_error=0.009, max_calibration_error=0.05, roc_auc=0.588,
+                    extra={"bins": [{"lower": 0.5, "upper": 0.6, "n": 3000,
+                                     "mean_predicted": 0.54, "observed_frequency": 0.545,
+                                     "wilson_low": 0.52, "wilson_high": 0.56}]},
+                ),
+                BacktestResult(
+                    run_id=run.id, slice_type="served_probability_band", slice_key="60-65",
+                    n_games=350, accuracy=0.63, log_loss=0.655, brier_score=0.228,
+                    extra={"mean_predicted": 0.622, "observed": 0.640},
                 ),
                 BacktestResult(
                     run_id=run.id, slice_type="ablation", slice_key="starting_pitcher",
@@ -369,7 +388,61 @@ def test_backtest_evidence_reports_the_matching_band(client):
     assert evidence["available"] is True
     assert evidence["band"] == "60-65"
     assert evidence["n"] == 400
-    assert evidence["overall_log_loss"] == pytest.approx(0.6805)
+    # The overall figures describe what is served, not the logistic component.
+    assert evidence["overall_log_loss"] == pytest.approx(0.6790)
+    assert evidence["overall_calibration_error"] == pytest.approx(0.009)
+
+
+def test_historical_calibration_judges_against_the_served_bands(seeded):
+    """The probability being judged is the served one, so its band is too."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.backtest.served import reported_slices
+    from app.services.confidence import historical_calibration
+
+    Session = sessionmaker(bind=seeded)
+    with Session() as session:
+        score, detail = historical_calibration(session, 0.62)
+        assert detail["band"] == "60-65"
+        assert detail["n"] == 350  # the served row, not the component's 400
+        assert detail["observed"] == pytest.approx(0.640)
+        assert score is not None
+
+        run_id = session.scalar(select(BacktestRun.id))
+        assert [r.slice_type for r in reported_slices(session, run_id, "overall")] == [
+            "served_overall"
+        ]
+
+
+def test_a_run_without_served_rows_falls_back_to_the_component(seeded):
+    from sqlalchemy.orm import sessionmaker
+
+    from app.backtest.served import reported_slices
+
+    Session = sessionmaker(bind=seeded)
+    with Session() as session:
+        older = BacktestRun(
+            model_name=settings.active_model_name, algorithm="logistic_regression_l2",
+            feature_set_version="fs_v1", as_of_policy="T_MINUS_3H",
+            start_date=date(2023, 4, 1), end_date=date(2024, 10, 1), step_days=30,
+            validation_days=45, min_train_rows=500, seed=1, n_games=3000, n_steps=15,
+            sanity_flags=[], created_at=datetime(2020, 1, 1, tzinfo=UTC),
+        )
+        session.add(older)
+        session.flush()
+        session.add(
+            BacktestResult(
+                run_id=older.id, slice_type="overall", slice_key="all", n_games=3000,
+                log_loss=0.69, extra={},
+            )
+        )
+        session.flush()
+        try:
+            rows = reported_slices(session, older.id, "overall")
+            assert [r.slice_type for r in rows] == ["overall"]
+            assert reported_slices(session, older.id, "probability_band") == []
+        finally:
+            session.rollback()
 
 
 def test_missing_game_is_404(client):
@@ -397,6 +470,23 @@ def test_backtest_latest_returns_slices_and_omits_odds_metrics(client):
     # ROI/CLV are null, never zero.
     assert body["overall"]["roi"] is None
     assert body["overall"]["clv"] is None
+
+
+def test_backtest_payload_separates_the_served_figure_from_the_component(client):
+    body = client.get("/api/v1/backtest/latest").json()
+    assert body["component"] == "logistic"
+    # The component's figures keep their keys, and no served row leaks into them.
+    assert body["overall"]["log_loss"] == pytest.approx(0.6805)
+    assert not any(key.startswith("served_") for key in body["slices"])
+
+    served = body["served"]
+    assert served["available"] is True
+    assert served["overall"]["slice_type"] == "overall"
+    assert served["overall"]["log_loss"] == pytest.approx(0.6790)
+    assert served["calibration_bins"][0]["n"] == 3000
+    assert served["slices"]["probability_band"][0]["n_games"] == 350
+    assert served["config"]["blend_weight"] == 0.5
+    assert served["config"]["n_logistic_only"] == 100
 
 
 def test_backtest_run_list(client):

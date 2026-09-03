@@ -9,6 +9,56 @@ import type { BacktestSlice } from "@/lib/types";
 
 export const metadata = { title: "Backtest" };
 
+function HeadlineStats({
+  overall,
+  baseline,
+}: {
+  overall: BacktestSlice | null;
+  baseline: number;
+}) {
+  return (
+    <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <StatBlock
+        label="Log loss"
+        value={num(overall?.log_loss, 4)}
+        sub={`baseline ${baseline.toFixed(4)}`}
+        tone={
+          overall?.log_loss !== null &&
+          overall?.log_loss !== undefined &&
+          overall.log_loss < baseline
+            ? "home"
+            : "away"
+        }
+      />
+      <StatBlock label="Brier score" value={num(overall?.brier_score, 4)} />
+      <StatBlock
+        label="Calibration error"
+        value={
+          overall?.calibration_error !== null && overall?.calibration_error !== undefined
+            ? pct(overall.calibration_error, 2)
+            : "—"
+        }
+        sub={
+          overall?.max_calibration_error !== null && overall?.max_calibration_error !== undefined
+            ? `max ${pct(overall.max_calibration_error, 2)}`
+            : undefined
+        }
+      />
+      <StatBlock label="ROC AUC" value={num(overall?.roc_auc, 3)} />
+      <StatBlock
+        label="Accuracy"
+        value={
+          overall?.accuracy !== null && overall?.accuracy !== undefined
+            ? pct(overall.accuracy, 1)
+            : "—"
+        }
+        sub="Reported, never optimized"
+      />
+      <StatBlock label="Games" value={overall?.n_games.toLocaleString() ?? "—"} />
+    </dl>
+  );
+}
+
 const SLICE_TITLES: Record<string, { title: string; description: string }> = {
   season: { title: "By season", description: "Out-of-sample performance year by year." },
   month: { title: "By month", description: "Seasonality in model performance." },
@@ -256,8 +306,26 @@ export default async function BacktestPage() {
   }
 
   const report = result.data;
-  const overall = report.overall;
+  const served = report.served?.available ? report.served : null;
+  // What the page reports first is the figure the product serves. A run that
+  // scored the logistic component only says so and shows the component.
+  const shown = served
+    ? {
+        overall: served.overall,
+        calibration_bins: served.calibration_bins,
+        slices: served.slices,
+      }
+    : {
+        overall: report.overall,
+        calibration_bins: report.calibration_bins,
+        slices: report.slices,
+      };
+  const overall = shown.overall;
   const flags = report.sanity_flags ?? [];
+  const servedConfig = served?.config ?? {};
+  const blended = servedConfig["n_blended"] as number | undefined;
+  const logisticOnly = servedConfig["n_logistic_only"] as number | undefined;
+  const weight = servedConfig["blend_weight"] as number | undefined;
 
   return (
     <div className="flex flex-col gap-5">
@@ -268,7 +336,27 @@ export default async function BacktestPage() {
           Brier score and calibration rank above accuracy — a 60% prediction has to
           win about 60% of the time for the number to be usable.
         </p>
+        <p className="mt-1 max-w-prose text-sm muted">
+          {served
+            ? `The figures below are for the number the site serves: the logistic model blended with the run simulation${
+                weight !== undefined ? ` at a fixed weight of ${weight} on the simulation` : ""
+              }${
+                blended !== undefined && logisticOnly !== undefined
+                  ? `, or the logistic model alone where the simulation could not be formed (${blended.toLocaleString()} blended, ${logisticOnly.toLocaleString()} logistic only)`
+                  : ""
+              }. The logistic component on its own is reported further down.`
+            : "This run scored the logistic component only. The number the site serves blends it with the run simulation; the next backtest scores both."}
+        </p>
       </header>
+
+      {served ? null : (
+        <UnavailableNotice
+          compact
+          title="Served figure not scored in this run"
+          reason={report.served?.reason ?? "The served blend was not evaluated."}
+          requiredSource="make backtest"
+        />
+      )}
 
       {flags.length ? (
         <div
@@ -296,42 +384,12 @@ export default async function BacktestPage() {
       ) : null}
 
       <Section
-        title="Headline"
+        title={served ? "Headline — what the site serves" : "Headline"}
         description={`${report.n_games.toLocaleString()} games from ${report.start_date} to ${report.end_date}, ${report.n_steps} walk-forward steps${
           report.n_steps_skipped ? `, ${report.n_steps_skipped} skipped for insufficient training data` : ""
         }.`}
       >
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          <StatBlock
-            label="Log loss"
-            value={num(overall?.log_loss, 4)}
-            sub={`baseline ${report.baseline_log_loss.toFixed(4)}`}
-            tone={
-              overall?.log_loss !== null &&
-              overall?.log_loss !== undefined &&
-              overall.log_loss < report.baseline_log_loss
-                ? "home"
-                : "away"
-            }
-          />
-          <StatBlock label="Brier score" value={num(overall?.brier_score, 4)} />
-          <StatBlock
-            label="Calibration error"
-            value={overall?.calibration_error !== null && overall?.calibration_error !== undefined ? pct(overall.calibration_error, 2) : "—"}
-            sub={
-              overall?.max_calibration_error !== null && overall?.max_calibration_error !== undefined
-                ? `max ${pct(overall.max_calibration_error, 2)}`
-                : undefined
-            }
-          />
-          <StatBlock label="ROC AUC" value={num(overall?.roc_auc, 3)} />
-          <StatBlock
-            label="Accuracy"
-            value={overall?.accuracy !== null && overall?.accuracy !== undefined ? pct(overall.accuracy, 1) : "—"}
-            sub="Reported, never optimized"
-          />
-          <StatBlock label="Games" value={overall?.n_games.toLocaleString() ?? "—"} />
-        </dl>
+        <HeadlineStats overall={overall} baseline={report.baseline_log_loss} />
       </Section>
 
       <Section
@@ -339,25 +397,44 @@ export default async function BacktestPage() {
         description="Predicted probability against observed win frequency."
       >
         <CalibrationChart
-          bins={report.calibration_bins}
+          bins={shown.calibration_bins}
           ece={overall?.calibration_error ?? null}
           mce={overall?.max_calibration_error ?? null}
         />
       </Section>
 
-      {report.slices["probability_band"] ? (
+      {shown.slices["probability_band"] ? (
         <Section
           title={SLICE_TITLES.probability_band.title}
           description={SLICE_TITLES.probability_band.description}
         >
-          <BandTable rows={report.slices["probability_band"]} />
+          <BandTable rows={shown.slices["probability_band"]} />
+        </Section>
+      ) : null}
+
+      {served ? (
+        <Section
+          title="The logistic component alone"
+          description="The same games scored on the calibrated logistic model before it is blended with the run simulation. Its favourites run overconfident where the blend does not; this is the model the ablation below takes apart."
+        >
+          <div className="flex flex-col gap-4">
+            <HeadlineStats overall={report.overall} baseline={report.baseline_log_loss} />
+            <CalibrationChart
+              bins={report.calibration_bins}
+              ece={report.overall?.calibration_error ?? null}
+              mce={report.overall?.max_calibration_error ?? null}
+            />
+            {report.slices["probability_band"] ? (
+              <BandTable rows={report.slices["probability_band"]} />
+            ) : null}
+          </div>
         </Section>
       ) : null}
 
       {report.slices["ablation"] ? (
         <Section
           title="Feature group ablation"
-          description="Whether each feature group improves or reduces out-of-sample performance."
+          description="Whether each feature group of the logistic component improves or reduces out-of-sample performance."
         >
           <AblationTable rows={report.slices["ablation"]} />
         </Section>
@@ -365,13 +442,13 @@ export default async function BacktestPage() {
 
       {(["season", "month", "favorite_underdog", "home_away", "starter_quality", "starters_known", "lineup_confirmed"] as const).map(
         (key) =>
-          report.slices[key] ? (
+          shown.slices[key] ? (
             <Section
               key={key}
               title={SLICE_TITLES[key]?.title ?? key}
               description={SLICE_TITLES[key]?.description}
             >
-              <SliceTable rows={report.slices[key]} />
+              <SliceTable rows={shown.slices[key]} />
             </Section>
           ) : null,
       )}
@@ -403,6 +480,20 @@ export default async function BacktestPage() {
               <tr>
                 <th scope="row" className="font-normal">Feature set</th>
                 <td>{report.feature_set_version}</td>
+              </tr>
+              <tr>
+                <th scope="row" className="font-normal">Served figure</th>
+                <td>
+                  {served
+                    ? `logistic blended with the ${String(servedConfig["run_model"] ?? "served")} run model, weight ${
+                        weight ?? "—"
+                      } on the simulation, ${
+                        servedConfig["simulations"] !== undefined
+                          ? `${Number(servedConfig["simulations"]).toLocaleString()} draws per game`
+                          : "draws per game unrecorded"
+                      }`
+                    : "not scored in this run"}
+                </td>
               </tr>
               <tr>
                 <th scope="row" className="font-normal">As-of policy</th>
