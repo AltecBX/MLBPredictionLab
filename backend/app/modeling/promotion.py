@@ -28,6 +28,17 @@ quietly changing the model, and this is the check that makes that visible.
 walk-forward metrics against the incumbent's *registered* metrics would compare
 two numbers computed over different games, different windows and different
 amounts of history, and the difference between them would be mostly calendar.
+
+**The incumbent is scored on its own columns.** A feature-set change usually
+adds columns, and the candidate's matrix carries the incumbent's columns as a
+subset, so the incumbent arm is the candidate's matrix restricted to the
+columns the active model registered, at the active model's `C`. Scoring the
+incumbent on the candidate's full matrix instead would, whenever the grid
+picked the same `C` for both, compare a model with itself: a delta of exactly
+zero, a HOLD, and a feature set that never reaches the product however much it
+improves on the old one. When the incumbent uses a column the candidate's
+matrix no longer carries, the caller supplies the incumbent's own matrix; the
+gate holds rather than guess if it cannot.
 """
 
 from __future__ import annotations
@@ -43,6 +54,7 @@ if TYPE_CHECKING:  # `feature_set_compare` imports `train`, which imports this.
     from app.backtest.feature_set_compare import PairedDelta
 from app.core.logging import get_logger
 from app.db.models import ModelVersion
+from app.features.registry import feature_keys
 from app.modeling.dataset import Dataset
 
 log = get_logger(__name__)
@@ -67,6 +79,8 @@ class PromotionDecision:
     candidate_C: float | None = None
     incumbent_feature_set: str | None = None
     candidate_feature_set: str | None = None
+    incumbent_n_features: int | None = None
+    candidate_n_features: int | None = None
     n_common_games: int = 0
     incumbent_log_loss: float | None = None
     candidate_log_loss: float | None = None
@@ -81,11 +95,13 @@ class PromotionDecision:
                 "version": self.incumbent_version,
                 "C": self.incumbent_C,
                 "feature_set": self.incumbent_feature_set,
+                "n_features": self.incumbent_n_features,
                 "log_loss": self.incumbent_log_loss,
             },
             "candidate": {
                 "C": self.candidate_C,
                 "feature_set": self.candidate_feature_set,
+                "n_features": self.candidate_n_features,
                 "log_loss": self.candidate_log_loss,
             },
             "n_common_games": self.n_common_games,
@@ -99,18 +115,86 @@ def _config(version: ModelVersion) -> tuple[float | None, str | None]:
     return (None if C is None else float(C)), version.feature_set_version
 
 
+def incumbent_columns(incumbent: ModelVersion) -> list[str] | None:
+    """The columns the active model was fitted on, or None if they cannot be known.
+
+    The registry records the artifact's feature list with the version; a row
+    without one falls back to the registry's definition of its feature set,
+    which is the same list unless the set has since been edited in place. A
+    feature set that has been retired from the registry, on a row with no list
+    of its own, is unknowable and the gate says so.
+    """
+    names = list(getattr(incumbent, "feature_names", None) or [])
+    if names:
+        return names
+    try:
+        return list(feature_keys(incumbent.feature_set_version))
+    except KeyError:
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class _IncumbentArm:
+    """What scores the active model: which matrix, restricted to which columns."""
+
+    dataset: Dataset | None
+    feature_names: list[str] | None  # None: the matrix's own columns, unrestricted
+    problem: str | None = None
+
+
+def _incumbent_arm(
+    dataset: Dataset, incumbent: ModelVersion, incumbent_dataset: Dataset | None
+) -> _IncumbentArm:
+    if incumbent.feature_set_version == dataset.feature_set_version:
+        return _IncumbentArm(dataset=dataset, feature_names=None)
+
+    names = incumbent_columns(incumbent)
+    if names is None:
+        return _IncumbentArm(
+            dataset=None,
+            feature_names=None,
+            problem=(
+                f"The active model's feature set {incumbent.feature_set_version!r} is "
+                f"no longer in the registry and the version recorded no feature list, "
+                f"so it cannot be rescored on today's games. Activate deliberately if "
+                f"intended."
+            ),
+        )
+
+    source = incumbent_dataset if incumbent_dataset is not None else dataset
+    missing = [name for name in names if name not in source.frame.columns]
+    if missing:
+        shown = ", ".join(missing[:4]) + (", …" if len(missing) > 4 else "")
+        return _IncumbentArm(
+            dataset=None,
+            feature_names=None,
+            problem=(
+                f"The active model uses {len(missing)} column(s) the "
+                f"{'supplied' if incumbent_dataset is not None else 'candidate'} matrix "
+                f"does not carry ({shown}), so the two cannot be scored on the same "
+                f"games. Build the incumbent's own matrix, or activate deliberately."
+            ),
+        )
+    return _IncumbentArm(dataset=source, feature_names=names)
+
+
 def decide_promotion(
     dataset: Dataset,
     steps: list[Step],
     candidate_C: float,
     incumbent: ModelVersion | None,
     min_train_rows: int | None = None,
+    incumbent_dataset: Dataset | None = None,
 ) -> PromotionDecision:
     """Should the candidate replace ``incumbent``?
 
     Runs a walk-forward for each configuration over the same steps, so the two
     are scored on identical games and can be paired. A configuration that is
     unchanged skips the comparison entirely — there is nothing to compare.
+
+    The incumbent arm is scored on the columns the active model registered. In
+    the usual case those are a subset of ``dataset``'s columns and no second
+    matrix is needed; ``incumbent_dataset`` is for the case where they are not.
     """
     if incumbent is None:
         return PromotionDecision(
@@ -157,6 +241,21 @@ def decide_promotion(
             candidate_feature_set=candidate_features,
         )
 
+    arm = _incumbent_arm(dataset, incumbent, incumbent_dataset)
+    if arm.problem is not None or arm.dataset is None:
+        return PromotionDecision(
+            verdict=HOLD,
+            should_activate=False,
+            reason=arm.problem or "The active model cannot be rescored.",
+            incumbent_version=incumbent.version,
+            incumbent_C=incumbent_C,
+            candidate_C=candidate_C,
+            incumbent_feature_set=incumbent_features,
+            candidate_feature_set=candidate_features,
+            candidate_n_features=len(dataset.feature_names),
+        )
+    incumbent_names = arm.feature_names or list(arm.dataset.feature_names)
+
     # Imported here rather than at module scope: `feature_set_compare` pulls in
     # `train`, and `train` is what calls this. A local import is the smaller
     # price than splitting the bootstrap helpers into a third module.
@@ -166,7 +265,13 @@ def decide_promotion(
         run_walk_forward(dataset, steps, C=candidate_C, min_train_rows=min_train_rows)
     )
     baseline = collect_predictions(
-        run_walk_forward(dataset, steps, C=incumbent_C, min_train_rows=min_train_rows)
+        run_walk_forward(
+            arm.dataset,
+            steps,
+            C=incumbent_C,
+            min_train_rows=min_train_rows,
+            feature_names=arm.feature_names,
+        )
     )
     if candidate.empty or baseline.empty:
         return PromotionDecision(
@@ -207,6 +312,8 @@ def decide_promotion(
         "candidate_C": candidate_C,
         "incumbent_feature_set": incumbent_features,
         "candidate_feature_set": candidate_features,
+        "incumbent_n_features": len(incumbent_names),
+        "candidate_n_features": len(dataset.feature_names),
         "n_common_games": int(len(merged)),
         "incumbent_log_loss": float(np.mean(base_loss)),
         "candidate_log_loss": float(np.mean(cand_loss)),
@@ -253,4 +360,5 @@ __all__ = [
     "REJECT",
     "PromotionDecision",
     "decide_promotion",
+    "incumbent_columns",
 ]

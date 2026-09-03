@@ -8,13 +8,17 @@ really do not activate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from app.backtest.walkforward import make_steps
+from app.features.registry import feature_keys
+from app.modeling.dataset import Dataset
 from app.modeling.promotion import (
     HOLD,
     NO_INCUMBENT,
@@ -22,7 +26,9 @@ from app.modeling.promotion import (
     REFRESH,
     REJECT,
     decide_promotion,
+    incumbent_columns,
 )
+from app.modeling.train import incumbent_matrix
 
 
 @dataclass
@@ -32,17 +38,25 @@ class _Version:
     version: str = "v3"
     feature_set_version: str = "fs_v1"
     hyperparameters: dict[str, Any] | None = None
+    feature_names: list[str] | None = None
 
 
 @dataclass
 class _Dataset:
     feature_set_version: str = "fs_v1"
+    feature_names: list[str] = field(default_factory=lambda: ["a", "b"])
+    frame: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=["a", "b"]))
 
 
-def _incumbent(C: float | None = 0.01, feature_set: str = "fs_v1") -> _Version:
+def _incumbent(
+    C: float | None = 0.01,
+    feature_set: str = "fs_v1",
+    feature_names: list[str] | None = None,
+) -> _Version:
     return _Version(
         feature_set_version=feature_set,
         hyperparameters=None if C is None else {"C": C},
+        feature_names=feature_names,
     )
 
 
@@ -80,8 +94,10 @@ def test_a_changed_feature_set_is_not_a_refresh_even_at_the_same_C(monkeypatch):
     """Same C, different columns, is a different model."""
     _stub_walk_forward(monkeypatch, base=0.5, cand=0.5)
     decision = decide_promotion(
-        _Dataset(feature_set_version="fs_v5"), [_step()], candidate_C=0.01,
-        incumbent=_incumbent(0.01, feature_set="fs_v1"),
+        _Dataset(feature_set_version="fs_v5", feature_names=["a", "b", "c"]),
+        [_step()],
+        candidate_C=0.01,
+        incumbent=_incumbent(0.01, feature_set="fs_v1", feature_names=["a", "b"]),
     )
     assert decision.verdict != REFRESH
 
@@ -112,9 +128,12 @@ def _stub_walk_forward(monkeypatch, base: float, cand: float, n: int = 900):
         # A probability that leans the right way by `strength`.
         return np.where(actual == 1, 0.5 + strength, 0.5 - strength)
 
-    calls = {"n": 0}
+    calls: dict[str, Any] = {"n": 0, "runs": []}
 
-    def fake_run(dataset, steps, C, min_train_rows=None):
+    def fake_run(dataset, steps, C, min_train_rows=None, feature_names=None):
+        calls["runs"].append(
+            {"dataset": dataset, "C": C, "feature_names": feature_names}
+        )
         return C
 
     def fake_collect(C):
@@ -131,6 +150,7 @@ def _stub_walk_forward(monkeypatch, base: float, cand: float, n: int = 900):
 
     monkeypatch.setattr("app.modeling.promotion.run_walk_forward", fake_run)
     monkeypatch.setattr("app.modeling.promotion.collect_predictions", fake_collect)
+    return calls
 
 
 def test_a_clearly_better_configuration_is_promoted(monkeypatch):
@@ -221,3 +241,220 @@ def test_should_activate_always_matches_the_verdict(monkeypatch, verdict_case):
         _Dataset(), [_step()], candidate_C=0.05, incumbent=_incumbent(0.01)
     )
     assert decision.should_activate is expected
+
+
+# --------------------------------------------------------------------------
+# A changed feature set: the incumbent is scored on its own columns
+# --------------------------------------------------------------------------
+#
+# The gate used to run both arms on the candidate's matrix. When only the
+# feature set changed and the grid picked the same C for both, that compared a
+# model with itself: a delta of exactly zero, a HOLD, and a feature set that
+# could never reach the product. These pin the repair.
+
+
+def test_a_changed_feature_set_scores_the_incumbent_on_its_registered_columns(monkeypatch):
+    calls = _stub_walk_forward(monkeypatch, base=0.05, cand=0.15)
+    candidate = _Dataset(
+        feature_set_version="fs_v9",
+        feature_names=["a", "b", "c"],
+        frame=pd.DataFrame(columns=["a", "b", "c"]),
+    )
+    decide_promotion(
+        candidate, [_step()], candidate_C=0.01,
+        incumbent=_incumbent(0.01, feature_set="fs_v1", feature_names=["a", "b"]),
+    )
+    candidate_run, incumbent_run = calls["runs"]
+    assert candidate_run["feature_names"] is None  # the matrix's own columns
+    assert candidate_run["dataset"] is candidate
+    assert incumbent_run["feature_names"] == ["a", "b"]
+    assert incumbent_run["dataset"] is candidate  # same rows: no second build
+    assert incumbent_run["C"] == 0.01
+
+
+def test_a_same_set_comparison_does_not_restrict_columns(monkeypatch):
+    calls = _stub_walk_forward(monkeypatch, base=0.05, cand=0.15)
+    decide_promotion(
+        _Dataset(), [_step()], candidate_C=0.05,
+        incumbent=_incumbent(0.01, feature_names=["a", "b"]),
+    )
+    assert [run["feature_names"] for run in calls["runs"]] == [None, None]
+
+
+def _synthetic(n: int = 2400, seed: int = 11) -> Dataset:
+    """Games whose outcome the column `c` explains and `a` barely does.
+
+    The incumbent set is `a` alone; the candidate adds `c`. With a real
+    walk-forward this is the case the old gate could not see.
+    """
+    rng = np.random.default_rng(seed)
+    a = rng.normal(size=n)
+    c = rng.normal(size=n)
+    logit = 0.15 * a + 1.4 * c
+    home_win = (rng.uniform(size=n) < 1.0 / (1.0 + np.exp(-logit))).astype(float)
+    first = date(2025, 4, 1)
+    days = np.sort(rng.integers(0, 360, size=n))
+    dates = [first + timedelta(days=int(d)) for d in days]
+    frame = pd.DataFrame(
+        {
+            "game_id": np.arange(n),
+            "as_of": pd.to_datetime(dates, utc=True),
+            "official_date": dates,
+            "season": [d.year for d in dates],
+            "month": [d.month for d in dates],
+            "home_team_id": rng.integers(100, 130, size=n),
+            "away_team_id": rng.integers(100, 130, size=n),
+            "completeness": 1.0,
+            "n_missing": 0,
+            "home_starter_known": True,
+            "away_starter_known": True,
+            "lineup_confirmed": False,
+            "starter_quality_index": None,
+            "home_win": home_win,
+            "a": a,
+            "c": c,
+        }
+    )
+    return Dataset(frame, ["a", "c"], "fs_v9", "T_MINUS_3H")
+
+
+def test_a_feature_set_change_at_the_same_C_is_measured_not_tied():
+    """Before the repair this returned HOLD with a delta of exactly zero."""
+    dataset = _synthetic()
+    steps = make_steps(dataset.labelled, step_days=30, validation_days=20)
+    decision = decide_promotion(
+        dataset,
+        steps,
+        candidate_C=0.01,
+        incumbent=_incumbent(0.01, feature_set="fs_v1", feature_names=["a"]),
+        min_train_rows=200,
+    )
+    assert decision.verdict == PROMOTE
+    assert decision.should_activate is True
+    assert decision.incumbent_n_features == 1
+    assert decision.candidate_n_features == 2
+    assert decision.candidate_log_loss < decision.incumbent_log_loss
+    assert decision.delta.ci_low > 0
+    # The incumbent arm, scored on `a` alone, is the near-coin-flip it should
+    # be; scored on the candidate's full matrix it would have matched the
+    # candidate to the digit.
+    assert decision.incumbent_log_loss > 0.66
+
+
+def test_an_incumbent_column_the_candidate_lacks_holds_and_names_it(monkeypatch):
+    _stub_walk_forward(monkeypatch, base=0.05, cand=0.15)
+    decision = decide_promotion(
+        _Dataset(
+            feature_set_version="fs_v9",
+            feature_names=["a", "b", "c"],
+            frame=pd.DataFrame(columns=["a", "b", "c"]),
+        ),
+        [_step()],
+        candidate_C=0.05,
+        incumbent=_incumbent(0.01, feature_set="fs_v1", feature_names=["a", "z"]),
+    )
+    assert decision.verdict == HOLD
+    assert decision.should_activate is False
+    assert "z" in decision.reason
+    assert decision.n_common_games == 0
+
+
+def test_the_incumbents_own_matrix_is_used_when_supplied(monkeypatch):
+    calls = _stub_walk_forward(monkeypatch, base=0.05, cand=0.15)
+    incumbent_matrix_ = _Dataset(
+        feature_set_version="fs_v1",
+        feature_names=["a", "z"],
+        frame=pd.DataFrame(columns=["a", "z"]),
+    )
+    decision = decide_promotion(
+        _Dataset(
+            feature_set_version="fs_v9",
+            feature_names=["a", "b", "c"],
+            frame=pd.DataFrame(columns=["a", "b", "c"]),
+        ),
+        [_step()],
+        candidate_C=0.05,
+        incumbent=_incumbent(0.01, feature_set="fs_v1", feature_names=["a", "z"]),
+        incumbent_dataset=incumbent_matrix_,
+    )
+    assert decision.verdict == PROMOTE
+    assert calls["runs"][1]["dataset"] is incumbent_matrix_
+    assert calls["runs"][1]["feature_names"] == ["a", "z"]
+
+
+def test_an_incumbent_without_a_feature_list_falls_back_to_its_registered_set():
+    assert incumbent_columns(_incumbent(0.01, feature_set="fs_v1")) == feature_keys("fs_v1")
+    assert incumbent_columns(_incumbent(0.01, feature_names=["a"])) == ["a"]
+    assert incumbent_columns(_incumbent(0.01, feature_set="fs_v0_retired")) is None
+
+
+def test_a_retired_feature_set_with_no_feature_list_holds(monkeypatch):
+    _stub_walk_forward(monkeypatch, base=0.05, cand=0.15)
+    decision = decide_promotion(
+        _Dataset(feature_set_version="fs_v9"),
+        [_step()],
+        candidate_C=0.05,
+        incumbent=_incumbent(0.01, feature_set="fs_v0_retired"),
+    )
+    assert decision.verdict == HOLD
+    assert "fs_v0_retired" in decision.reason
+
+
+# --------------------------------------------------------------------------
+# Training builds the incumbent's matrix only when the gate cannot do without
+# --------------------------------------------------------------------------
+
+
+def _fake_build(calls: list[dict[str, Any]]):
+    def build(session, seasons=None, store=None, feature_set_version=None, **_):
+        calls.append({"seasons": seasons, "store": store, "feature_set_version": feature_set_version})
+        return _Dataset(feature_set_version=feature_set_version or "fs_v1")
+
+    return build
+
+
+def test_no_incumbent_or_same_set_needs_no_second_matrix(monkeypatch):
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("app.modeling.train.build_dataset", _fake_build(calls))
+    candidate = _Dataset(feature_set_version="fs_v9", feature_names=["a", "b", "c"])
+    assert incumbent_matrix(None, candidate, None, None, None) is None
+    assert incumbent_matrix(None, candidate, _incumbent(0.01, "fs_v9"), None, None) is None
+    assert calls == []
+
+
+def test_a_subset_incumbent_needs_no_second_matrix(monkeypatch):
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("app.modeling.train.build_dataset", _fake_build(calls))
+    candidate = _Dataset(
+        feature_set_version="fs_v9",
+        feature_names=["a", "b", "c"],
+        frame=pd.DataFrame(columns=["a", "b", "c"]),
+    )
+    incumbent = _incumbent(0.01, feature_set="fs_v1", feature_names=["a", "b"])
+    assert incumbent_matrix(None, candidate, incumbent, [2025], "store") is None
+    assert calls == []
+
+
+def test_a_missing_incumbent_column_builds_its_matrix_on_the_same_store(monkeypatch):
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("app.modeling.train.build_dataset", _fake_build(calls))
+    candidate = _Dataset(
+        feature_set_version="fs_v9",
+        feature_names=["a", "b", "c"],
+        frame=pd.DataFrame(columns=["a", "b", "c"]),
+    )
+    incumbent = _incumbent(0.01, feature_set="fs_v1", feature_names=["a", "z"])
+    built = incumbent_matrix(None, candidate, incumbent, [2025, 2026], "the-store")
+    assert built is not None and built.feature_set_version == "fs_v1"
+    assert calls == [
+        {"seasons": [2025, 2026], "store": "the-store", "feature_set_version": "fs_v1"}
+    ]
+
+
+def test_a_retired_incumbent_set_is_left_to_the_gate(monkeypatch):
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("app.modeling.train.build_dataset", _fake_build(calls))
+    candidate = _Dataset(feature_set_version="fs_v9", feature_names=["a", "b", "c"])
+    incumbent = _incumbent(0.01, feature_set="fs_v0_retired", feature_names=["a", "z"])
+    assert incumbent_matrix(None, candidate, incumbent, None, None) is None
+    assert calls == []

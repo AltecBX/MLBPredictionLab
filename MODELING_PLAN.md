@@ -246,9 +246,12 @@ and the UI hides the market comparison entirely rather than showing zeros.
 
 ## 10. Retraining and drift *(Phase 4)*
 
-* Nightly walk-forward refit. A new version is registered every run, but
-  activated only if out-of-sample log loss improves by a margin exceeding the
-  run-to-run noise band.
+* Nightly walk-forward refit. A new version is registered every run. The same
+  configuration (same `C`, same feature set) refitted on newer games is a
+  refresh and is activated; a changed `C` or feature set is a challenger and is
+  scored against the active model on the same walk-forward games, paired, with
+  the incumbent on the columns it registered — and activated only if the
+  interval excludes zero (`app/modeling/promotion.py`).
 * **Feature drift** — population stability index per feature versus the training
   distribution; alert above 0.2.
 * **Calibration drift** — rolling 30-day ECE; alert when it exceeds the backtest
@@ -1728,6 +1731,22 @@ The nightly promotion gate still applies to the logistic half: the first
 refresh after this change trains `fs_v9`, scores it against the active
 `fs_v1` model on the same walk-forward steps, and activates it only if the
 paired interval excludes zero there too.
+
+Wiring that up exposed a defect in the gate itself. Both arms were being run
+on the *candidate's* matrix — the incumbent arm was "the candidate's columns
+at the incumbent's C". For a `C` change that is the right comparison; for a
+feature-set change it is not, and when the grid picks the same `C` for both
+sets (it picks 0.003 for `fs_v1` on six seasons, and would for `fs_v9`) it
+compares a model with itself: a delta of exactly zero, a HOLD, and a feature
+set that could never reach the product however much it improved on the old
+one. The gate now scores the incumbent on the columns the active version
+registered — the candidate's matrix restricted to them, which is exact because
+imputation is per column, and needs no second build. When the active model
+uses a column the candidate no longer carries, training builds the incumbent's
+own matrix on the same store; when its feature set has been retired from the
+registry and the version recorded no column list, the gate holds and says so.
+`tests/test_promotion.py` pins all three paths, including a real walk-forward
+on synthetic games where the old gate returned a zero delta at equal `C`.
 
 ---
 

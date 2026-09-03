@@ -15,14 +15,56 @@ from app.backtest.metrics import evaluate
 from app.backtest.walkforward import collect_predictions, make_steps, run_walk_forward
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.models import ModelVersion
+from app.features.asof import AsOfStore
+from app.features.registry import feature_keys
 from app.ingestion.status import job_run
 from app.modeling.calibration import choose_calibration
 from app.modeling.dataset import LABEL_COLUMN, Dataset, build_dataset
 from app.modeling.logistic import C_GRID, LogisticWinModel
-from app.modeling.promotion import decide_promotion
+from app.modeling.promotion import decide_promotion, incumbent_columns
 from app.modeling.registry import get_active_version, next_version, register_model
 
 log = get_logger(__name__)
+
+
+def incumbent_matrix(
+    session: Session,
+    dataset: Dataset,
+    incumbent: ModelVersion | None,
+    seasons: list[int] | None,
+    store: AsOfStore | None,
+) -> Dataset | None:
+    """The active model's own matrix, built only when the gate cannot do without it.
+
+    The usual feature-set change adds columns, and the gate scores the incumbent
+    on its own columns of the candidate's matrix — no second build, which
+    matters because a build is the slow part of training. When the active model
+    was fitted on a column the candidate's matrix no longer carries, its matrix
+    is built once here on the same store, so the two are still scored on the
+    same games. A retired feature set is left to the gate, which holds and says
+    why.
+    """
+    if incumbent is None or incumbent.feature_set_version == dataset.feature_set_version:
+        return None
+    names = incumbent_columns(incumbent)
+    if names is None or all(name in dataset.frame.columns for name in names):
+        return None
+    try:
+        feature_keys(incumbent.feature_set_version)
+    except KeyError:
+        return None
+    log.info(
+        "train.incumbent_matrix",
+        feature_set=incumbent.feature_set_version,
+        missing=[name for name in names if name not in dataset.frame.columns],
+    )
+    return build_dataset(
+        session,
+        seasons=seasons,
+        store=store,
+        feature_set_version=incumbent.feature_set_version,
+    )
 
 # The final calibrator is fit on the most recent slice, held out of the fit
 # that produces it, then the classifier is refit on everything.
@@ -108,7 +150,10 @@ def train_model(
     name = name or settings.active_model_name
 
     with job_run(session, "train_model", seasons=seasons or "all") as run:
-        dataset = build_dataset(session, seasons=seasons)
+        # The store is loaded once so that, should the gate need the incumbent's
+        # own matrix, the second build reads the same games without a reload.
+        store = AsOfStore.load(session, seasons)
+        dataset = build_dataset(session, seasons=seasons, store=store)
         if dataset.frame.empty:
             raise ValueError(
                 "No training rows available. Ingest schedule and boxscore history first."
@@ -132,13 +177,22 @@ def train_model(
                 incumbent = get_active_version(session, name)
             except Exception:  # noqa: BLE001 - no active model is the first-run case
                 incumbent = None
-        decision = decide_promotion(dataset, steps, C, incumbent)
+        decision = decide_promotion(
+            dataset,
+            steps,
+            C,
+            incumbent,
+            incumbent_dataset=incumbent_matrix(session, dataset, incumbent, seasons, store),
+        )
         log.info(
             "model.promotion",
             verdict=decision.verdict,
             activate=decision.should_activate,
             candidate_C=C,
             incumbent_C=decision.incumbent_C,
+            candidate_feature_set=decision.candidate_feature_set,
+            incumbent_feature_set=decision.incumbent_feature_set,
+            reason=decision.reason,
         )
         should_activate = activate and decision.should_activate
 
