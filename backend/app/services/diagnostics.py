@@ -12,11 +12,11 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.backtest.served import reported_slices
 from app.core.cache import health as cache_health
 from app.core.clock import utcnow
 from app.core.config import settings
 from app.db.models import (
-    BacktestResult,
     BacktestRun,
     DataSourceStatus,
     Game,
@@ -187,16 +187,15 @@ def _backtest_health(session: Session) -> dict[str, Any]:
     run = session.scalar(select(BacktestRun).order_by(BacktestRun.created_at.desc()))
     if run is None:
         return {"available": False, "reason": "No backtest has been run yet."}
-    overall = session.scalar(
-        select(BacktestResult).where(
-            BacktestResult.run_id == run.id, BacktestResult.slice_type == "overall"
-        )
-    )
+    # The served figure's row when the run scored it, the component's otherwise.
+    overall = next(iter(reported_slices(session, run.id, "overall")), None)
+    served_config = (run.config or {}).get("served") or {}
     return {
         "available": True,
         "run_id": str(run.id),
         "created_at": run.created_at,
         "n_games": run.n_games,
+        "figure": "served" if served_config.get("available") else "logistic",
         "sanity_flags": run.sanity_flags or [],
         "log_loss": float(overall.log_loss) if overall and overall.log_loss else None,
         "brier_score": float(overall.brier_score) if overall and overall.brier_score else None,

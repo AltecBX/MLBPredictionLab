@@ -13,9 +13,9 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.backtest.served import reported_slices
 from app.core.logging import get_logger
 from app.db.models import (
-    BacktestResult,
     BacktestRun,
     Ballpark,
     DataSourceStatus,
@@ -789,11 +789,10 @@ def _backtest_evidence(session: Session, prediction: Prediction | None) -> Backt
             reason="No backtest has been run yet. Run `make backtest` to populate "
                    "historical reliability.",
         )
-    overall = session.scalar(
-        select(BacktestResult).where(
-            BacktestResult.run_id == run.id, BacktestResult.slice_type == "overall"
-        )
-    )
+    # The served figure's overall row when the run scored it; the component's
+    # otherwise. The game page shows the served probability, so its evidence
+    # should describe the served figure.
+    overall = next(iter(reported_slices(session, run.id, "overall")), None)
     return BacktestEvidence(
         available="band" in detail and detail.get("n") is not None,
         reason=detail.get("reason"),

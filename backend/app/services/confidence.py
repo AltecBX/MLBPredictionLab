@@ -15,7 +15,8 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import BacktestResult, BacktestRun
+from app.backtest.served import reported_slices
+from app.db.models import BacktestRun
 from app.features.builder import FeatureVector
 from app.modeling.logistic import LogisticWinModel
 
@@ -98,12 +99,10 @@ def historical_calibration(session: Session, favorite_prob: float) -> tuple[floa
     if run is None:
         return None, {"reason": "no backtest run available"}
 
-    rows = session.scalars(
-        select(BacktestResult).where(
-            BacktestResult.run_id == run.id,
-            BacktestResult.slice_type == "probability_band",
-        )
-    ).all()
+    # The served figure's bands when the run scored them; the component's
+    # otherwise. The probability being judged is the served one, so the
+    # reliability it is judged against should be the served figure's too.
+    rows = reported_slices(session, run.id, "probability_band")
     if not rows:
         return None, {"reason": "no probability-band slices in the latest backtest"}
 

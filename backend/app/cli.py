@@ -265,6 +265,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
 def cmd_backtest(args: argparse.Namespace) -> int:
     from app.backtest.engine import run_backtest
     from app.db.session import session_scope
+    from app.modeling.runs import DEFAULT_SIMULATIONS
 
     with session_scope() as session:
         summary = run_backtest(
@@ -274,6 +275,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
             step_days=args.step_days,
             ablation=not args.no_ablation,
             feature_set_version=args.feature_set,
+            served=not args.no_served,
+            simulations=args.simulations or DEFAULT_SIMULATIONS,
         )
     print(json.dumps(summary, default=str, indent=2))
     return 0
@@ -630,6 +633,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--feature-set", default=None,
         help="Feature set to evaluate. Default: the configured active set.",
+    )
+    p.add_argument(
+        "--no-served", action="store_true",
+        help="Score the logistic component only; skip the served blend.",
+    )
+    p.add_argument(
+        "--simulations", type=int, default=None,
+        help="Draws per game for the served blend. Default: what serving uses.",
     )
     p.set_defaults(func=cmd_backtest)
 

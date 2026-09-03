@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
 from app.backtest.metrics import ALWAYS_FIFTY_LOG_LOSS
+from app.backtest.served import SERVED_SLICE_PREFIX
 from app.db.models import BacktestResult, BacktestRun
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
@@ -20,9 +21,9 @@ def _f(value: Any) -> float | None:
     return None if value is None else float(value)
 
 
-def _slice_payload(row: BacktestResult) -> dict[str, Any]:
+def _slice_payload(row: BacktestResult, slice_type: str | None = None) -> dict[str, Any]:
     return {
-        "slice_type": row.slice_type,
+        "slice_type": slice_type or row.slice_type,
         "slice_key": row.slice_key,
         "n_games": row.n_games,
         "accuracy": _f(row.accuracy),
@@ -39,24 +40,61 @@ def _slice_payload(row: BacktestResult) -> dict[str, Any]:
     }
 
 
+def _grouped(rows: list[BacktestResult], prefix: str = "") -> dict[str, Any]:
+    """Slices of one figure — the component's (no prefix) or the served one's."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    overall: dict[str, Any] | None = None
+    for row in rows:
+        slice_type = row.slice_type[len(prefix):]
+        payload = _slice_payload(row, slice_type)
+        if slice_type == "overall":
+            overall = payload
+        grouped.setdefault(slice_type, []).append(payload)
+    for key in grouped:
+        grouped[key].sort(key=lambda p: p["slice_key"])
+    return {
+        "overall": overall,
+        "calibration_bins": (overall or {}).get("extra", {}).get("bins", []),
+        "slices": grouped,
+    }
+
+
 def _run_payload(session: Session, run: BacktestRun) -> dict[str, Any]:
     rows = list(
         session.scalars(select(BacktestResult).where(BacktestResult.run_id == run.id))
     )
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    overall: dict[str, Any] | None = None
-    for row in rows:
-        payload = _slice_payload(row)
-        if row.slice_type == "overall":
-            overall = payload
-        grouped.setdefault(row.slice_type, []).append(payload)
+    served_rows = [r for r in rows if r.slice_type.startswith(SERVED_SLICE_PREFIX)]
+    component = _grouped([r for r in rows if not r.slice_type.startswith(SERVED_SLICE_PREFIX)])
+    overall = component["overall"]
+    grouped = component["slices"]
+    calibration_bins = component["calibration_bins"]
 
-    for key in grouped:
-        grouped[key].sort(key=lambda p: p["slice_key"])
-
-    calibration_bins = (overall or {}).get("extra", {}).get("bins", [])
+    served_config = (run.config or {}).get("served") or {}
+    if served_rows:
+        served: dict[str, Any] = {
+            "available": True,
+            "reason": None,
+            **_grouped(served_rows, SERVED_SLICE_PREFIX),
+            "config": served_config,
+        }
+    else:
+        served = {
+            "available": False,
+            "reason": served_config.get("reason")
+            or "This run scored the logistic component only; the served blend was "
+               "not evaluated. The next backtest scores both.",
+            "overall": None,
+            "calibration_bins": [],
+            "slices": {},
+            "config": served_config,
+        }
 
     return {
+        # The logistic component's figures keep their original keys so a
+        # reader of the payload can tell which model each number describes;
+        # ``served`` carries the figure the product actually shows.
+        "component": "logistic",
+        "served": served,
         "run_id": str(run.id),
         "model_name": run.model_name,
         "algorithm": run.algorithm,

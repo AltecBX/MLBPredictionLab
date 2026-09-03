@@ -303,6 +303,11 @@ class BacktestPrediction(Base):
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False)
     as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     predicted_home_win_prob: Mapped[float] = mapped_column(Numeric(6, 5), nullable=False)
+    #: What the product would have served for this game: the logistic blended
+    #: with the run simulation, or the logistic alone where no simulation could
+    #: be formed. Null on rows from runs that predate the served evaluation.
+    served_home_win_prob: Mapped[float | None] = mapped_column(Numeric(6, 5))
+    simulated_home_win_prob: Mapped[float | None] = mapped_column(Numeric(6, 5))
     actual_home_win: Mapped[bool] = mapped_column(Boolean, nullable=False)
     train_end_date: Mapped[date] = mapped_column(Date, nullable=False)
     n_train_rows: Mapped[int] = mapped_column(Integer, nullable=False)
