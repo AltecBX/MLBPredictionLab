@@ -145,7 +145,7 @@ def test_utc_offset_hours_handles_unknown_timezone():
 
 def test_builder_emits_the_full_active_feature_set(builder, target_game):
     vector = builder.build(target_game, as_of_for_game(target_game.first_pitch_utc))
-    assert set(vector.features) == set(feature_keys("fs_v1"))
+    assert set(vector.features) == set(feature_keys(builder.feature_set_version))
     assert set(vector.sample_sizes) == set(vector.features)
     assert set(vector.estimated_flags) == set(vector.features)
 

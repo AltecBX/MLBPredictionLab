@@ -1538,6 +1538,256 @@ group's negative 2026 result on their own coverage.
 
 ---
 
+## Multi-season projections: measured, and adopted
+
+The tenth candidate group, and the first to clear the gate. It is also the
+first change to the served probability since the simulation was promoted.
+
+### The diagnosis it came from
+
+Every rate in `fs_v1` is season-to-date and shrunk toward the **league**. On
+Opening Day a team that outscored its opponents by a run a game last year is
+handed the same prior as one that was outscored by a run a game, and a starter
+with three seasons of a 28% strikeout rate is handed the league's 22%. The
+only feature in the set with any memory across seasons is Elo — and the
+challenger run above found that calibrated Elo, two numbers per game, matched
+the forty-two-feature model on every headline metric. Read together, those
+two facts say the other forty-one features spend the spring relearning what
+the previous season already knew.
+
+FEATURE_DICTIONARY.md §1 rule 2 has always said the fix — "prior-season and
+three-year baselines are themselves shrunk toward league average before being
+used as a prior for the current season" — and nothing had built it.
+
+### What was built
+
+`features/projections.py`: a weighted pool of an entity's recent seasons plus
+the season in progress, each season measured against **its own** league rate,
+regressed toward the league:
+
+    projection = L_now + Σᵢ wᵢ·(Eᵢ − Lᵢ·Dᵢ) + (E_now − L_now·D_now)
+                         ───────────────────────────────────────────
+                               Σᵢ wᵢ·Dᵢ + D_now + k
+
+Four difference features, registered as `fs_v9 = fs_v1 + projections`:
+
+| Feature | Pool | Weights on prior seasons | k |
+|---|---|---|---|
+| `proj_off_rpg_diff` | runs scored per game | 0.6, 0.3 | 80 games |
+| `proj_ra_rpg_diff` | runs allowed per game | 0.6, 0.3 | 80 games |
+| `proj_sp_k_minus_bb_pct_diff` | starter K% − BB%, starts only | 0.6, 0.35, 0.2 | 300 batters faced |
+| `proj_sp_fip_diff` | starter FIP numerator, starts only | 0.6, 0.35, 0.2 | 200 innings |
+
+**None of the constants were fitted on the win outcome.** The weights and the
+regression are the published year-to-year persistence of these rates — team
+run differential at r ≈ 0.55, a starter's K% and BB% at r ≈ 0.7 and 0.55,
+his fielding-independent rate at about 0.5 — written down before the group was
+measured. The bullpen section above is why that matters: a constant tuned on
+the target it is about to be scored on can manufacture its own verdict.
+
+The same projected rates are also a run-model variant, `projected`: each side's
+expected runs from the projections instead of the season-to-date means, in the
+same multiplicative combination the base model uses.
+
+### The protocol, and what changed about it
+
+Two things had to change before this could be measured honestly.
+
+* **Six seasons.** The store now holds 2021 through 2026 — 16,600 games,
+  14,244 usable regular-season rows — instead of four. A prior-season feature
+  cannot be measured on the first season a store contains.
+* **A lookback.** A `--seasons` measurement used to load a store cut to exactly
+  the seasons being scored, so the earliest of them had no history for any
+  prior-season feature to read. The store now carries three seasons before the
+  earliest requested one and the dataset builder cuts the scored rows back
+  (`features/asof.py`, `LOOKBACK_SEASONS`). This is also what makes a
+  measurement look like production, which loads everything.
+
+Everything below is scored on the **same 6,900 games** — every regular-season
+game from 2024-04-01 to 2026-09-02, in 30-day walk-forward steps — with
+regularisation **pinned** for both arms, at two settings, from each of two
+training histories. That is the pinned-C protocol the bullpen group forced,
+run four times over rather than once.
+
+Reproduce:
+
+```
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v9 \
+    --seasons 2023,2024,2025,2026 --start 2024-04-01 --C 0.03
+python -m app.cli compare-feature-sets --baseline fs_v1 --candidate fs_v9 \
+    --seasons 2021,2022,2023,2024,2025,2026 --start 2024-04-01 --C 0.03
+# and each again with --C 0.01
+python -m app.cli run-model-check --seasons 2021,2022,2023,2024,2025 --start 2025-04-01
+python -m app.cli simulate-check --seasons 2021,2022,2023,2024,2025,2026 --start 2024-04-01
+```
+
+### The logistic model: fs_v1 against fs_v9
+
+| Trained from | C | fs_v1 | fs_v9 | Δ log loss | Paired 95% CI | Δ Brier |
+|---|---|---|---|---|---|---|
+| 2023 | 0.03 | 0.68808 | 0.68675 | **+0.001330** | **[+0.00052, +0.00215]** | +0.000644 [+0.00025, +0.00105] |
+| 2023 | 0.01 | 0.68750 | 0.68600 | **+0.001500** | **[+0.00070, +0.00234]** | +0.000729 [+0.00034, +0.00114] |
+| 2021 | 0.03 | 0.68655 | 0.68555 | **+0.000998** | **[+0.00022, +0.00177]** | +0.000511 [+0.00014, +0.00088] |
+| 2021 | 0.01 | 0.68628 | 0.68506 | **+0.001220** | **[+0.00040, +0.00201]** | +0.000614 [+0.00022, +0.00099] |
+
+Four arms, four intervals excluding zero on log loss, four on Brier.
+Calibration error is unchanged in every arm (Δ within ±0.0003, intervals
+spanning zero). AUC rises in every arm, by 0.005 to 0.007.
+
+**The sign holds in every season of every arm.** Per season, 2023/0.03 arm:
+2024 +0.00179 [+0.00044, +0.00320], 2025 +0.00085 [−0.00043, +0.00212], 2026
++0.00136 [−0.00018, +0.00287]. Two of the three single-season intervals span
+zero on their own — a season is 2,000–2,400 games and the effect is a
+thousandth of a nat — and all twelve season-by-arm point estimates are
+positive. Every earlier candidate either flipped sign between seasons or hurt.
+
+**Where in the season.** Δ log loss by month, 2023/0.03 arm, all three seasons
+pooled:
+
+| Month | Games | fs_v1 | fs_v9 | Δ |
+|---|---|---|---|---|
+| April | 1,180 | 0.69496 | 0.69317 | +0.00179 |
+| May | 1,239 | 0.69347 | 0.69141 | +0.00206 |
+| June | 1,192 | 0.68571 | 0.68504 | +0.00067 |
+| July | 1,109 | 0.69361 | 0.69268 | +0.00093 |
+| August | 1,251 | 0.67951 | 0.67709 | +0.00242 |
+| September | 786 | 0.67918 | 0.67954 | −0.00036 |
+
+April and May are where the hypothesis said the gain would be, and it is
+there. It is also in August, which the hypothesis did not predict: a
+projection that includes the season in progress is a better-regularised
+version of the season-to-date rate all year, not only a better April prior.
+
+### The run model: projected means against the base
+
+The same projections, as the simulation's expected runs. Scored on identical
+games with identical seeds, 5,000 draws, dispersion fitted on the training
+side (size 3.58, variance/mean 2.25 over 14,688 team-games):
+
+| Season | n | base alone | projected alone | Δ log loss | Paired 95% CI |
+|---|---|---|---|---|---|
+| 2024 | 2,374 | — | — | +0.001603 | [−0.00235, +0.00563] |
+| 2025 | 2,430 | — | — | +0.003616 | [+0.00060, +0.00668] |
+| 2026 | 2,096 | — | — | +0.005206 | [+0.00110, +0.00936] |
+| **all** | **6,900** | **0.68544** | **0.68204** | **+0.003406** | **[+0.00133, +0.00550]** |
+
+This is the refinement the park and the named starter were not. Those
+redistributed a season rate and averaged back to it; this replaces the
+season-to-date rate with a better estimate of the same quantity, and the
+simulation — which has no other input — moves with it.
+
+### The served number, before and after
+
+The product serves `logit(p) = 0.5·logit(logistic) + 0.5·logit(simulation)`.
+Both halves changed. Paired per game on the same 6,900 games, trained from
+2021, C pinned at 0.03:
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC | Beyond the market's 73.7% max |
+|---|---|---|---|---|---|---|
+| **Before**: fs_v1 logistic + base simulation | 0.68334 | 0.24516 | 1.20% | 54.96% | 0.5682 | 0.17% of games |
+| **After**: fs_v9 logistic + projected simulation | **0.68135** | **0.24418** | **0.93%** | **55.83%** | **0.5778** | **0.06%** |
+
+Δ log loss **+0.001984 [+0.00078, +0.00322]**; Δ Brier +0.000980
+[+0.00040, +0.00159]. By season: 2024 +0.00152 [−0.00080, +0.00387], 2025
++0.00183 [+0.00009, +0.00354], 2026 +0.00269 [+0.00047, +0.00503]. By month:
+April +0.0040, May +0.0010, June +0.0021, July +0.0017, August +0.0018,
+September +0.0003.
+
+Each half earns its place on top of the other: with fs_v9 already in the
+logistic, swapping the simulation from base to projected means is worth
++0.001309 [+0.00027, +0.00234]; with the projected simulation already in the
+blend, the logistic's move from fs_v1 to fs_v9 is worth the rest.
+
+**The weight stays at 0.5.** The grid over the blend weight, with the projected
+simulation, is 0.68184 at 0.5, 0.68148 at 0.6, 0.68132 at 0.7 and 0.68204 at
+1.0. Every season that has been measured has preferred a weight above 0.5, and
+this is the third. The pre-registered weight is kept for the same reason it was
+kept the first time: a weight chosen by scoring a grid on the games it is then
+evaluated on is fitted on the evaluation set, and the gap — 0.0005 — is small.
+It is now the most consistent unmeasured lead in the document, and the right
+way to act on it is a pre-registered move to 0.6 scored on a season none of
+this has seen.
+
+**Against the ceiling.** The market baseline section puts the achievable floor
+at 0.679–0.681. The served number on these three seasons was 0.68334 and is
+now 0.68135; the previous incumbent's remaining gap to a 0.681 ceiling has
+been roughly halved, and the served probability is now inside the band
+between the 42-year market floor and the best public model.
+
+### Verdict
+
+ADOPT, both halves. Log loss improves with the paired interval excluding zero
+in every configuration; Brier agrees everywhere; calibration error improves;
+the share of predictions past the market's forty-two-year maximum falls by
+two thirds; the sign holds in every season of every arm. `fs_v9` is the served
+feature set and `PROJECTED` is the served run model (`run_inputs.SERVED`); a
+game whose projection cannot be formed falls back to the base means and says
+so, and one with neither serves the logistic model alone, as before.
+
+The nightly promotion gate still applies to the logistic half: the first
+refresh after this change trains `fs_v9`, scores it against the active
+`fs_v1` model on the same walk-forward steps, and activates it only if the
+paired interval excludes zero there too.
+
+---
+
+## Elo's constants: measured, and left alone
+
+MODELING_PLAN.md §3 has always said that K, the home-field constant and the
+between-season regression are "fit on historical data by minimizing
+walk-forward log loss, not set by convention", and they were set by convention
+— K=6, 24 points, 30%. So they were fitted.
+
+**Replaying raw Elo**, scored on its own pre-game probability, with 2021 as an
+unscored burn-in so a cold start does not reward a large K:
+
+| Fit seasons | Best by fit | Hold-out 2024–26 log loss | Defaults' hold-out |
+|---|---|---|---|
+| 2022–23 | K=4, HFA=18, regression 0.5 | **0.68250** | 0.68386 |
+
+A real improvement in the rating: 0.0014 on 6,955 held-out games. (The hold-out
+itself would have preferred K=2.5 at 0.68173; that ranking is reported for
+reference and was not selected on.)
+
+**As a feature inside the logistic model**, the tuned rating is worth nothing:
+
+| Trained from | Δ log loss, tuned Elo vs default | Paired 95% CI |
+|---|---|---|
+| 2023 | +0.000058 | [−0.00012, +0.00025] |
+| 2021 | +0.000047 | [−0.00019, +0.00029] |
+
+The logistic model re-weights `elo_diff` against seven other team-strength
+features, so a better-scaled rating buys it almost nothing — and the
+cross-season memory a slower K carries is exactly what the projections now
+supply directly. The constants stay as they are. The measurement is kept
+because the two results together are the finding: a rating can improve on its
+own terms and change nothing downstream.
+
+---
+
+## Training history: six seasons, not two
+
+The same `fs_v1` features, the same 6,900 test games, C pinned at 0.03, the
+training window starting in 2021 instead of 2023:
+
+| | Log loss | Δ | Paired 95% CI |
+|---|---|---|---|
+| Trained from 2023 | 0.68808 | | |
+| Trained from 2021 | 0.68655 | **+0.001533** | **[+0.00041, +0.00275]** |
+
+By season: 2024 +0.00214, 2025 +0.00211 [+0.00069, +0.00358], 2026 +0.00018.
+The marginal season is worth most when the window is short and almost nothing
+by the third season of the test — which is the shape more data should have.
+
+This mattered more in production than in the measurement. The hosted database
+held **two** seasons (2025 and the current one) because that is what fitted a
+free tier, and the published backtest scored 3,413 games from mid-May 2025.
+The data store now lives in the repository's `data` release with no size
+ceiling that matters (DEPLOYMENT.md path 0), the seed loads 2021 through 2026,
+and the model the refresh trains each morning sees all of it.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
@@ -1564,12 +1814,12 @@ training window, validation slice and test window at every step:
 
 | Model | Status |
 |---|---|
-| Calibrated logistic | Baseline; served as half of the blend |
+| Calibrated logistic | Baseline; served as half of the blend — on `fs_v9` since the projections were **adopted** (above) |
 | Gradient boosting | **Measured twice and rejected** — HistGradientBoosting at a fixed configuration, then XGBoost and LightGBM with per-fold search; see above |
-| Negative-binomial run model | Built; serves as the simulation half of the blend |
+| Negative-binomial run model | Built; serves as the simulation half of the blend, on the **projected** means since they were measured and adopted |
 | Starter + bullpen innings allocation | Built into the simulation; refinements measured and rejected |
 | Monte Carlo simulation | Built; **promoted** as half of the served blend |
-| Elo with starter adjustment | Elo **measured as a calibrated component** — matches the baseline, not promotable; the starter adjustment is still not built |
+| Elo with starter adjustment | Elo **measured as a calibrated component** — matches the baseline, not promotable; its constants **fitted and left alone** (above); the starter adjustment is still not built |
 | Stacked ensemble | Built; **measured and rejected** — see above |
 
 Nothing in that table is claimed to improve anything until the walk-forward

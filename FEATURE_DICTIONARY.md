@@ -65,7 +65,9 @@ Rules:
    it is shrunk harder and flagged `is_estimated = true`, and the sample size is
    surfaced next to it in the UI.
 2. Prior-season and three-year baselines are themselves shrunk toward league
-   average before being used as a prior for the current season.
+   average before being used as a prior for the current season. Built as the
+   `proj_*` group (`features/projections.py`), measured, and adopted — see
+   [MODELING_PLAN](MODELING_PLAN.md) § Multi-season projections.
 3. Recent-form windows never *replace* long-term ability. They enter the model
    as an explicit **delta from the stabilized baseline**, so a hot 7-day stretch
    can move a prediction but cannot erase a season of evidence.
@@ -282,9 +284,23 @@ overfitting traps. The platform constrains them explicitly:
 
 ---
 
-## 9. Phase 1 active feature set (`fs_v1`)
+## 9. Phase 1 active feature set (`fs_v1`), and the served set (`fs_v9`)
 
-The model version shipped in this delivery consumes these, all as
+The served feature set is **`fs_v9` = `fs_v1` + the four multi-season
+projections** below, adopted on the walk-forward evidence in
+[MODELING_PLAN](MODELING_PLAN.md) § Multi-season projections:
+
+```
+proj_off_rpg_diff                 proj_sp_k_minus_bb_pct_diff
+proj_ra_rpg_diff                  proj_sp_fip_diff
+```
+
+Each pools an entity's prior seasons (two for a team, three for a starter,
+decaying weights) with the season in progress, every season measured against
+its own league rate, and regresses the pool toward the league. The constants
+are published persistence rates, not values fitted on the win outcome.
+
+`fs_v1`, the Phase 1 set the projections sit on top of, consumes these, all as
 home-minus-away differences unless marked absolute:
 
 ```
@@ -332,9 +348,13 @@ choosing a side.
 
 ## 10. Measured value of each feature group
 
-From the walk-forward backtest over 8,134 games (2023–2026). Two complementary
-views, read together per [BACKTEST_PLAN](BACKTEST_PLAN.md) §6. The always-50%
-baseline is 0.6931; the full 42-feature model reaches **0.6845**.
+From the walk-forward backtest over 8,134 games (2023–2026), on `fs_v1`. Two
+complementary views, read together per [BACKTEST_PLAN](BACKTEST_PLAN.md) §6.
+The always-50% baseline is 0.6931; the full 42-feature model reaches
+**0.6845**. The projection group adopted since is measured in
+[MODELING_PLAN](MODELING_PLAN.md) § Multi-season projections rather than here:
+it was scored head to head on 6,900 games with regularisation pinned, which
+is a stronger reading than a group-removal on one configuration.
 
 | Group | Features | Δ log loss if removed | Log loss alone | Reading |
 |---|---|---|---|---|

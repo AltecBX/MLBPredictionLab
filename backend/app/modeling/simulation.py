@@ -42,7 +42,7 @@ from app.features.builder import FeatureBuilder
 from app.features.context import GameContext
 from app.features.park import ParkFactors
 from app.modeling.dataset import Dataset
-from app.modeling.run_inputs import BASE, RunComponents, RunModel, pitching_split
+from app.modeling.run_inputs import SERVED, RunComponents, RunModel, pitching_split
 from app.modeling.runs import DEFAULT_SIMULATIONS, fit_dispersion, simulate_game
 
 log = get_logger(__name__)
@@ -232,7 +232,7 @@ def simulate_slate(
     frame: pd.DataFrame,
     size: float,
     simulations: int = DEFAULT_SIMULATIONS,
-    models: tuple[RunModel, ...] = (BASE,),
+    models: tuple[RunModel, ...] = (SERVED,),
     parks: ParkFactors | None = None,
     size_by_game: dict[int, float] | None = None,
 ) -> pd.DataFrame:
@@ -244,9 +244,10 @@ def simulate_slate(
     would be scored as if it had an opinion.
 
     One column per variant, named ``sim_<variant>``, plus ``sim_prob`` for the
-    base so the existing comparison is unchanged. Every variant sees the same
-    game on the same seed, so a difference between two columns is a difference
-    between two models and never between two draw sequences.
+    SERVED variant so the blend comparison scores what the product serves.
+    Every variant sees the same game on the same seed, so a difference between
+    two columns is a difference between two models and never between two draw
+    sequences.
     """
     by_id = store.games.set_index("id", drop=False)
     rows: list[dict[str, Any]] = []
@@ -271,7 +272,7 @@ def simulate_slate(
             home, away = components.means(model)
             sim = simulate_game(home, away, game_size, simulations=simulations, seed=seed)
             row[f"sim_{model.name}"] = sim.home_win_prob
-        row["sim_prob"] = row.get(f"sim_{BASE.name}")
+        row["sim_prob"] = row.get(f"sim_{SERVED.name}")
         row["park_measured"] = components.park_measured
         row["pitching_measured"] = (
             components.home_pitching.is_measured and components.away_pitching.is_measured

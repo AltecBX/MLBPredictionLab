@@ -50,7 +50,7 @@ from app.modeling.runs import (
     fit_dispersion,
     simulate_game,
 )
-from app.modeling.simulation import expected_runs
+from app.modeling.simulation import expected_runs, projected_runs
 
 log = get_logger(__name__)
 
@@ -162,7 +162,16 @@ def serve_probability(
             unavailable_reason="run dispersion not yet estimable this season",
         )
 
-    means = expected_runs(store, builder, ctx, as_of)
+    # The served run model is the PROJECTED one: each side's expected runs
+    # from the multi-season projections, which beat the season-to-date means
+    # in every measured season (MODELING_PLAN.md § Multi-season projections).
+    # A game whose projection cannot be formed — a team with no history at
+    # all — falls back to the season-to-date means the base model uses, and
+    # a game with neither serves the logistic model alone. Each case is
+    # named so a reader can tell which number they are looking at.
+    means = projected_runs(builder, ctx, as_of)
+    if means is None or not means.is_usable:
+        means = expected_runs(store, builder, ctx, as_of)
     if means is None or not means.is_usable:
         return ServedProbability(
             probability=logistic_probability,

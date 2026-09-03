@@ -970,6 +970,28 @@ STREAKS: list[FeatureSpec] = [
 # §1 rule 2 has always required prior-season baselines as the prior; this is
 # the first group to build them. See features/projections.py for the pooling
 # and for why none of its constants were fitted on the win outcome.
+#
+# BUILT, MEASURED, ADOPTED — the first candidate group to clear the gate.
+# fs_v1 against fs_v9 on the same 6,900 games (2024 through 2026 to date),
+# regularisation pinned, with each of two training histories:
+#
+#   trained from 2023, C=0.03: delta log loss +0.001330 [+0.00052, +0.00215]
+#   trained from 2023, C=0.01:                +0.001500 [+0.00070, +0.00234]
+#   trained from 2021, C=0.03:                +0.000998 [+0.00022, +0.00177]
+#   trained from 2021, C=0.01:                +0.001220 [+0.00040, +0.00201]
+#
+# Every interval excludes zero, Brier agrees in every arm, calibration error
+# is unchanged, and the sign holds in every season of every arm. Every earlier
+# candidate either flipped sign between seasons or hurt.
+PROJECTIONS_ADOPTED = (
+    "Walk-forward fs_v1 vs fs_v9 on 6,900 games, 2024-2026, regularisation "
+    "pinned. Trained from 2023: +0.001330 [+0.00052, +0.00215] at C=0.03, "
+    "+0.001500 [+0.00070, +0.00234] at C=0.01. Trained from 2021: +0.000998 "
+    "[+0.00022, +0.00177] and +0.001220 [+0.00040, +0.00201]. Brier agrees "
+    "everywhere, calibration unchanged, positive in every season of every "
+    "arm. ADOPTED. See MODELING_PLAN.md, Multi-season projections."
+)
+
 PROJECTIONS: list[FeatureSpec] = [
     FeatureSpec(
         "proj_off_rpg_diff", "Projected scoring edge", FeatureCategory.OFFENSE,
@@ -977,6 +999,7 @@ PROJECTIONS: list[FeatureSpec] = [
         "progress, each season measured against its own league rate, regressed "
         "toward the league.",
         unit="runs/g", window="3 seasons", min_sample=10, phase=2,
+        measurement=PROJECTIONS_ADOPTED,
         narrative="projects as the stronger offense once prior seasons are weighed",
     ),
     FeatureSpec(
@@ -984,6 +1007,7 @@ PROJECTIONS: list[FeatureSpec] = [
         "Runs allowed per game, projected the same way. Sign is inverted so a "
         "positive value favors the home team.",
         unit="runs/g", window="3 seasons", min_sample=10, phase=2,
+        measurement=PROJECTIONS_ADOPTED,
         narrative="projects to allow fewer runs once prior seasons are weighed",
     ),
     FeatureSpec(
@@ -992,6 +1016,7 @@ PROJECTIONS: list[FeatureSpec] = [
         "Strikeout rate minus walk rate for tonight's starter, pooled over up to "
         "three prior seasons of starts plus this one, regressed toward the league.",
         unit="%", window="4 seasons", min_sample=100, phase=2,
+        measurement=PROJECTIONS_ADOPTED,
         narrative="has the starter with the better projected command-and-miss profile",
     ),
     FeatureSpec(
@@ -1000,6 +1025,7 @@ PROJECTIONS: list[FeatureSpec] = [
         "Fielding-independent pitching projected from up to three prior seasons "
         "of starts plus this one, on this season's run environment. Inverted sign.",
         unit="FIP", window="4 seasons", min_sample=100, phase=2,
+        measurement=PROJECTIONS_ADOPTED,
         narrative="has the better projected fielding-independent starter",
     ),
 ]

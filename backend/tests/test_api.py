@@ -411,8 +411,14 @@ def test_invalid_backtest_run_id(client):
 # --- metadata ---------------------------------------------------------------
 
 def test_feature_dictionary_endpoint(client):
+    from app.core.config import settings
+
     body = client.get("/api/v1/meta/features").json()
-    assert body["feature_set_version"] == "fs_v1"
+    assert body["feature_set_version"] == settings.feature_set_version
+    # The dictionary lists the set that is actually served, whatever it is.
+    from app.features.registry import feature_keys
+
+    assert [s["key"] for s in body["active"]] == feature_keys(settings.feature_set_version)
     assert len(body["active"]) > 30
     assert all(spec["available"] for spec in body["active"])
     assert all(not spec["available"] for spec in body["deferred"])

@@ -333,10 +333,15 @@ def test_a_start_after_the_prediction_moment_is_never_read(statcast_store):
 
 
 def test_the_candidate_set_is_not_the_default_until_it_earns_it(store):
-    """fs_v2 is a candidate. Nothing switches to it without a measurement."""
+    """fs_v2 is a candidate. Nothing switches to it without a measurement.
+
+    The default moved from fs_v1 to fs_v9 on a measurement (MODELING_PLAN.md
+    § Multi-season projections); the rejected Statcast group is still not in
+    whatever the default is.
+    """
     from app.features.builder import FEATURE_SET_VERSION
 
-    assert FEATURE_SET_VERSION == "fs_v1"
+    assert FEATURE_SET_VERSION == "fs_v9"
     default = FeatureBuilder(store, AsOfElo(store.games))
     ctx = GameContext.from_row(store.games.iloc[35].to_dict())
     vector = default.build(ctx, ctx.first_pitch_utc - timedelta(hours=3))

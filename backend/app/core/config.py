@@ -87,7 +87,9 @@ class Settings(BaseSettings):
 
     # --- Modeling ----------------------------------------------------------
     active_model_name: str = "jerry_logistic"
-    feature_set_version: str = "fs_v1"
+    # fs_v9: fs_v1 plus the four multi-season projections, promoted on the
+    # walk-forward evidence in MODELING_PLAN.md § Multi-season projections.
+    feature_set_version: str = "fs_v9"
     model_artifact_dir: str = "artifacts/models"
     prediction_as_of_policy: Literal["T_MINUS_3H", "T_MINUS_60M", "T_MINUS_15M"] = "T_MINUS_3H"
     random_seed: int = 20240401
