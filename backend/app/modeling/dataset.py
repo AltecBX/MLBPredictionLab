@@ -78,11 +78,18 @@ def build_dataset(
     game_types: tuple[str, ...] = DEFAULT_GAME_TYPES,
     store: AsOfStore | None = None,
     feature_set_version: str | None = None,
+    elo: AsOfElo | None = None,
 ) -> Dataset:
-    """Build the model matrix for every eligible game."""
+    """Build the model matrix for every eligible game.
+
+    ``elo`` lets a measurement supply a rating engine with different constants
+    — the walk-forward that fits Elo's K, home advantage and regression scores
+    the feature the engine produces, so it needs to build the same dataset
+    twice with two engines and nothing else changed.
+    """
     policy: AsOfPolicy = as_of_policy or settings.prediction_as_of_policy  # type: ignore[assignment]
     store = store or AsOfStore.load(session, seasons)
-    elo = AsOfElo(store.games)
+    elo = elo if elo is not None else AsOfElo(store.games)
     version = feature_set_version or FEATURE_SET_VERSION
     builder = FeatureBuilder(store, elo, feature_set_version=version)
 
