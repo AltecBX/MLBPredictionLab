@@ -75,8 +75,10 @@ Written before any code, and kept current:
   `Unavailable*` providers for every category that is not yet configured.
 * Schedule, probable-pitcher, game-result and full-boxscore ingestion —
   idempotent, chunked, resumable, rate-limited and concurrent.
-* As-of feature layer: 42 features rebuilt from dated game logs, each carrying
-  its sample size and an estimated flag.
+* As-of feature layer: 46 features rebuilt from dated game logs, each carrying
+  its sample size and an estimated flag — including four multi-season
+  projections that pool a team's or a starter's prior seasons with the season
+  in progress.
 * Calibrated L2 logistic model with walk-forward hyperparameter selection and an
   Elo reference model for the disagreement signal.
 * Immutable prediction records with per-feature contributions in probability
@@ -197,8 +199,9 @@ MLB Stats API
 games · team_game_stats · player_game_stats          ← one row per game, dated
    │  as-of filter: knowledge_time <= T  AND  game_date < T
    ▼
-42 features, each with (value, sample size, estimated flag)
-   │  shrinkage toward stated league/team baselines
+46 features, each with (value, sample size, estimated flag)
+   │  shrinkage toward stated league/team baselines, and toward
+   │  each team's and starter's own prior seasons
    ▼
 L2 logistic regression → calibrator → probability
    │  contributions in probability points, Elo reference for agreement
@@ -225,13 +228,35 @@ outright, and a test asserts it.
 
 ## Measured performance
 
-Walk-forward over four seasons of real MLB games (2023–2026), trained only on
-games before each prediction date:
+**What is served now.** The probability on the screen is a log-odds blend of
+the calibrated logistic model and a run simulation. Both halves were changed
+on the evidence in [MODELING_PLAN.md](MODELING_PLAN.md) § Multi-season
+projections, and the change is measured paired, per game, on the same 6,900
+games — every regular-season game from April 2024 to September 2026, trained
+from 2021, regularisation pinned:
+
+| | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| Previous served combination | 0.68334 | 0.24516 | 1.20% | 55.0% | 0.568 |
+| **Served now** | **0.68135** | **0.24418** | **0.93%** | **55.8%** | **0.578** |
+| Always 50% | 0.69315 | 0.25000 | | 50.0% | 0.500 |
+| Market closing line, achievable floor | 0.679–0.681 | 0.243–0.244 | | 56.4–57.0% | |
+
+Δ log loss +0.00198, paired 95% interval [+0.00078, +0.00322], positive in
+every season. The gap to the market's floor was roughly halved. No game is a
+lock; the highest probability the served model has emitted on those three
+seasons is 87.6%, and it went past the market's forty-two-year maximum of
+73.7% on 0.06% of games.
+
+**The logistic model alone**, walk-forward over four seasons of real MLB
+games (2023–2026) on the previous feature set `fs_v1`, trained only on games
+before each prediction date — kept as the reference the ablation below reads
+against:
 
 | Metric | Value | Reference |
 |---|---|---|
 | Games evaluated | 8,134 (26 steps; 14 early steps skipped for too little training data) | |
-| **Log loss** | **0.6845** | 0.6931 = always 50% · ~0.65 = market close |
+| **Log loss** | **0.6845** | 0.6931 = always 50% · 0.679–0.681 = market close |
 | **Brier score** | **0.2457** | |
 | **Calibration error** | **1.12%** (max 6.72%) | |
 | Accuracy | 55.6% | ~58–60% = market close |

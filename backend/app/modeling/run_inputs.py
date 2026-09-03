@@ -224,8 +224,17 @@ PITCHING_ONLY = RunModel("pitching", pitching=True)
 PARK_AND_PITCHING = RunModel("park+pitching", park=True, pitching=True)
 PROJECTED = RunModel("projected", projected=True)
 
-#: The order they are reported in. Base first, because it is the incumbent.
+#: The order they are reported in. Base first, because it is the incumbent
+#: the ablation measures refinements against.
 VARIANTS = (BASE, PARK_ONLY, PITCHING_ONLY, PARK_AND_PITCHING, PROJECTED)
+
+#: The run model the product serves and the blend measurement scores.
+#: Promoted from BASE on the walk-forward evidence in MODELING_PLAN.md
+#: § Multi-season projections: the projected means beat the base run model
+#: in every season and the served blend with them improves with the paired
+#: interval excluding zero. A game whose projection cannot be formed falls
+#: back to the base means, and says so.
+SERVED = PROJECTED
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +313,7 @@ __all__ = [
     "PARK_ONLY",
     "PITCHING_ONLY",
     "PROJECTED",
+    "SERVED",
     "VARIANTS",
     "PitchingSplit",
     "RunComponents",

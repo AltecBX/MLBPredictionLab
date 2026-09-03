@@ -155,7 +155,7 @@ def test_the_served_simulation_is_the_backtests_simulation(store, builder, targe
     """
     import pandas as pd
 
-    from app.modeling.run_inputs import BASE
+    from app.modeling.run_inputs import BASE, PROJECTED, SERVED
     from app.modeling.simulation import simulate_slate
 
     dispersion = _dispersion(store, target_game)
@@ -163,11 +163,46 @@ def test_the_served_simulation_is_the_backtests_simulation(store, builder, targe
         [{"game_id": target_game.game_id, "as_of": target_game.first_pitch_utc}]
     )
     slate = simulate_slate(
-        store, builder, frame, dispersion.size, 4000, models=(BASE,), parks=None
+        store, builder, frame, dispersion.size, 4000, models=(BASE, PROJECTED), parks=None
     )
     served = serve_probability(
         store, builder, target_game, target_game.first_pitch_utc, 0.55,
         dispersion=dispersion, simulations=4000,
+    )
+    # The served variant is the projected one, and `sim_prob` — what the
+    # blend measurement scores — is that same column.
+    assert SERVED is PROJECTED
+    assert served.simulation == pytest.approx(
+        float(slate.iloc[0][f"sim_{SERVED.name}"]), abs=1e-12
+    )
+    assert float(slate.iloc[0]["sim_prob"]) == float(slate.iloc[0][f"sim_{SERVED.name}"])
+    # And it is a different number from the base model's, on a fixture where
+    # the projection has history to draw on.
+    assert served.simulation != pytest.approx(float(slate.iloc[0]["sim_base"]), abs=1e-6)
+
+
+def test_a_game_without_a_projection_serves_the_base_means(
+    store, builder, target_game, monkeypatch
+):
+    """The fallback is the base run model, not the logistic model alone."""
+    import pandas as pd
+
+    from app.modeling import serving
+    from app.modeling.run_inputs import BASE
+    from app.modeling.simulation import simulate_slate
+
+    monkeypatch.setattr(serving, "projected_runs", lambda *args, **kwargs: None)
+    dispersion = _dispersion(store, target_game)
+    served = serve_probability(
+        store, builder, target_game, target_game.first_pitch_utc, 0.55,
+        dispersion=dispersion, simulations=4000,
+    )
+    assert served.is_blended
+    frame = pd.DataFrame(
+        [{"game_id": target_game.game_id, "as_of": target_game.first_pitch_utc}]
+    )
+    slate = simulate_slate(
+        store, builder, frame, dispersion.size, 4000, models=(BASE,), parks=None
     )
     assert served.simulation == pytest.approx(float(slate.iloc[0]["sim_base"]), abs=1e-12)
 
