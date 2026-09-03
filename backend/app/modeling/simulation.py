@@ -246,14 +246,16 @@ def simulate_slate(
     simulations: int = DEFAULT_SIMULATIONS,
     models: tuple[RunModel, ...] = (SERVED,),
     parks: ParkFactors | None = None,
-    size_by_game: dict[int, float] | None = None,
+    size_by_game: dict[int, float | None] | None = None,
 ) -> pd.DataFrame:
     """Simulated home win probability for every game in ``frame``, per variant.
 
     Games whose run means cannot be established are returned with a null
     probability rather than a guess, and the caller drops them from the
     comparison — a model that silently emits 0.5 for a game it cannot model
-    would be scored as if it had an opinion.
+    would be scored as if it had an opinion. So is a game whose slate has no
+    dispersion fit (a None in ``size_by_game``): serving declines to simulate
+    it, and so does this.
 
     One column per variant, named ``sim_<variant>``, plus ``sim_prob`` for the
     SERVED variant so the blend comparison scores what the product serves.
@@ -269,6 +271,17 @@ def simulate_slate(
             continue
         ctx = GameContext.from_row(by_id.loc[record.game_id].to_dict())
         row: dict[str, Any] = {"game_id": record.game_id}
+        # A per-game size is how the serving path is scored: it fits dispersion
+        # as-of each slate rather than once on the training side, because at
+        # serving time there is no training side to fit on.
+        game_size = size if size_by_game is None else size_by_game.get(record.game_id, size)
+        if game_size is None:
+            rows.append(
+                row
+                | {f"sim_{m.name}": None for m in models}
+                | {"sim_prob": None, "dispersion_unavailable": True}
+            )
+            continue
         components = run_components(store, builder, ctx, as_of, parks)
         if components is None:
             rows.append(row | {f"sim_{m.name}": None for m in models} | {"sim_prob": None})
@@ -276,10 +289,6 @@ def simulate_slate(
         # Seeded from the game id, so a rerun reproduces exactly, two games never
         # share a draw sequence, and two variants of the same game do.
         seed = int(record.game_id) % (2**31)
-        # A per-game size is how the serving path is scored: it fits dispersion
-        # as-of each slate rather than once on the training side, because at
-        # serving time there is no training side to fit on.
-        game_size = size if size_by_game is None else size_by_game.get(record.game_id, size)
         for model in models:
             means = components.means(model)
             if means is None:
@@ -468,26 +477,36 @@ def compare_walk_forward(
 
 
 def _asof_sizes(
-    store: AsOfStore, predictions: pd.DataFrame, fallback: float
-) -> dict[int, float]:
+    store: AsOfStore, predictions: pd.DataFrame, fallback: float | None
+) -> dict[int, float | None]:
     """Per-game dispersion, fitted the way the serving path fits it.
 
-    Fitted once per distinct `as_of` rather than once per game: every game on a
-    slate shares a moment, so they share a fit, and doing it per game would
-    repeat an identical league-wide scan for each card. A slate whose sample is
-    still too small keeps the training-side value, which is what serving does
-    when it declines to simulate at all.
+    Once per slate, at the slate's earliest ``as_of``, and shared by every game
+    on it: that is how `generate_predictions_for_date` fits it, so a night game
+    never reads an afternoon result the card was built without. A slate is the
+    games of one ``official_date``; a frame without that column falls back to
+    one fit per distinct moment.
+
+    A slate whose sample is still too small gets ``fallback``. Pass the
+    training-side size to keep such a slate in a measurement, or None to do
+    what serving does, which is to decline the simulation and serve the
+    logistic alone.
     """
     from app.modeling.serving import dispersion_asof
 
-    sizes: dict[int, float] = {}
-    by_moment: dict[pd.Timestamp, float] = {}
-    for record in predictions.itertuples():
-        as_of = pd.Timestamp(record.as_of)
-        if as_of not in by_moment:
-            fitted = dispersion_asof(store, as_of.to_pydatetime())
-            by_moment[as_of] = fallback if fitted is None else fitted.size
-        sizes[record.game_id] = by_moment[as_of]
+    frame = predictions[["game_id", "as_of"]].copy()
+    frame["as_of"] = pd.to_datetime(frame["as_of"], utc=True)
+    if "official_date" in predictions.columns:
+        frame["slate"] = predictions["official_date"].astype(str).to_numpy()
+    else:
+        frame["slate"] = frame["as_of"].astype(str)
+    sizes: dict[int, float | None] = {}
+    for _, slate in frame.groupby("slate", sort=False):
+        earliest = slate["as_of"].min()
+        fitted = dispersion_asof(store, earliest.to_pydatetime())
+        size = fallback if fitted is None else fitted.size
+        for game_id in slate["game_id"]:
+            sizes[int(game_id)] = size
     return sizes
 
 

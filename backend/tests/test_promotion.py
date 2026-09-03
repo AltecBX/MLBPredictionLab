@@ -298,6 +298,8 @@ def test_train_refits_at_the_incumbents_C_on_a_tie(monkeypatch):
 
     def fake_register(session, model, **kwargs):
         fitted["registered_C"] = kwargs["hyperparameters"]["C"]
+        fitted["selected_C"] = kwargs["hyperparameters"]["selected_C"]
+        fitted["notes"] = kwargs["notes"]
         fitted["activate"] = kwargs["activate"]
         return SimpleNamespace(id=1)
 
@@ -316,8 +318,12 @@ def test_train_refits_at_the_incumbents_C_on_a_tie(monkeypatch):
     summary = train_module.train_model(object(), activate=True)
     assert fitted["C"] == 0.003
     assert fitted["registered_C"] == 0.003
+    # The grid's own pick is kept beside the fitted C, and the note says both.
+    assert fitted["selected_C"] == 0.001
+    assert "selected C=0.001" in fitted["notes"] and "fitted at the active model's C=0.003" in fitted["notes"]
     assert fitted["activate"] is True
     assert summary["C"] == 0.003
+    assert summary["selected_C"] == 0.001
     assert summary["activated"] is True
 
 

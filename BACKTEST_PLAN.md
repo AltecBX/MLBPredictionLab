@@ -229,12 +229,14 @@ blend landed within two points of its word — so a reliability report on the
 component alone was not a reliability report on the number a reader acts on.
 `app/backtest/served.py` scores the served figure on the same walk-forward
 games, the way serving produces it: the simulation's dispersion is fitted
-per slate from everything knowable at that moment (the training-side fit
-stands in where a slate's sample is too small), each game's run means are
-read as-of the same moment the logistic's features were, and the projected
-means come first with the season-to-date means as the fallback — so a game
-the projection covers in a team's opening fortnight is scored as served
-rather than dropped at the base model's ten-game gate. The sanity gates run
+once per slate, at the slate's earliest as-of, from everything knowable
+then, and shared by every game on the card (a slate whose sample is too
+small for a fit is served as the logistic alone, as serving serves it);
+each game's run means are read as-of the same moment the logistic's features
+were; and the projected means come first with the season-to-date means as
+the fallback — so a game the projection covers in a team's opening
+fortnight is scored as served rather than dropped at the base model's
+ten-game gate. The sanity gates run
 on the served figure as well as on the component, and a tripped flag names
 which figure tripped it.
 Every backtest row stores the served and simulated probabilities beside the

@@ -25,7 +25,7 @@ from app.features.asof import (
 from app.features.builder import FeatureVector, SideFeatures
 from app.features.elo import AsOfElo, build_elo_history
 from app.features.shrinkage import FeatureValue
-from tests.conftest import make_store
+from tests.conftest import SEASON, make_store
 
 SPRING_ID = 999_001
 PLAYOFF_ID = 999_002
@@ -119,6 +119,104 @@ def test_elo_ignores_the_exhibition_and_counts_the_playoff(fixture_frames):
     asof = AsOfElo(games)
     before_opening_day = min(games[games["game_type"] == "R"]["game_date_utc"]) - timedelta(hours=1)
     assert asof.games_rated(home, pd.Timestamp(before_opening_day)) == 0
+
+
+def test_the_offseason_regression_applies_before_a_seasons_first_game(fixture_frames):
+    """A rating read on opening day has crossed the season boundary.
+
+    The engine regresses when it observes the new season's first game; a
+    reading between the last game of one season and the first of the next
+    must be regressed just the same, or opening day carries last October's
+    rating in full — which spring training used to hide.
+    """
+    games = fixture_frames["games"]
+    asof = AsOfElo(games)
+    home = int(games.iloc[0]["home_team_id"])
+    after_last = max(games["knowledge_time"]) + timedelta(days=1)
+    final = asof.rating_at(home, pd.Timestamp(after_last))
+    assert final != pytest.approx(1500.0)  # the fixture is one-sided; the rating moved
+
+    next_spring = pd.Timestamp(datetime(SEASON + 1, 3, 27, tzinfo=UTC))
+    regressed = asof.rating_at(home, next_spring)
+    expected = final + (1500.0 - final) * asof.engine.season_regression
+    assert regressed == pytest.approx(expected)
+    assert regressed != pytest.approx(final)
+
+    # Within the same season nothing is regressed. Two years on with no season
+    # between, still once: the engine regresses per season it opens, not per
+    # calendar year, and the next game it sees opens exactly one.
+    assert asof.rating_at(home, pd.Timestamp(datetime(SEASON, 11, 15, tzinfo=UTC))) == pytest.approx(final)
+    assert asof.rating_at(home, pd.Timestamp(datetime(SEASON + 2, 4, 1, tzinfo=UTC))) == pytest.approx(expected)
+
+
+def _completed_game(
+    template: dict, game_id: int, when: datetime, home_team_id: int, away_team_id: int
+) -> dict:
+    """A final regular-season game on ``when``, in ``when``'s season, from a template row."""
+    game = dict(template)
+    game.update(
+        id=game_id, season=when.year, game_type="R", game_date_utc=when,
+        official_date=when.date(), knowledge_time=when + timedelta(hours=4),
+        home_team_id=home_team_id, away_team_id=away_team_id,
+        home_score=5, away_score=3, home_win=True, is_final=True,
+    )
+    return game
+
+
+def test_the_regressed_reading_matches_what_the_engine_uses_for_the_first_game(fixture_frames):
+    """The as-of reading before opening day equals the engine's own pregame rating."""
+    games = fixture_frames["games"].copy()
+    template = games.iloc[-1].to_dict()
+    home, away = int(template["home_team_id"]), int(template["away_team_id"])
+    opener = _completed_game(template, 777_001, datetime(SEASON + 1, 3, 28, 23, tzinfo=UTC), home, away)
+    games = pd.concat([games, pd.DataFrame([opener])], ignore_index=True)
+    asof = AsOfElo(games)
+    before_opener = pd.Timestamp(opener["game_date_utc"]) - timedelta(hours=3)
+    assert asof.rating_at(home, before_opener) == pytest.approx(
+        asof.engine.rating_before(777_001, home)
+    )
+
+
+def test_a_skipped_season_is_one_regression_as_the_engine_applies_one(fixture_frames):
+    """History loaded as SEASON and SEASON+2: the engine regresses once at the
+    SEASON+2 opener, for the change of season number, and so must the reading
+    before it — not once per calendar year in between."""
+    games = fixture_frames["games"].copy()
+    template = games.iloc[-1].to_dict()
+    home, away = int(template["home_team_id"]), int(template["away_team_id"])
+    opener = _completed_game(template, 777_002, datetime(SEASON + 2, 3, 28, 23, tzinfo=UTC), home, away)
+    games = pd.concat([games, pd.DataFrame([opener])], ignore_index=True)
+    asof = AsOfElo(games)
+    final = asof.rating_at(home, pd.Timestamp(datetime(SEASON, 12, 1, tzinfo=UTC)))
+    once = final + (1500.0 - final) * asof.engine.season_regression
+    before_opener = pd.Timestamp(opener["game_date_utc"]) - timedelta(hours=3)
+    assert asof.rating_at(home, before_opener) == pytest.approx(once)
+    assert asof.rating_at(home, before_opener) == pytest.approx(
+        asof.engine.rating_before(777_002, home)
+    )
+
+
+def test_a_season_the_team_sat_out_still_regressed_it(fixture_frames):
+    """The engine regresses every rating when the league opens a season, whether
+    or not a team played in it. A team last seen in SEASON, with the league
+    playing SEASON+1 without it, opens SEASON+2 regressed twice."""
+    games = fixture_frames["games"].copy()
+    template = games.iloc[-1].to_dict()
+    home, away = int(template["home_team_id"]), int(template["away_team_id"])
+    others = _completed_game(template, 777_003, datetime(SEASON + 1, 6, 1, 23, tzinfo=UTC), 9001, 9002)
+    opener = _completed_game(template, 777_004, datetime(SEASON + 2, 3, 28, 23, tzinfo=UTC), home, away)
+    games = pd.concat([games, pd.DataFrame([others, opener])], ignore_index=True)
+    asof = AsOfElo(games)
+    final = asof.rating_at(home, pd.Timestamp(datetime(SEASON, 12, 1, tzinfo=UTC)))
+    once = final + (1500.0 - final) * asof.engine.season_regression
+    twice = once + (1500.0 - once) * asof.engine.season_regression
+    # Between the SEASON+1 opener and the SEASON+2 one: regressed once, as the engine did.
+    assert asof.rating_at(home, pd.Timestamp(datetime(SEASON + 1, 8, 1, tzinfo=UTC))) == pytest.approx(once)
+    before_opener = pd.Timestamp(opener["game_date_utc"]) - timedelta(hours=3)
+    assert asof.rating_at(home, before_opener) == pytest.approx(twice)
+    assert asof.rating_at(home, before_opener) == pytest.approx(
+        asof.engine.rating_before(777_004, home)
+    )
 
 
 def test_the_schedule_index_counts_competitive_games_only(store_with_extras, fixture_frames):

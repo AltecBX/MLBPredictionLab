@@ -202,7 +202,9 @@ def train_model(
         should_activate = activate and decision.should_activate
 
         # A tie on C alone sends the refit back to the incumbent's C; the
-        # registered out-of-sample figures then describe the C that was fitted.
+        # registered out-of-sample figures then describe the C that was fitted,
+        # and the grid's own pick is kept beside it rather than overwritten.
+        selected_C = C
         if decision.fit_C is not None and abs(decision.fit_C - C) > 1e-12:
             C = decision.fit_C
             results = run_walk_forward(dataset, steps, C=C)
@@ -234,18 +236,14 @@ def train_model(
             },
             hyperparameters={
                 "C": C,
+                "selected_C": selected_C,
                 "penalty": "l2",
                 "solver": "lbfgs",
                 "seed": settings.random_seed,
                 "as_of_policy": dataset.as_of_policy,
                 "step_days": step_days,
             },
-            notes=(
-                f"Walk-forward selected C={C}. Out-of-sample log loss "
-                f"{metrics.log_loss:.4f} over {metrics.n} games."
-                if metrics and metrics.log_loss is not None
-                else "Registered without out-of-sample metrics (insufficient history)."
-            ),
+            notes=_notes(selected_C, C, metrics),
             activate=should_activate,
         )
         run.rows_written = model.train_rows
@@ -255,6 +253,7 @@ def train_model(
         "name": name,
         "version": version,
         "C": C,
+        "selected_C": selected_C,
         "train_rows": model.train_rows,
         "feature_set_version": dataset.feature_set_version,
         "out_of_sample": {
@@ -268,6 +267,20 @@ def train_model(
         "activated": should_activate,
         "promotion": decision.to_dict(),
     }
+
+
+def _notes(selected_C: float, fitted_C: float, metrics: Any) -> str:
+    """What was selected, what was fitted, and how the fitted one scored."""
+    if abs(selected_C - fitted_C) < 1e-12:
+        chosen = f"Walk-forward selected C={fitted_C}."
+    else:
+        chosen = (
+            f"Walk-forward selected C={selected_C}; fitted at the active model's "
+            f"C={fitted_C}, the two being a tie on the same games."
+        )
+    if metrics and metrics.log_loss is not None:
+        return f"{chosen} Out-of-sample log loss {metrics.log_loss:.4f} over {metrics.n} games."
+    return f"{chosen} Registered without out-of-sample metrics (insufficient history)."
 
 
 def coefficient_report(model: LogisticWinModel) -> list[dict[str, Any]]:
