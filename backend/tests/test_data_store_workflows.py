@@ -150,3 +150,26 @@ def test_the_publish_stamps_the_build_and_uptime_reads_the_stamp():
     assert "onrender.com" not in (WORKFLOWS / "uptime.yml").read_text(encoding="utf-8"), (
         "Render is not in the read path; the uptime check watches the Pages site"
     )
+
+
+def test_the_save_never_deletes_the_primary_dump_before_its_replacement_is_up():
+    """`gh release upload --clobber` deletes the existing asset before it
+    uploads, and a failed upload then loses it — for the primary dump that
+    would take every restore down until someone repaired the release by hand.
+    So the new dump goes up under a staging name and the names are swapped
+    afterwards; the only `--clobber` is on the staging asset."""
+    script = yaml.safe_load(
+        (ROOT / "actions/db-save/action.yml").read_text(encoding="utf-8")
+    )["runs"]["steps"][0]["run"]
+    clobbers = [
+        line for line in script.splitlines()
+        if "--clobber" in line and not line.strip().startswith("#")
+    ]
+    assert clobbers, "the staging upload must clobber a stale staging asset"
+    for line in clobbers:
+        assert "$staging" in line, f"--clobber on something other than the staging asset: {line}"
+    # The swap is two metadata edits on the assets, not a delete-and-reupload.
+    assert 'name="$previous"' in script and 'name="$ASSET"' in script
+    assert "releases/assets/" in script
+    # And the upload is retried before anything is given up on.
+    assert "for attempt in 1 2 3" in script

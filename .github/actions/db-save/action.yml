@@ -38,29 +38,55 @@ runs:
 
         # The asset takes its NAME from the file's basename — `file#text` on
         # upload sets a display label, not the name — and the restore matches
-        # on the name, so the files are written under the names they are
-        # fetched by.
+        # on the name, so files are written under the names they are fetched by.
         work=$(mktemp -d)
-        dump="$work/$ASSET"
-        previous="$work/${ASSET%.dump}.previous.dump"
-        pg_dump --format=custom --no-owner --no-privileges --file "$dump" "$PGURL"
-        size=$(stat -c %s "$dump")
+        staging="${ASSET}.uploading"
+        previous="${ASSET%.dump}.previous.dump"
+        pg_dump --format=custom --no-owner --no-privileges --file "$work/$staging" "$PGURL"
+        size=$(stat -c %s "$work/$staging")
         games=$(psql "$PGURL" -Atc "select count(*) from games")
         predictions=$(psql "$PGURL" -Atc "select count(*) from predictions" 2>/dev/null || echo 0)
 
-        if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-          # Keep the outgoing dump as the rollback copy. Best effort: the very
-          # first save has nothing to keep.
-          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-               --pattern "$ASSET" --output "$previous" --clobber 2>/dev/null; then
-            gh release upload "$TAG" "$previous" --repo "$GITHUB_REPOSITORY" --clobber
-          fi
-        else
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --title "Data store" --latest=false \
+        repo="$GITHUB_REPOSITORY"
+        if ! gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+          gh release create "$TAG" --repo "$repo" --title "Data store" --latest=false \
             --notes "The application database as a pg_dump, restored by every workflow that needs it and replaced by every workflow that writes. Not a software release."
         fi
-        gh release upload "$TAG" "$dump" --repo "$GITHUB_REPOSITORY" --clobber
+        release_id=$(gh api "repos/$repo/releases/tags/$TAG" --jq .id)
+
+        # The primary asset is never deleted before its replacement is safely
+        # up. `--clobber` on the primary would delete it first and lose it if
+        # the upload then failed, and every restore asks for the primary by
+        # name. So: upload under a staging name (retried; a failure here
+        # touches nothing), then swap names with two metadata edits — the
+        # only window in which the primary is absent is the moment between
+        # them, which the restore's own retries cover.
+        asset_id() {  # name -> asset id, or empty
+          gh api "repos/$repo/releases/$release_id/assets" --paginate \
+            --jq ".[] | select(.name == \"$1\") | .id" | head -n 1
+        }
+        uploaded=false
+        for attempt in 1 2 3; do
+          if gh release upload "$TAG" "$work/$staging" --repo "$repo" --clobber; then
+            uploaded=true; break
+          fi
+          echo "upload attempt $attempt failed; retrying"
+          sleep 15
+        done
+        if [ "$uploaded" != true ]; then
+          echo "::error::Could not upload the new dump after three attempts. The release still holds the previous dump untouched."
+          exit 1
+        fi
+        new_id=$(asset_id "$staging")
+        old_previous=$(asset_id "$previous")
+        if [ -n "$old_previous" ]; then
+          gh api -X DELETE "repos/$repo/releases/assets/$old_previous" >/dev/null
+        fi
+        primary=$(asset_id "$ASSET")
+        if [ -n "$primary" ]; then
+          gh api -X PATCH "repos/$repo/releases/assets/$primary" -f name="$previous" >/dev/null
+        fi
+        gh api -X PATCH "repos/$repo/releases/assets/$new_id" -f name="$ASSET" >/dev/null
 
         {
           echo "### Data store saved"

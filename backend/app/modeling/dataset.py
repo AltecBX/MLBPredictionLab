@@ -98,6 +98,10 @@ def build_dataset(
         return Dataset(pd.DataFrame(), feature_keys(version), version, policy)
 
     eligible = games[games["game_type"].isin(game_types)]
+    # The store carries the lookback seasons so prior-season features have
+    # something to read; the rows scored are only the seasons asked for.
+    if seasons:
+        eligible = eligible[eligible["season"].isin(seasons)]
     if not include_unplayed:
         eligible = eligible[eligible["home_win"].notna()]
     eligible = eligible.sort_values("game_date_utc")
@@ -141,7 +145,10 @@ def build_dataset(
         record.update({name: vector.features.get(name) for name in names})
         rows.append(record)
 
-    frame = pd.DataFrame(rows)
+    # Columns are named even when no row qualified, so an empty dataset is
+    # still a dataset — `labelled` and every consumer can read it as such
+    # rather than tripping over a frame with no columns at all.
+    frame = pd.DataFrame(rows, columns=META_COLUMNS + [LABEL_COLUMN] + names)
     if not frame.empty:
         frame["official_date"] = pd.to_datetime(frame["official_date"]).dt.date
         frame = frame.sort_values(["official_date", "game_id"]).reset_index(drop=True)
