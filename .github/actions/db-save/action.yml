@@ -36,27 +36,31 @@ runs:
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
         fi
 
-        pg_dump --format=custom --no-owner --no-privileges \
-          --file /tmp/db.dump "$PGURL"
-        size=$(stat -c %s /tmp/db.dump)
+        # The asset takes its NAME from the file's basename — `file#text` on
+        # upload sets a display label, not the name — and the restore matches
+        # on the name, so the files are written under the names they are
+        # fetched by.
+        work=$(mktemp -d)
+        dump="$work/$ASSET"
+        previous="$work/${ASSET%.dump}.previous.dump"
+        pg_dump --format=custom --no-owner --no-privileges --file "$dump" "$PGURL"
+        size=$(stat -c %s "$dump")
         games=$(psql "$PGURL" -Atc "select count(*) from games")
         predictions=$(psql "$PGURL" -Atc "select count(*) from predictions" 2>/dev/null || echo 0)
 
-        previous="${ASSET%.dump}.previous.dump"
         if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
           # Keep the outgoing dump as the rollback copy. Best effort: the very
           # first save has nothing to keep.
           if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-               --pattern "$ASSET" --output /tmp/previous.dump --clobber 2>/dev/null; then
-            gh release upload "$TAG" "/tmp/previous.dump#$previous" \
-              --repo "$GITHUB_REPOSITORY" --clobber
+               --pattern "$ASSET" --output "$previous" --clobber 2>/dev/null; then
+            gh release upload "$TAG" "$previous" --repo "$GITHUB_REPOSITORY" --clobber
           fi
         else
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
             --title "Data store" --latest=false \
             --notes "The application database as a pg_dump, restored by every workflow that needs it and replaced by every workflow that writes. Not a software release."
         fi
-        gh release upload "$TAG" "/tmp/db.dump#$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+        gh release upload "$TAG" "$dump" --repo "$GITHUB_REPOSITORY" --clobber
 
         {
           echo "### Data store saved"
@@ -68,4 +72,4 @@ runs:
           echo "| Predictions on record | $predictions |"
           echo "| Release | \`$TAG\` / \`$ASSET\` |"
         } >> "$GITHUB_STEP_SUMMARY"
-        rm -f /tmp/db.dump /tmp/previous.dump
+        rm -rf "$work"
