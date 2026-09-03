@@ -1,0 +1,71 @@
+name: Save the data store
+description: >-
+  Dump this job's Postgres service container and attach it to the `data`
+  release, replacing the previous dump and keeping that one as
+  `jerry_mlb.previous.dump` for a rollback. Every writer runs under the
+  `jerry-data` concurrency group, so two jobs never restore, write and save
+  over each other.
+
+inputs:
+  tag:
+    description: The release tag the dump is attached to.
+    required: false
+    default: data
+  asset:
+    description: The asset name of the dump.
+    required: false
+    default: jerry_mlb.dump
+  pg-url:
+    description: libpq URL of the service container.
+    required: false
+    default: postgresql://jerry:jerry@localhost:5432/jerry_mlb
+
+runs:
+  using: composite
+  steps:
+    - name: Dump and upload
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ inputs.tag }}
+        ASSET: ${{ inputs.asset }}
+        PGURL: ${{ inputs.pg-url }}
+      run: |
+        set -euo pipefail
+        if ! command -v pg_dump >/dev/null 2>&1; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+        fi
+
+        pg_dump --format=custom --no-owner --no-privileges \
+          --file /tmp/db.dump "$PGURL"
+        size=$(stat -c %s /tmp/db.dump)
+        games=$(psql "$PGURL" -Atc "select count(*) from games")
+        predictions=$(psql "$PGURL" -Atc "select count(*) from predictions" 2>/dev/null || echo 0)
+
+        previous="${ASSET%.dump}.previous.dump"
+        if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          # Keep the outgoing dump as the rollback copy. Best effort: the very
+          # first save has nothing to keep.
+          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+               --pattern "$ASSET" --output /tmp/previous.dump --clobber 2>/dev/null; then
+            gh release upload "$TAG" "/tmp/previous.dump#$previous" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          fi
+        else
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "Data store" --latest=false \
+            --notes "The application database as a pg_dump, restored by every workflow that needs it and replaced by every workflow that writes. Not a software release."
+        fi
+        gh release upload "$TAG" "/tmp/db.dump#$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+
+        {
+          echo "### Data store saved"
+          echo ""
+          echo "| | |"
+          echo "|---|---|"
+          echo "| Dump | $((size / 1048576)) MB |"
+          echo "| Games on record | $games |"
+          echo "| Predictions on record | $predictions |"
+          echo "| Release | \`$TAG\` / \`$ASSET\` |"
+        } >> "$GITHUB_STEP_SUMMARY"
+        rm -f /tmp/db.dump /tmp/previous.dump

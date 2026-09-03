@@ -8,31 +8,24 @@ number traces back to a stored, timestamped, reproducible record.
 
 ## Get it running
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AltecBX/MLBPredictionLab)
+The whole thing runs from GitHub: no server, no hosted database, nothing to
+pay for and nothing that expires. Two steps, both doable from a phone:
 
-Five steps, all doable from a phone, no terminal at any point:
+1. **Run the seed.** Actions tab → **Seed the database** → Run workflow.
+   It backfills six seasons of MLB history into a database that lives inside
+   the job, trains the model, issues today's predictions, runs the backtest,
+   and saves the database as the repository's `data` release. About an hour,
+   once.
+2. **Open the site** at `https://<you>.github.io/MLBPredictionLab/`, then
+   Share → Add to Home Screen.
 
-1. **Tap the button.** Sign in with GitHub, then **Apply**. Render reads
-   `render.yaml` and creates the database, the API and the web app.
-2. **Copy the database URL.** Render dashboard → `jerry-db` → **External
-   Database URL** → copy.
-3. **Paste it into GitHub.** This repo → Settings → Secrets and variables →
-   Actions → New repository secret, named `DATABASE_URL`.
-4. **Run the seed.** Actions tab → **Seed the database** → Run workflow.
-   Takes about 30 minutes and does the ingest, the training and the first
-   predictions for you.
-5. **Open the `jerry-web` URL** from Render, then Share → Add to Home Screen.
-
-From then on it keeps itself current: `.github/workflows/refresh.yml` re-ingests,
-retrains and reissues predictions every morning at 09:15 UTC.
-
-Two things about Render's free tier you should know before you start, both
-covered properly in [DEPLOYMENT.md](DEPLOYMENT.md):
-
-* **Free services sleep after 15 minutes idle** and take about a minute to
-  wake, so the first page load after a gap is slow every time.
-* **A free Postgres instance expires 30 days after it is created.** Upgrading
-  it is the first thing worth paying for.
+From then on it keeps itself current. `.github/workflows/refresh.yml`
+re-ingests, retrains and reissues predictions every morning at 09:15 UTC;
+`pregame.yml` polls lineups and the forecast hourly through the evening; and
+`pages.yml` republishes the site after each of them. Every one of those jobs
+restores the database from the `data` release, does its work, and saves it
+back — see [DEPLOYMENT.md](DEPLOYMENT.md) for how that works and what it
+replaced.
 
 ---
 

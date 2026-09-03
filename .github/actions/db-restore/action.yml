@@ -1,0 +1,98 @@
+name: Restore the data store
+description: >-
+  Load the latest database dump from the repository's `data` release into this
+  job's Postgres service container. The database lives in GitHub, not on a
+  hosted instance: every job that needs it starts an empty Postgres service,
+  restores the dump, works, and a writer saves a new dump back with
+  `db-save`. A free hosted Postgres expired after thirty days and took every
+  refresh and publish down with it; a release asset does not expire.
+
+inputs:
+  required:
+    description: >-
+      "true" fails the job when no dump exists yet. "false" leaves the
+      database empty, which is what the seeder wants on its first run.
+    required: false
+    default: "true"
+  tag:
+    description: The release tag the dump is attached to.
+    required: false
+    default: data
+  asset:
+    description: The asset name of the dump.
+    required: false
+    default: jerry_mlb.dump
+  pg-url:
+    description: libpq URL of the service container.
+    required: false
+    default: postgresql://jerry:jerry@localhost:5432/jerry_mlb
+
+outputs:
+  restored:
+    description: >-
+      "true" when a dump was restored, "false" when the database is empty.
+    value: ${{ steps.restore.outputs.restored }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the dump
+      id: restore
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ inputs.tag }}
+        ASSET: ${{ inputs.asset }}
+        PGURL: ${{ inputs.pg-url }}
+        REQUIRED: ${{ inputs.required }}
+      run: |
+        set -euo pipefail
+        if ! command -v pg_restore >/dev/null 2>&1; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+        fi
+
+        # The service container reports healthy before it accepts connections
+        # on the published port every time; wait for the port itself.
+        for i in $(seq 1 30); do
+          if pg_isready -d "$PGURL" >/dev/null 2>&1; then break; fi
+          sleep 2
+        done
+        pg_isready -d "$PGURL"
+
+        # Up to three attempts: a writer replacing the asset (`--clobber`
+        # deletes and re-uploads it) leaves a gap of a few seconds during
+        # which a download 404s.
+        found=false
+        for attempt in 1 2 3; do
+          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+               --pattern "$ASSET" --output /tmp/db.dump --clobber 2>/tmp/gh.err; then
+            found=true; break
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            break   # no release at all: nothing to wait for
+          fi
+          sleep 20
+        done
+
+        if [ "$found" != true ]; then
+          if [ "$REQUIRED" = "true" ]; then
+            echo "::error::No database dump found on release '$TAG' (asset '$ASSET')."
+            echo "Run the 'Seed the database' workflow once; it builds the data store from MLB history and saves it there."
+            cat /tmp/gh.err 2>/dev/null || true
+            exit 1
+          fi
+          echo "No dump on release '$TAG' yet; starting from an empty database."
+          echo "restored=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        size=$(stat -c %s /tmp/db.dump)
+        echo "Restoring $((size / 1048576)) MB dump"
+        # --no-owner/--no-privileges: the dump was taken as one role and is
+        # restored as another; ownership is not part of the data.
+        pg_restore --no-owner --no-privileges --no-comments --jobs 4 \
+          --dbname "$PGURL" /tmp/db.dump
+        games=$(psql "$PGURL" -Atc "select count(*) from games" 2>/dev/null || echo "?")
+        echo "Restored: $games games on record"
+        echo "restored=true" >> "$GITHUB_OUTPUT"
+        rm -f /tmp/db.dump

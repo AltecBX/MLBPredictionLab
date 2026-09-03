@@ -1,67 +1,74 @@
 name: Seed the database
 
-# Run this once, after the Render blueprint has finished deploying.
+# Build the data store from MLB history.
 #
 # It does everything that would otherwise need a terminal: creates the schema,
-# backfills real MLB history, fits the model, and issues predictions for today.
-# Start it from the Actions tab — including from a phone browser — and watch it
-# there. Nothing is installed on your machine.
+# backfills real MLB history, fits the model, issues predictions for today,
+# runs the backtest, and saves the result as the `data` release that every
+# other workflow restores from. Start it from the Actions tab — including from
+# a phone browser — and watch it there. Nothing is installed on your machine
+# and no database has to be provisioned anywhere: the database is a Postgres
+# service container inside this job, and the dump it saves is the database.
 #
-# It is safe to re-run. Ingestion is idempotent and resumable, so if a run is
+# It is safe to re-run. It restores whatever dump already exists before
+# ingesting, and ingestion is idempotent and resumable, so if a run is
 # cancelled or times out, starting it again picks up where it stopped rather
-# than refetching.
+# than refetching — and adding a season later is the same button with a
+# different list.
 
 on:
   workflow_dispatch:
     inputs:
       seasons:
-        description: "Seasons to ingest (comma separated). Two fit a free 1 GB Postgres; four do not."
+        description: "Seasons to ingest (comma separated). Six seasons is about 16 MB of dump; there is no size ceiling to mind."
         required: true
-        default: "2025,2026"
+        default: "2021,2022,2023,2024,2025,2026"
       backtest:
-        description: "Also run the walk-forward backtest (adds ~10 min, fills the Backtest screen)"
+        description: "Also run the walk-forward backtest (adds ~15 min, fills the Backtest screen)"
         type: boolean
         default: true
-      store_raw_payloads:
-        description: "Keep the verbatim provider responses. Roughly triples both the runtime and the database size over a network connection — see DEPLOYMENT.md § Sizing."
-        type: boolean
-        default: false
 
 concurrency:
   # Never let two seeds write the same tables at once.
   group: jerry-data
   cancel-in-progress: false
 
+permissions:
+  contents: write   # to create or replace the dump on the `data` release
+
 jobs:
   seed:
     name: Ingest, train, predict
     runs-on: ubuntu-latest
-    # Ingesting four seasons takes about 45 minutes; leave room for a slow day
-    # at the source without letting a hung run burn the whole budget.
-    timeout-minutes: 180
+    # Ingesting a season takes about ten minutes against a local service
+    # container; leave room for a slow day at the source without letting a
+    # hung run burn the whole budget.
+    timeout-minutes: 240
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jerry
+          POSTGRES_PASSWORD: jerry
+          POSTGRES_DB: jerry_mlb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jerry" --health-interval 5s
+          --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql+psycopg://jerry:jerry@localhost:5432/jerry_mlb
       ENVIRONMENT: production
       LOG_FORMAT: console
       REDIS_URL: ""
-      # Off by default for a backfill. Each boxscore payload averages 56 KB, so
-      # two seasons is ~260 MB of JSONB pushed from this runner to a hosted
-      # Postgres — which dominates the wall clock and burns a quarter of a 1 GB
-      # free tier. The normalized rows and their knowledge_time are written
-      # either way, so the model and every prediction are identical. The daily
+      LINEUP_PROVIDER: mlb_statsapi
+      INJURY_PROVIDER: mlb_statsapi
+      WEATHER_PROVIDER: open_meteo
+      # Off for a backfill. Each boxscore payload averages 56 KB, and the
+      # normalized rows and their knowledge_time are written either way, so
+      # the model and every prediction are identical without them. The daily
       # refresh keeps storing them, where the volume is trivial.
-      STORE_RAW_PAYLOADS: ${{ inputs.store_raw_payloads }}
+      STORE_RAW_PAYLOADS: "false"
     steps:
-      - name: Check the database secret is set
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::The DATABASE_URL repository secret is not set."
-            echo "Copy the *External* Database URL from your Render Postgres page, then add it"
-            echo "under Settings -> Secrets and variables -> Actions as DATABASE_URL."
-            echo "See DEPLOYMENT.md for the two-line version of this."
-            exit 1
-          fi
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -76,7 +83,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Create the schema
+      # Not required: the first seed starts from nothing.
+      - name: Restore any existing data store
+        uses: ./.github/actions/db-restore
+        with:
+          required: "false"
+
+      - name: Create or update the schema
         working-directory: backend
         run: alembic upgrade head
 
@@ -85,8 +98,15 @@ jobs:
         run: python -m app.cli bootstrap
 
       - name: Ingest history
+        id: ingest
         working-directory: backend
         run: python -m app.cli ingest-history --seasons "${{ inputs.seasons }}"
+
+      # Saved as soon as the history is in, so a failure in training below
+      # does not cost the hour of ingestion above it.
+      - name: Save the data store (history)
+        if: always() && steps.ingest.outcome == 'success'
+        uses: ./.github/actions/db-save
 
       - name: Train
         working-directory: backend
@@ -105,6 +125,9 @@ jobs:
         working-directory: backend
         run: python -m app.cli check-sources
 
+      - name: Save the data store
+        uses: ./.github/actions/db-save
+
       - name: Summary
         if: always()
         working-directory: backend
@@ -114,7 +137,8 @@ jobs:
             echo ""
             echo "Seasons: \`${{ inputs.seasons }}\`"
             echo ""
-            echo "Open the **jerry-web** URL from your Render dashboard. If a category still"
-            echo "reads UNAVAILABLE it is one this phase does not populate — that is the"
-            echo "correct state, and the screen names the provider that would enable it."
+            echo "The daily refresh and the pregame poller will pick the data store up on"
+            echo "their next run, and the site publishes after each of them. If a category"
+            echo "still reads UNAVAILABLE it is one this phase does not populate — that is"
+            echo "the correct state, and the screen names the provider that would enable it."
           } >> "$GITHUB_STEP_SUMMARY"

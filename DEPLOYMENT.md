@@ -2,29 +2,69 @@
 
 Getting Jerry MLB Prediction Lab onto a URL you can open from your phone.
 
-The short version is in the README: tap the Deploy button, paste one secret
-into GitHub, run one workflow. This file is what that actually does, what it
-costs, and what to do when something breaks.
+The short version is in the README: run one workflow. This file is what that
+actually does, what it costs, and what to do when something breaks.
 
 | | Path | Effort | Cost | Best for |
 |---|---|---|---|---|
-| **A** | [Render + GitHub Actions](#a--render--github-actions) | 5 taps, no terminal | Free for 30 days, then ~$7/mo | Getting it live today |
+| **0** | [GitHub only](#0--github-only) | 1 tap, no terminal | Free, indefinitely | **The default.** What the live site runs on |
+| **A** | [Render + GitHub Actions](#a--render--github-actions) | 5 taps, no terminal | Free for 30 days, then ~$7/mo | A live API for other clients |
 | **B** | [Vercel web + Render API](#b--vercel--render) | Path A, plus ~10 minutes | Same | No cold start on the shell |
 | **C** | [Your own machine or VPS](#c--self-hosted) | Docker knowledge | Hardware you have | No sleeping, no ceiling |
 
 ---
 
+## 0 — GitHub only
+
+There is no database to provision. The database *is* a file: a `pg_dump`
+attached to the repository's `data` release. Every workflow that needs it
+starts a Postgres service container inside its own job, restores the dump
+(`.github/actions/db-restore`), does its work, and — if it wrote anything —
+saves a new dump back (`.github/actions/db-save`), keeping the outgoing one
+as `jerry_mlb.previous.dump` for a rollback. The site itself is static
+files on GitHub Pages, built by `pages.yml` against an API that runs inside
+the build job and is thrown away.
+
+Six seasons dump to about **16 MB** and restore in a few seconds, so even the
+hourly pregame poller pays nothing noticeable for the round trip.
+
+**Why.** The hosted free Postgres this used to run against expired thirty
+days after it was created. Every refresh and every publish then failed for
+three days before anyone could tell, because the site is static and kept
+serving its last build. A release asset does not expire, needs no secret,
+and has no 1 GB ceiling — which is what had limited the served model to two
+seasons of history.
+
+**To set it up:** Actions → **Seed the database** → Run workflow. The default
+seasons are `2021` through `2026`. It creates the `data` release on its first
+save. Re-running it with a different season list adds those seasons to what
+is already there; nothing is refetched.
+
+**Writers never overlap.** `seed.yml`, `refresh.yml`, `pregame.yml` and
+`statcast.yml` all share the `jerry-data` concurrency group, so a
+restore–write–save cycle is never interleaved with another one. `pages.yml`
+only restores. A test in `backend/tests/test_data_store_workflows.py` asserts
+all of that, and that no workflow reads a `DATABASE_URL` secret.
+
+**To roll back a bad day:** download `jerry_mlb.previous.dump` from the
+`data` release, upload it over `jerry_mlb.dump`, and re-run the publish.
+
+---
+
 ## Before you start
 
-This is not a static site. It is a database with real MLB game logs, a model
-fit on them, and a job that reissues predictions every morning. A deploy has
-two distinct stages, and they are separate on purpose:
+This is a database with real MLB game logs, a model fit on them, and a job
+that reissues predictions every morning; on path 0 that database happens to
+be stored as a file and rebuilt inside each job. A deploy has two distinct
+stages, and they are separate on purpose:
 
-1. **Bring the services up.** Minutes. Every screen will say `UNAVAILABLE` at
-   this point and nothing is wrong — the database is empty and the app is
-   telling you so rather than inventing numbers to fill a screen.
-2. **Seed and train.** **Budget 60–90 minutes** for two seasons on the hosted
-   path, then about 9 minutes to train. One time only.
+1. **Bring the services up.** Minutes on paths A–C; nothing at all on path 0.
+   Every screen will say `UNAVAILABLE` at this point and nothing is wrong —
+   the database is empty and the app is telling you so rather than inventing
+   numbers to fill a screen.
+2. **Seed and train.** About ten minutes per season on path 0, where the
+   database is local to the job; **budget 60–90 minutes** for two seasons on
+   the hosted paths, then about 9 minutes to train. One time only.
 
 ### Where that number comes from, and why an earlier one was wrong
 
@@ -85,27 +125,32 @@ exist until Render has created it. Once it does:
 **jerry-api** → **Environment** → `CORS_ORIGINS` = your `jerry-web` URL, e.g.
 `https://jerry-web-xxxx.onrender.com`. Save; Render redeploys the API.
 
-### 3. Give GitHub the database URL
+### 3. Fill the database
 
-The workflows connect straight to Postgres, so they need its external address.
+The workflows no longer write to a hosted database — they keep the data store
+as the `data` release (path 0). To give Render's Postgres the same data,
+restore that dump into it from any machine with `pg_restore`:
 
-Render → **jerry-db** → copy the **External Database URL** (the external one,
-not the internal — a GitHub runner is not inside Render's network).
+```bash
+gh release download data --repo AltecBX/MLBPredictionLab --pattern jerry_mlb.dump
+pg_restore --no-owner --no-privileges --dbname "<External Database URL>" jerry_mlb.dump
+```
 
-Then: this repo → **Settings** → **Secrets and variables** → **Actions** →
-**New repository secret**, named `DATABASE_URL`.
-
-> The value Render gives you starts `postgresql://`. Paste it exactly as-is.
+Render → **jerry-db** → **External Database URL** is the address to use (the
+external one, not the internal — you are not inside Render's network). Repeat
+whenever you want the API to catch up with the data store; the daily refresh
+does not do it for you.
 
 ### 4. Seed
 
-**Actions** tab → **Seed the database** → **Run workflow**. Leave the seasons
-at `2025,2026` unless you have upgraded Postgres — see [Sizing](#sizing).
+If the `data` release does not exist yet: **Actions** tab → **Seed the
+database** → **Run workflow**. Leave the seasons at their default.
 
 It creates the schema, backfills the seasons, fits the model, issues today's
-predictions, and runs the backtest. Watch it in the Actions tab. It is
-idempotent and resumable: if it fails or times out, run it again and it picks
-up where it stopped rather than refetching.
+predictions, runs the backtest, and saves the result as the `data` release.
+Watch it in the Actions tab. It is idempotent and resumable: if it fails or
+times out, run it again and it picks up where it stopped rather than
+refetching. Then do step 3.
 
 ### 5. Open it
 
@@ -222,7 +267,13 @@ Measured on the real four-season dataset (2023–2026):
 
 Roughly **230 MB per season**, three quarters of it raw payloads.
 
-908 MB leaves no headroom in a 1 GB free Postgres instance, so:
+On path 0 none of this is a constraint. Measured on the six-season dataset
+(2021–2026, 16,600 games) without raw payloads: **328 MB** in Postgres, of
+which `player_game_stats` is 222 MB, and a **16 MB** custom-format dump that
+restores in about four seconds. A release asset may be 2 GB.
+
+For the hosted paths, 908 MB leaves no headroom in a 1 GB free Postgres
+instance, so:
 
 * **Free Postgres → two seasons** (`2025,2026`, ~460 MB), which is the seed
   workflow's default. The model trains on what is there, the backtest has fewer
@@ -297,7 +348,7 @@ subset.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | `postgresql+psycopg://user:pass@host:5432/db`. Also the GitHub secret the workflows read |
+| `DATABASE_URL` | yes | `postgresql+psycopg://user:pass@host:5432/db`. On path 0 every workflow sets it to its own service container; no secret exists |
 | `REDIS_URL` | no | Blank means caching disabled, not broken |
 | `CORS_ORIGINS` | yes in production | Comma-separated. The browser origin of the web app |
 | `API_BASE_URL` | yes (frontend) | Where the web app fetches from. A bare hostname or a root URL is accepted and normalised |
@@ -333,13 +384,16 @@ Render build log first. Two failures were shipped and fixed once: `npm ci
 build needs, and a hard-coded port, which a host that assigns `PORT` will never
 reach. Both are now asserted in CI.
 
-**The seed or refresh workflow fails immediately.**
-Usually the `DATABASE_URL` secret: missing, or the *internal* URL rather than
-the external one. The workflow's first step says which.
+**The refresh, pregame or publish workflow fails at "Restore the data store".**
+There is no dump on the `data` release yet, or the release was deleted. Run
+**Seed the database** once; it rebuilds the store from MLB history and saves
+it. Nothing else has to change.
 
-**Everything worked, then one day every connection failed.**
-A free Render Postgres instance expires 30 days after creation. There is a
-14-day grace period to upgrade before it is deleted.
+**Everything worked, then one day every connection failed** (paths A–C).
+A free Render Postgres instance expires 30 days after creation, with a 14-day
+grace period to upgrade before it is deleted. This is what path 0 exists to
+avoid: the live site went stale for three days this way before the data store
+moved into the repository.
 
 **Predictions are days old.**
 The daily refresh is failing. Check the Actions tab, then the **Diagnostics**

@@ -27,6 +27,10 @@ name: Pregame refresh
 # daily job; a model that changed between two snapshots of the same game would
 # make the change decomposition compare two different models, which
 # `explain_change` refuses to do and would simply report as unavailable.
+#
+# The database is restored from and saved to the `data` release, like every
+# other job that touches it — see refresh.yml for why. A dump is about 16 MB
+# for six seasons and restores in seconds, so an hourly cadence costs nothing.
 
 on:
   schedule:
@@ -40,13 +44,27 @@ concurrency:
   group: jerry-data
   cancel-in-progress: false
 
+permissions:
+  contents: write   # to replace the dump on the `data` release
+
 jobs:
   pregame:
     name: Lineups, weather, reissue
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jerry
+          POSTGRES_PASSWORD: jerry
+          POSTGRES_DB: jerry_mlb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jerry" --health-interval 5s
+          --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql+psycopg://jerry:jerry@localhost:5432/jerry_mlb
       ENVIRONMENT: production
       LOG_FORMAT: console
       REDIS_URL: ""
@@ -60,13 +78,6 @@ jobs:
       LINEUP_PROVIDER: mlb_statsapi
       INJURY_PROVIDER: mlb_statsapi
     steps:
-      - name: Check the database secret is set
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::error::The DATABASE_URL repository secret is not set. See DEPLOYMENT.md."
-            exit 1
-          fi
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -80,6 +91,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
+
+      - name: Restore the data store
+        uses: ./.github/actions/db-restore
+
+      - name: Apply any new migrations
+        working-directory: backend
+        run: alembic upgrade head
 
       # Posted lineups for games that have not started. Rows are stamped with
       # the moment of the poll, so this can never make a past game's lineup
@@ -102,3 +120,6 @@ jobs:
       - name: Reissue predictions
         working-directory: backend
         run: python -m app.cli predict
+
+      - name: Save the data store
+        uses: ./.github/actions/db-save
