@@ -37,11 +37,11 @@ export async function GameCenter({ date }: { date: string }) {
         <h1 className="t-display">Daily Game Center</h1>
         {result.ok ? (
           <p className="t-micro hidden shrink-0 subtle sm:block">
-            {result.data.model_version
-              ? `Model ${result.data.model_version}`
-              : "No active model"}
-            {" · "}
-            {timestamp(result.data.generated_at)}
+            {`${
+              result.data.model_version
+                ? `Model ${result.data.model_version}`
+                : "No active model"
+            } · ${timestamp(result.data.generated_at)}`}
           </p>
         ) : null}
       </div>
@@ -71,11 +71,11 @@ export async function GameCenter({ date }: { date: string }) {
             </div>
             <FreshnessStrip entries={result.data.freshness} />
             <p className="t-micro subtle sm:hidden">
-              {result.data.model_version
-                ? `Model ${result.data.model_version}`
-                : "No active model"}
-              {" · "}
-              {timestamp(result.data.generated_at)}
+              {`${
+                result.data.model_version
+                  ? `Model ${result.data.model_version}`
+                  : "No active model"
+              } · ${timestamp(result.data.generated_at)}`}
             </p>
           </section>
         </LiveSlate>

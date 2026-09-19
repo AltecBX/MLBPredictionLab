@@ -43,8 +43,8 @@ export function ProbabilityBar({
   const homeFavored = home >= 0.5;
 
   const leader = homeFavored
-    ? { pct: home, label: homeLabel, color: "var(--home)" }
-    : { pct: away, label: awayLabel, color: "var(--away)" };
+    ? { pct: home, label: homeLabel, tone: "home" as const }
+    : { pct: away, label: awayLabel, tone: "away" as const };
   const trailer = homeFavored
     ? { pct: away, label: awayLabel }
     : { pct: home, label: homeLabel };
@@ -59,7 +59,7 @@ export function ProbabilityBar({
           label={awayLabel}
           value={away}
           leading={!homeFavored}
-          color="var(--away)"
+          tone="away"
           compact={compact}
           align="left"
         />
@@ -67,7 +67,7 @@ export function ProbabilityBar({
           label={homeLabel}
           value={home}
           leading={homeFavored}
-          color="var(--home)"
+          tone="home"
           compact={compact}
           align="right"
         />
@@ -84,24 +84,17 @@ export function ProbabilityBar({
       >
         <div
           className={`meter-away ${animate ? "meter-fill" : ""} h-full`}
-          style={{
-            width: `${away * 100}%`,
-            transition: "width var(--dur-slow) var(--ease-spring)",
-          }}
+          style={{ width: `${away * 100}%` }}
         />
         <div
           className={`meter-home ${animate ? "meter-fill-right" : ""} h-full`}
-          style={{
-            width: `${home * 100}%`,
-            transition: "width var(--dur-slow) var(--ease-spring)",
-          }}
+          style={{ width: `${home * 100}%` }}
         />
         {/* The even mark. A notch through the full height, drawn over both
             halves so it reads at any split. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full"
-          style={{ background: "var(--surface-raised)", opacity: 0.9 }}
+          className="pb-notch pointer-events-none absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 rounded-full"
         />
       </div>
 
@@ -111,9 +104,7 @@ export function ProbabilityBar({
             "Effectively even"
           ) : (
             <>
-              <span style={{ color: leader.color, fontWeight: 600 }}>
-                {leader.label}
-              </span>{" "}
+              <span className={`ink font-semibold tone-${leader.tone}`}>{leader.label}</span>{" "}
               by {Math.round((leader.pct - trailer.pct) * 100)} points
             </>
           )}
@@ -123,57 +114,35 @@ export function ProbabilityBar({
   );
 }
 
+/**
+ * One side's readout. The sizes and colours are `.pb-label` / `.pb-value` in
+ * the stylesheet, with `.lead` on the favoured side; `tone-*` on the wrapper
+ * supplies the colour they read.
+ */
 function Side({
   label,
   value,
   leading,
-  color,
+  tone,
   compact,
   align,
 }: {
   label: string;
   value: number;
   leading: boolean;
-  color: string;
+  tone: "home" | "away";
   compact: boolean;
   align: "left" | "right";
 }) {
+  const lead = leading ? " lead" : "";
   return (
     <span
-      className={`flex min-w-0 flex-col ${
+      className={`flex min-w-0 flex-col tone-${tone} ${
         align === "right" ? "items-end text-right" : "items-start text-left"
-      }`}
+      }${compact ? " pb-compact" : ""}`}
     >
-      <span
-        className="t-micro font-mono uppercase"
-        style={{
-          color: leading ? color : "var(--text-subtle)",
-          fontWeight: leading ? 640 : 500,
-          letterSpacing: "0.07em",
-        }}
-      >
-        {label}
-      </span>
-      <span
-        className="numeral-lg leading-none"
-        style={{
-          color: leading ? color : "var(--text-subtle)",
-          // The leader is the hero of the card; the trailer keeps its
-          // baseline with it rather than floating.
-          fontSize: leading
-            ? compact
-              ? "1.1875rem"
-              : "1.75rem"
-            : compact
-              ? "0.8125rem"
-              : "1rem",
-          letterSpacing: leading ? "-0.045em" : undefined,
-          fontWeight: leading ? 700 : undefined,
-          marginTop: leading ? "0.125rem" : compact ? "0.25rem" : "0.5625rem",
-        }}
-      >
-        {pct(value)}
-      </span>
+      <span className={`pb-label t-micro font-mono uppercase${lead}`}>{label}</span>
+      <span className={`pb-value numeral-lg leading-none${lead}`}>{pct(value)}</span>
     </span>
   );
 }

@@ -26,8 +26,7 @@ export function Badge({
   return (
     <span
       title={title}
-      className={`t-micro inline-flex items-center gap-1 rounded-full border px-2 py-[0.1875rem] leading-none ${TONE_STYLE[tone]}`}
-      style={{ fontWeight: 580, letterSpacing: "0.015em" }}
+      className={`t-micro inline-flex items-center gap-1 rounded-full border px-2 py-[0.1875rem] font-[580] leading-none tracking-[0.015em] ${TONE_STYLE[tone]}`}
     >
       {children}
     </span>
@@ -41,6 +40,10 @@ export function Badge({
  * exactly and the eye can find a club without reading. It is the closest thing
  * to a crest this product has, and unlike a crest it needs no asset, no licence
  * and no network request.
+ *
+ * The recipe is `.tag` / `.tag-em` in the stylesheet; only the emphasised
+ * border colour stays inline, because the global border rule outranks any
+ * class (see the cards section of globals.css).
  */
 export function TeamTag({
   abbreviation,
@@ -49,25 +52,20 @@ export function TeamTag({
 }: {
   abbreviation: string;
   emphasis?: boolean;
-  tone?: string;
+  tone?: "home" | "away";
 }) {
+  const emphasised = emphasis && tone;
   return (
     <span
       aria-hidden
-      className="t-micro inline-flex h-6 w-[2.875rem] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border font-mono"
-      style={{
-        letterSpacing: "0.04em",
-        fontWeight: 620,
-        color: emphasis && tone ? tone : "var(--text-muted)",
-        borderColor:
-          emphasis && tone
-            ? `color-mix(in srgb, ${tone} 34%, transparent)`
-            : "var(--border)",
-        background:
-          emphasis && tone
-            ? `color-mix(in srgb, ${tone} 10%, transparent)`
-            : "var(--surface-inset)",
-      }}
+      className={`tag t-micro inline-flex h-6 w-[2.875rem] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border font-mono${
+        emphasised ? ` tag-em tone-${tone}` : ""
+      }`}
+      style={
+        emphasised
+          ? { borderColor: `color-mix(in srgb, var(--${tone}) 34%, transparent)` }
+          : undefined
+      }
     >
       {abbreviation}
     </span>
