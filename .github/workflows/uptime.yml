@@ -55,11 +55,20 @@ jobs:
             exit 1
           fi
 
-      - name: Check the front page renders a slate
+      # The page is saved to a file and the file is grepped. Piping it into
+      # `grep -q` looked equivalent and was not: `grep -q` exits at its first
+      # match, and once the page outgrew the 64 KB pipe buffer (it did, on
+      # 14 September) `printf` was still writing when grep left, took SIGPIPE,
+      # and `pipefail` turned that write error into a failed check. Every run
+      # for five days failed against a site that was publishing on schedule;
+      # the watchdog was the only thing broken. A file has no writer to
+      # interrupt. The marker is the navigation's own aria-label rather than the
+      # bare word, which a script chunk's name also contained.
+      - name: Check the front page renders its navigation
         run: |
           set -euo pipefail
-          html=$(curl -sS --fail --max-time 20 "${SITE_URL%/}/")
-          if ! printf '%s' "$html" | grep -q 'Primary'; then
+          curl -sS --fail --max-time 20 -o front.html "${SITE_URL%/}/"
+          if ! grep -q 'aria-label="Primary"' front.html; then
             echo "::error::The front page came back without its navigation; the export is broken."
             exit 1
           fi

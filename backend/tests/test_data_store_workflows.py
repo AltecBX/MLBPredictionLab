@@ -12,6 +12,9 @@ restore into, or write without saving.
 
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -150,6 +153,60 @@ def test_the_publish_stamps_the_build_and_uptime_reads_the_stamp():
     assert "onrender.com" not in (WORKFLOWS / "uptime.yml").read_text(encoding="utf-8"), (
         "Render is not in the read path; the uptime check watches the Pages site"
     )
+
+
+def test_no_workflow_pipes_into_grep_q_under_pipefail():
+    """`grep -q` exits at its first match. Under `pipefail`, the writer it
+    leaves behind takes SIGPIPE and its write error fails the pipeline that
+    the match should have passed.
+
+    The uptime check did exactly this with the front page, and on the day the
+    page outgrew the 64 KB pipe buffer every run went red for five days against
+    a site that was publishing on schedule. Grep a file; a file has no writer.
+    """
+    pattern = re.compile(r"\|\s*grep\s+(-\w+\s+)*-q\b")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        spec = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job in spec["jobs"].values():
+            for step in job.get("steps") or []:
+                script = step.get("run") or ""
+                if "pipefail" not in script:
+                    continue
+                offending = [line.strip() for line in script.splitlines() if pattern.search(line)]
+                assert not offending, f"{path.name}: {offending}"
+
+
+def test_a_page_past_the_pipe_buffer_fails_the_piped_check_and_passes_the_file_one(tmp_path):
+    """The mechanism, executed rather than described.
+
+    The same marker near the top of a page larger than any pipe buffer: the
+    check the workflow now runs passes, the one it used to run fails with the
+    writer's broken pipe. The page is made of lines, as the real one is; grep
+    matches a line only once it has read its end, so a single unbroken line
+    would make it read everything and the writer would never be interrupted.
+    """
+    if shutil.which("bash") is None:
+        pytest.skip("needs bash")
+    page = tmp_path / "front.html"
+    page.write_text(
+        '<nav aria-label="Primary"></nav>\n' + ("x" * 99 + "\n") * 16_000, encoding="utf-8"
+    )
+    marker = 'aria-label=\\"Primary\\"'
+    filed = subprocess.run(
+        ["bash", "-c", f'set -euo pipefail; if ! grep -q "{marker}" "$1"; then exit 3; fi', "_", str(page)],
+        check=False,
+    )
+    piped = subprocess.run(
+        [
+            "bash", "-c",
+            f'set -euo pipefail; html=$(cat "$1"); '
+            f'if ! printf "%s" "$html" | grep -q "{marker}"; then exit 3; fi',
+            "_", str(page),
+        ],
+        check=False, capture_output=True,
+    )
+    assert filed.returncode == 0
+    assert piped.returncode == 3, piped.stderr
 
 
 def test_the_save_never_deletes_the_primary_dump_before_its_replacement_is_up():
