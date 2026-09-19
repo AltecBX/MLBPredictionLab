@@ -155,6 +155,20 @@ The API never computes a prediction inside a `GET`. Predictions are produced by
 the prediction job and read back; that keeps request latency flat and makes the
 served probability identical to the stored, auditable one.
 
+**What crosses to the browser is the card's view of a game, not the DTO.** The
+date page fetches the slate on the server, but the cards are rendered by
+client components — the sorter reorders them and the live overlay updates them
+in the reader's browser — and every prop handed across that boundary is written
+into the page twice, as HTML and again as the hydration payload. So the server
+maps each `GameCard` to a `SlateCard` (`frontend/lib/slate.ts`): the fields the
+card renders and the sorter orders by, and nothing else. The full DTO is about
+five times that, and handing it across put 82 KB of unrendered data — driver
+narratives, low warnings, standings, streak logs, the market block — into a
+front page of a quarter of a megabyte. A field the card needs is added to the
+view-model on purpose; a field the DTO grows does not reach the browser by
+default. `frontend/tests/slate.test.tsx` holds the card to it: rendered from
+the view-model, it is the same markup as rendered from the DTO.
+
 ---
 
 ## 6. Job schedule
