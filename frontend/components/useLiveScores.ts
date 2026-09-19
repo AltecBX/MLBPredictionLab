@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 
 import { fetchLiveStates, slateIsActive, type LiveMap } from "@/lib/live";
-import type { GameCard } from "@/lib/types";
 
 const POLL_MS = 45_000;
 
@@ -15,7 +14,10 @@ const POLL_MS = 45_000;
  * retries), and pauses while the tab is hidden — a phone in a pocket should
  * not be spending its battery on a bar it is not showing.
  */
-export function useLiveScores(date: string, games: GameCard[]): LiveMap {
+export function useLiveScores(
+  date: string,
+  games: ReadonlyArray<{ first_pitch_utc: string; is_final: boolean }>,
+): LiveMap {
   const [live, setLive] = useState<LiveMap>(new Map());
 
   const active = slateIsActive(

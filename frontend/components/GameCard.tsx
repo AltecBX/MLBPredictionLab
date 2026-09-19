@@ -13,7 +13,7 @@ import {
   timestamp,
 } from "@/lib/format";
 import type { LiveState } from "@/lib/live";
-import type { GameCard as GameCardType, TeamRef as TeamRefType } from "@/lib/types";
+import type { SlateCard, SlateTeam } from "@/lib/slate";
 
 const RECOMMENDATION_TONE: Record<string, "home" | "accent" | "neutral" | "warn"> = {
   STRONG_LEAN: "home",
@@ -42,7 +42,7 @@ function TeamRow({
   showScore,
   isHome,
 }: {
-  team: TeamRefType;
+  team: SlateTeam;
   name: string;
   abbreviation: string;
   wins: number | null;
@@ -54,7 +54,7 @@ function TeamRow({
   isHome: boolean;
 }) {
   const rec = record(wins, losses);
-  const tone = isHome ? "var(--home)" : "var(--away)";
+  const tone = isHome ? "home" : "away";
 
   return (
     <div className="flex min-w-0 items-center gap-2.5">
@@ -62,10 +62,7 @@ function TeamRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span
-            className="t-body min-w-0 truncate"
-            style={{ fontWeight: favored ? 640 : 520 }}
-          >
+          <span className={`t-body min-w-0 truncate ${favored ? "font-[640]" : "font-[520]"}`}>
             {name}
           </span>
           {rec ? <span className="t-micro tnum shrink-0 subtle">{rec}</span> : null}
@@ -79,7 +76,7 @@ function TeamRow({
             <>
               {pitcher.full_name}
               {pitcher.pitch_hand ? (
-                <span className="subtle"> · {pitcher.pitch_hand}HP</span>
+                <span className="subtle">{` · ${pitcher.pitch_hand}HP`}</span>
               ) : null}
             </>
           ) : (
@@ -91,7 +88,7 @@ function TeamRow({
       {showScore ? (
         <span
           className="numeral-lg shrink-0 text-[1.375rem] leading-none"
-          style={{ color: favored ? tone : "var(--text)" }}
+          style={{ color: favored ? `var(--${tone})` : "var(--text)" }}
         >
           {score ?? "—"}
         </span>
@@ -121,11 +118,16 @@ function Stat({
   );
 }
 
+/**
+ * Typed against the slate's view-model (lib/slate) rather than the API object.
+ * The card is rendered in the browser, so what it accepts is what has to be
+ * carried to it; the full `GameCard` still satisfies the type structurally.
+ */
 export function GameCardView({
   game,
   live,
 }: {
-  game: GameCardType;
+  game: SlateCard;
   /** Present only while the reader's browser has fresher state than the build. */
   live?: LiveState;
 }) {
@@ -143,7 +145,7 @@ export function GameCardView({
       <header className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
         {/* The time never wraps; a long ballpark name truncates instead. */}
         <div className="t-micro flex min-w-0 items-center gap-1.5 muted">
-          <span className="tnum whitespace-nowrap" style={{ fontWeight: 580 }}>
+          <span className="tnum font-[580] whitespace-nowrap">
             {gameTime(game.first_pitch_utc)}
           </span>
           {game.ballpark.name ? (
@@ -220,10 +222,7 @@ export function GameCardView({
               animate={false}
             />
 
-            <dl
-              className="grid grid-cols-3 gap-3 rounded-[var(--radius-md)] px-3.5 py-2.5"
-              style={{ background: "var(--surface-inset)" }}
-            >
+            <dl className="card-stats grid grid-cols-3 gap-3 rounded-[var(--radius-md)] px-3.5 py-2.5">
               <Stat
                 label="Projected"
                 value={
@@ -249,33 +248,27 @@ export function GameCardView({
             </dl>
 
             {prediction.top_drivers.length ? (
-              <ul className="flex flex-col gap-1.5">
+              /* The list carries the favoured side's tone; each row's number
+                 and fill read it. */
+              <ul className={`flex flex-col gap-1.5 ${homeFavored ? "tone-home" : "tone-away"}`}>
                 {prediction.top_drivers.map((driver) => (
                   <li
                     key={driver.feature_key}
                     className="t-micro flex min-w-0 items-center gap-2.5"
                   >
-                    <span
-                      className="numeral w-10 shrink-0 text-right"
-                      style={{ color: homeFavored ? "var(--home)" : "var(--away)" }}
-                    >
-                      +{driver.contribution_pp.toFixed(1)}
+                    <span className="ink numeral w-10 shrink-0 text-right">
+                      {`+${driver.contribution_pp.toFixed(1)}`}
                     </span>
                     {/* A hairline weight bar: the same number again, as length.
                         Reading a list of magnitudes is faster as shape than as
                         digits, and both are present so neither is a guess. */}
                     <span
                       aria-hidden
-                      className="h-1 w-8 shrink-0 overflow-hidden rounded-full"
-                      style={{ background: "var(--track)" }}
+                      className="drv-track h-1 w-8 shrink-0 overflow-hidden rounded-full"
                     >
                       <span
-                        className="block h-full rounded-full"
-                        style={{
-                          width: `${Math.min(driver.contribution_pp / 8, 1) * 100}%`,
-                          background: homeFavored ? "var(--home)" : "var(--away)",
-                          opacity: 0.7,
-                        }}
+                        className="drv-fill block h-full rounded-full"
+                        style={{ width: `${Math.min(driver.contribution_pp / 8, 1) * 100}%` }}
                       />
                     </span>
                     <span className="min-w-0 truncate muted">{driver.display_name}</span>
@@ -330,16 +323,11 @@ export function GameCardView({
               : "Not predicted"}
         </span>
         {/* The one action on a card, sized for a thumb rather than a cursor. */}
-        <Link
-          href={`/game/${game.game_id}`}
-          className="tap group shrink-0 gap-1.5 pl-3"
-          style={{ color: "var(--accent)", fontWeight: 600 }}
-        >
+        <Link href={`/game/${game.game_id}`} className="card-cta tap group shrink-0 gap-1.5 pl-3">
           Full breakdown
           <span
             aria-hidden
-            className="inline-flex size-[1.125rem] items-center justify-center rounded-full transition-transform group-hover:translate-x-0.5"
-            style={{ background: "var(--accent-soft)", fontSize: "0.6875rem" }}
+            className="card-cta-arrow inline-flex size-[1.125rem] items-center justify-center rounded-full transition-transform group-hover:translate-x-0.5"
           >
             →
           </span>

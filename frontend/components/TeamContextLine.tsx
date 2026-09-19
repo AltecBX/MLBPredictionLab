@@ -1,4 +1,5 @@
-import type { StandingSummary, StreakSummary, TeamRef } from "@/lib/types";
+import type { SlateStreak, SlateTeam } from "@/lib/slate";
+import type { StandingSummary } from "@/lib/types";
 
 /**
  * The context a reader wants in the five seconds they spend on a card:
@@ -19,18 +20,14 @@ function pct(value: number | null): string | null {
   return value.toFixed(3).replace(/^0/, "");
 }
 
-export function StreakChip({ streak }: { streak: StreakSummary }) {
+export function StreakChip({ streak }: { streak: SlateStreak }) {
   const winning = streak.kind === "W";
   return (
     <span
-      className="tnum rounded px-1 text-[0.65rem] font-semibold"
+      className={`streak-chip tnum rounded px-1 text-[0.65rem] font-semibold ${
+        winning ? "tone-home" : "tone-away"
+      }`}
       title={`${winning ? "Won" : "Lost"} ${streak.length} straight`}
-      style={{
-        color: winning ? "var(--home)" : "var(--away)",
-        background: `color-mix(in srgb, ${
-          winning ? "var(--home)" : "var(--away)"
-        } 12%, transparent)`,
-      }}
     >
       {streak.label}
     </span>
@@ -57,7 +54,7 @@ export function TeamContextLine({
   isHome,
   className = "",
 }: {
-  team: TeamRef;
+  team: SlateTeam;
   isHome: boolean;
   className?: string;
 }) {
@@ -71,7 +68,7 @@ export function TeamContextLine({
     <span className={`flex shrink-0 items-center gap-1.5 text-[0.7rem] ${className}`}>
       {role ? (
         <span className="tnum subtle" title={`${role.wins}-${role.losses} at ${roleLabel}`}>
-          {role.wins}-{role.losses} {roleLabel}
+          {`${role.wins}-${role.losses} ${roleLabel}`}
           {rolePct ? <span className="ml-1 opacity-70">{rolePct}</span> : null}
         </span>
       ) : null}

@@ -966,4 +966,106 @@ body {
       background: var(--surface-inset);
     }
   }
+
+  /* -------------------------------------------------------------- the cards --
+   *
+   * What a slate card wears that does not vary from card to card lives here,
+   * once, rather than inline fifteen times a page: 24 KB of a front page was
+   * `style` attributes restating the same ten recipes. What does vary — a
+   * bar's width — stays inline. Border colours are the exception and stay
+   * inline wherever they differ from --border: the unlayered `*` rule above
+   * outranks any class in this layer, so a class here cannot set one.
+   *
+   * `--tone` is a side's colour, set by .tone-home / .tone-away on the element
+   * or an ancestor; the recipes below read it.
+   */
+  .tone-home {
+    --tone: var(--home);
+  }
+  .tone-away {
+    --tone: var(--away);
+  }
+  .ink {
+    color: var(--tone);
+  }
+
+  /* The abbreviation chip; .tag-em when the side is favoured. */
+  .tag {
+    letter-spacing: 0.04em;
+    font-weight: 620;
+    color: var(--text-muted);
+    background: var(--surface-inset);
+  }
+  .tag-em {
+    color: var(--tone);
+    background: color-mix(in srgb, var(--tone) 10%, transparent);
+  }
+
+  /* A streak chip: its tone's ink on a wash of the same. */
+  .streak-chip {
+    color: var(--tone);
+    background: color-mix(in srgb, var(--tone) 12%, transparent);
+  }
+
+  /* A driver row: a hairline track and a fill in the favoured side's tone. */
+  .drv-track {
+    background: var(--track);
+  }
+  .drv-fill {
+    background: var(--tone);
+    opacity: 0.7;
+  }
+
+  /* The probability bar's two readouts. The leader is the hero of the card;
+     the trailer keeps its baseline with it rather than floating. */
+  .pb-label {
+    letter-spacing: 0.07em;
+    font-weight: 500;
+    color: var(--text-subtle);
+  }
+  .pb-label.lead {
+    font-weight: 640;
+    color: var(--tone);
+  }
+  .pb-value {
+    color: var(--text-subtle);
+    font-size: 1rem;
+    margin-top: 0.5625rem;
+  }
+  .pb-value.lead {
+    color: var(--tone);
+    font-size: 1.75rem;
+    letter-spacing: -0.045em;
+    font-weight: 700;
+    margin-top: 0.125rem;
+  }
+  .pb-compact .pb-value {
+    font-size: 0.8125rem;
+    margin-top: 0.25rem;
+  }
+  .pb-compact .pb-value.lead {
+    font-size: 1.1875rem;
+    margin-top: 0.125rem;
+  }
+  /* The even mark. */
+  .pb-notch {
+    background: var(--surface-raised);
+    opacity: 0.9;
+  }
+  .meter-away,
+  .meter-home {
+    transition: width var(--dur-slow) var(--ease-spring);
+  }
+
+  .card-stats {
+    background: var(--surface-inset);
+  }
+  .card-cta {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .card-cta-arrow {
+    background: var(--accent-soft);
+    font-size: 0.6875rem;
+  }
 }
