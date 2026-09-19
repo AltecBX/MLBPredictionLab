@@ -20,8 +20,7 @@
  * first pitch fails the knowledge-time cut by definition.
  */
 
-import { slateGroup } from "./status";
-import type { GameCard } from "./types";
+import { slateGroup, type SlateStatus } from "./status";
 
 export interface LiveState {
   /** MLB's abstract state: Preview, Live, Final. */
@@ -106,13 +105,23 @@ export async function fetchLiveStates(date: string): Promise<LiveMap> {
  * feed is down) the build-time states apply unchanged — live data only ever
  * sharpens the answer, it is not required for one.
  */
-export interface WeatherPin {
-  game: GameCard;
+export interface WeatherPin<T> {
+  game: T;
   why: "LIVE" | "NEXT" | "DONE";
 }
 
-export function weatherTarget(games: GameCard[], live: LiveMap): WeatherPin | undefined {
-  const effective = (game: GameCard): "LIVE" | "NEXT" | "DONE" => {
+/** What choosing a park needs to know about a game: its id for the live
+ *  overlay, its first pitch for the order, and its state. */
+export interface LiveGame extends SlateStatus {
+  game_id: number;
+  first_pitch_utc: string;
+}
+
+export function weatherTarget<T extends LiveGame>(
+  games: T[],
+  live: LiveMap,
+): WeatherPin<T> | undefined {
+  const effective = (game: T): "LIVE" | "NEXT" | "DONE" => {
     const state = live.get(game.game_id);
     if (state?.status === "Final") return "DONE";
     if (state?.status === "Live") return "LIVE";

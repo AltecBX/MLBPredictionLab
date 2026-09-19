@@ -13,7 +13,7 @@ import {
   timestamp,
 } from "@/lib/format";
 import type { LiveState } from "@/lib/live";
-import type { GameCard as GameCardType, TeamRef as TeamRefType } from "@/lib/types";
+import type { SlateCard, SlateTeam } from "@/lib/slate";
 
 const RECOMMENDATION_TONE: Record<string, "home" | "accent" | "neutral" | "warn"> = {
   STRONG_LEAN: "home",
@@ -42,7 +42,7 @@ function TeamRow({
   showScore,
   isHome,
 }: {
-  team: TeamRefType;
+  team: SlateTeam;
   name: string;
   abbreviation: string;
   wins: number | null;
@@ -121,11 +121,16 @@ function Stat({
   );
 }
 
+/**
+ * Typed against the slate's view-model (lib/slate) rather than the API object.
+ * The card is rendered in the browser, so what it accepts is what has to be
+ * carried to it; the full `GameCard` still satisfies the type structurally.
+ */
 export function GameCardView({
   game,
   live,
 }: {
-  game: GameCardType;
+  game: SlateCard;
   /** Present only while the reader's browser has fresher state than the build. */
   live?: LiveState;
 }) {

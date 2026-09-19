@@ -6,7 +6,7 @@ import { SlateSorter } from "@/components/SlateSorter";
 import { useLiveScores } from "@/components/useLiveScores";
 import { WeatherNow } from "@/components/WeatherNow";
 import { weatherTarget } from "@/lib/live";
-import type { GameCard } from "@/lib/types";
+import type { SlateCard } from "@/lib/slate";
 
 /**
  * The client shell of a day page: one poll of MLB's schedule feed, shared by
@@ -34,7 +34,9 @@ export function LiveSlate({
   date,
   children,
 }: {
-  games: GameCard[];
+  /** The card's view of each game (lib/slate), not the API object: this is
+   *  the client boundary, and everything here is serialised into the page. */
+  games: SlateCard[];
   date: string;
   /** Server-rendered: the sticky date header and the freshness section. */
   children: ReactNode;

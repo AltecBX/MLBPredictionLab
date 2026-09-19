@@ -7,8 +7,8 @@ import { InfoIcon, Tooltip } from "@/components/Tooltip";
 import { EmptyState } from "@/components/UnavailableNotice";
 import { longDate } from "@/lib/format";
 import type { LiveMap } from "@/lib/live";
+import type { SlateCard } from "@/lib/slate";
 import { GROUP_HINT, GROUP_LABEL, groupSlate } from "@/lib/status";
-import type { GameCard } from "@/lib/types";
 
 /**
  * Sorting moved from the server to the browser, and it had to.
@@ -47,7 +47,7 @@ const UNAVAILABLE_SORT = {
  * directions, so it is written once: a game at .500 is the closest game there
  * is and the least confident pick there is.
  */
-function edgeFromEven(game: GameCard): number | null {
+function edgeFromEven(game: SlateCard): number | null {
   const p = game.prediction?.home_win_prob;
   return p == null ? null : Math.abs(p - 0.5);
 }
@@ -61,12 +61,12 @@ function edgeFromEven(game: GameCard): number | null {
  * product refuses to make.
  */
 function compareBy(key: SortKey) {
-  return (a: GameCard, b: GameCard): number => {
+  return (a: SlateCard, b: SlateCard): number => {
     if (key === "game_time") {
       return a.first_pitch_utc.localeCompare(b.first_pitch_utc);
     }
 
-    const value = (game: GameCard): number | null => {
+    const value = (game: SlateCard): number | null => {
       const p = game.prediction;
       if (!p) return null;
       switch (key) {
@@ -104,7 +104,7 @@ export function SlateSorter({
   date,
   live,
 }: {
-  games: GameCard[];
+  games: SlateCard[];
   date: string;
   /** One shared poll of MLB's feed, owned by `LiveSlate` above this. */
   live: LiveMap;

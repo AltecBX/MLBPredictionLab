@@ -1,4 +1,5 @@
-import type { StandingSummary, StreakSummary, TeamRef } from "@/lib/types";
+import type { SlateStreak, SlateTeam } from "@/lib/slate";
+import type { StandingSummary } from "@/lib/types";
 
 /**
  * The context a reader wants in the five seconds they spend on a card:
@@ -19,7 +20,7 @@ function pct(value: number | null): string | null {
   return value.toFixed(3).replace(/^0/, "");
 }
 
-export function StreakChip({ streak }: { streak: StreakSummary }) {
+export function StreakChip({ streak }: { streak: SlateStreak }) {
   const winning = streak.kind === "W";
   return (
     <span
@@ -57,7 +58,7 @@ export function TeamContextLine({
   isHome,
   className = "",
 }: {
-  team: TeamRef;
+  team: SlateTeam;
   isHome: boolean;
   className?: string;
 }) {

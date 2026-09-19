@@ -8,6 +8,7 @@ import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { WakeRetry } from "@/components/WakeRetry";
 import { api, looksLikeColdStart, retryBudgetSeconds } from "@/lib/api";
 import { longDate, mediumDate, timestamp, weekdayShort } from "@/lib/format";
+import { toSlateCard } from "@/lib/slate";
 import { buildToday, isBuilt, shiftUtcIsoDate } from "@/lib/window";
 
 /**
@@ -22,6 +23,13 @@ import { buildToday, isBuilt, shiftUtcIsoDate } from "@/lib/window";
 export async function GameCenter({ date }: { date: string }) {
   const today = buildToday();
   const result = await api.games(date);
+  /*
+   * Mapped here, on the server, so what crosses to the browser is the card's
+   * view of each game and not the API's. Everything handed to `LiveSlate` is
+   * written into the page twice — as HTML and again as the hydration payload —
+   * and the full API object is five times what the card renders (lib/slate).
+   */
+  const games = result.ok ? result.data.games.map(toSlateCard) : [];
 
   return (
     <div className="flex flex-col">
@@ -45,7 +53,7 @@ export async function GameCenter({ date }: { date: string }) {
          * reader's browser — at view time, not build time. The date header
          * and freshness strip need no liveness and pass through as children.
          */
-        <LiveSlate games={result.data.games} date={date}>
+        <LiveSlate games={games} date={date}>
           <DateHeader date={date} today={today} />
 
           {/*
@@ -59,9 +67,7 @@ export async function GameCenter({ date }: { date: string }) {
               <span className="eyebrow shrink-0">
                 Data freshness<span className="hidden sm:inline"> by source</span>
               </span>
-              <AutoRefresh
-                firstPitches={result.data.games.map((g) => g.first_pitch_utc)}
-              />
+              <AutoRefresh firstPitches={games.map((g) => g.first_pitch_utc)} />
             </div>
             <FreshnessStrip entries={result.data.freshness} />
             <p className="t-micro subtle sm:hidden">

@@ -1,5 +1,3 @@
-import type { GameCard } from "./types";
-
 /**
  * Slate grouping.
  *
@@ -16,6 +14,14 @@ import type { GameCard } from "./types";
 
 export type SlateGroup = "LIVE" | "UPCOMING" | "FINAL" | "POSTPONED";
 
+/** The three fields grouping reads. Structural, so the slate's card view-model
+ *  (lib/slate) and the full API object both satisfy it. */
+export interface SlateStatus {
+  status: string;
+  status_detail: string | null;
+  is_final: boolean;
+}
+
 /** detailedState values that mean the game is not going to be played today. */
 const NOT_PLAYED = new Set([
   "Postponed",
@@ -25,7 +31,7 @@ const NOT_PLAYED = new Set([
   "Completed Early",
 ]);
 
-export function slateGroup(game: GameCard): SlateGroup {
+export function slateGroup(game: SlateStatus): SlateGroup {
   const detail = game.status_detail ?? "";
   if (NOT_PLAYED.has(detail)) return "POSTPONED";
   if (game.is_final || game.status === "Final") return "FINAL";
@@ -53,8 +59,8 @@ export const GROUP_HINT: Record<SlateGroup, string> = {
   POSTPONED: "Not being played as scheduled. Any prediction is retained but moot.",
 };
 
-export function groupSlate(games: GameCard[]): [SlateGroup, GameCard[]][] {
-  const buckets = new Map<SlateGroup, GameCard[]>();
+export function groupSlate<T extends SlateStatus>(games: T[]): [SlateGroup, T[]][] {
+  const buckets = new Map<SlateGroup, T[]>();
   for (const game of games) {
     const group = slateGroup(game);
     const bucket = buckets.get(group);
