@@ -135,6 +135,21 @@ const isRetryable = (status: number) => status === 0 || RETRYABLE_STATUSES.has(s
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * A static export is a snapshot: every page is rendered once, from the API as
+ * it stood, and nothing revalidates afterwards. So a response fetched for one
+ * page is kept for the whole build, and a game's page, its detail file and the
+ * slate that lists it are built from one request each.
+ *
+ * The thirty-second window that serves `next start` well expired mid-build and
+ * refetched. Measured on a build of 178 games: 308 detail requests instead of
+ * 178, enough concurrency to exhaust the API's connection pool (QueuePool limit
+ * of 15, 30-second timeout, four 500s) and to time out eleven pages at sixty
+ * seconds before their retries landed. The container image keeps revalidating;
+ * only the export, which is what is published, snapshots.
+ */
+const BUILD_SNAPSHOT = process.env.NEXT_STATIC_EXPORT === "1";
+
+/**
  * True when a failure looks like a service that is still coming up rather than
  * one that is genuinely broken. Used to tell the reader to wait rather than
  * leaving them staring at a bare status code.
@@ -151,7 +166,7 @@ async function attempt<T>(
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...rest,
       headers: { Accept: "application/json", ...(rest.headers ?? {}) },
-      next: { revalidate },
+      next: { revalidate: BUILD_SNAPSHOT ? false : revalidate },
     });
     if (!response.ok) {
       let detail = `${response.status} ${response.statusText}`;

@@ -194,6 +194,16 @@ jobs:
                  "so every game link would 404. Refusing to publish."
             exit 1
           fi
+          # A game page carries only its Prediction tab; the other nine render
+          # from the detail file built beside it. A page without its file has
+          # nine tabs that can never open, and nothing else would notice.
+          details=$(find out -path '*/game/*' -name 'detail.json' | wc -l)
+          echo "$details detail files beside $games game pages"
+          if [ "$details" -ne "$games" ]; then
+            echo "::error::$games game pages but $details detail files; the" \
+                 "game page and its detail route must be built for the same ids."
+            exit 1
+          fi
           # A build that succeeds while every game says "not predicted" is the
           # failure mode worth catching: the site would look alive and say
           # nothing. Warn rather than fail, because an empty slate is legitimate

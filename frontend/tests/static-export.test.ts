@@ -44,7 +44,7 @@ describe("static export", () => {
     expect(
       offenders.map((f) => path.relative(APP, f)),
       "A query string cannot select a pre-rendered file. Put the value in the " +
-        "path (see app/d/[date]) or read it in a client component (see TabPanels).",
+        "path (see app/d/[date]) or read it in a client component (see GameTabPanels).",
     ).toEqual([]);
   });
 
