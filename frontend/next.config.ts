@@ -31,6 +31,13 @@ const config: NextConfig = {
   poweredByHeader: false,
   eslint: { ignoreDuringBuilds: true },
 
+  // Inlined into every bundle at build time, so `asset()` prefixes correctly in
+  // the browser as well as on the server. Only NEXT_PUBLIC_ variables reach
+  // client code by default, and this one did not: the streaks explorer, which
+  // fetches its data file from a client component, asked for /streaks/data.json
+  // at the domain root of a site served under /<repo>/ and 404ed on every visit.
+  env: { NEXT_BASE_PATH: basePath },
+
   ...(process.env.NEXT_BUILD_STANDALONE === "1"
     ? { output: "standalone" as const }
     : {}),

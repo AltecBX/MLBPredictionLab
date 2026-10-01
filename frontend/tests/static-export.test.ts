@@ -48,6 +48,16 @@ describe("static export", () => {
     ).toEqual([]);
   });
 
+  it("carries the base path into client code", () => {
+    // `asset()` runs in the browser too — the streaks explorer fetches its
+    // data file with it — and a client bundle sees `process.env.NEXT_BASE_PATH`
+    // only if the config inlines it. Without that the explorer asked for
+    // /streaks/data.json at the domain root of a site served under /<repo>/,
+    // and got a 404 on every visit.
+    const config = readFileSync(path.join(process.cwd(), "next.config.ts"), "utf8");
+    expect(config).toMatch(/env:\s*\{\s*NEXT_BASE_PATH:\s*basePath\s*\}/);
+  });
+
   it("has no page forcing dynamic rendering", () => {
     const offenders = pageFiles().filter((file) =>
       /force-dynamic/.test(readFileSync(file, "utf8")),
