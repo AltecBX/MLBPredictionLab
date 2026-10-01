@@ -1,6 +1,15 @@
 /** Explicitly synthetic fixtures for component tests. Never served to a user. */
 
-import type { GameCard, MatchupBar, DriverSummary, CalibrationBin } from "@/lib/types";
+import type {
+  CalibrationBin,
+  DriverSummary,
+  GameCard,
+  GameDetail,
+  MatchupBar,
+  PitcherRef,
+  SideDetail,
+  TeamRef,
+} from "@/lib/types";
 
 export const driver = (over: Partial<DriverSummary> = {}): DriverSummary => ({
   feature_key: "sp_fip_season_diff",
@@ -123,6 +132,57 @@ export const matchupBars: MatchupBar[] = [
   { category: "bullpen", label: "Bullpen", home_pp: 0.4, away_pp: 3.2, net_pp: -2.8, advantage: "AWAY" },
   { category: "offense", label: "Offense", home_pp: 1.0, away_pp: 1.02, net_pp: -0.02, advantage: "EVEN" },
 ];
+
+/** A game's full detail, as the API shapes it and the detail file carries it. */
+export const gameDetail = (over: Partial<GameDetail> = {}): GameDetail => {
+  const card = gameCard();
+  const side = (team: TeamRef, starter: PitcherRef): SideDetail => ({
+    team,
+    starter,
+    starter_stats: { sp_fip_season: { value: 3.41, sample_size: 18, is_estimated: false } },
+    offense: { off_runs_per_game: { value: 4.6, sample_size: 100, is_estimated: false } },
+    bullpen: { bp_fip_30d: { value: 3.9, sample_size: 60, is_estimated: true } },
+    defense: {},
+    schedule: {},
+    team_strength: {},
+  });
+  return {
+    card,
+    drivers_for: [driver()],
+    drivers_against: [],
+    all_drivers: [driver()],
+    matchup_bars: matchupBars,
+    matchup_summary: [],
+    home_detail: side(card.home, card.home_pitcher),
+    away_detail: side(card.away, card.away_pitcher),
+    matchup_history: { available: false, reason: "No prior meetings this season.", note: "Season series" },
+    environment: {
+      ballpark: {},
+      is_dome: null,
+      elevation_km: null,
+      weather: { status: "UNAVAILABLE", summary: null, reason: "No weather provider is configured." },
+      park_factors: { available: false, reason: "Park factors require Phase 2." },
+      umpire: { available: false, reason: "Umpire profiles require Phase 2." },
+    },
+    simulation: { available: false, reason: "This game was not simulated." },
+    market: card.prediction!.market,
+    backtest_evidence: {
+      available: false, reason: "No backtest run yet.", band: null, n: null, observed: null,
+      predicted: null, run_id: null, overall_log_loss: null, overall_brier: null,
+      overall_calibration_error: null, overall_n: null,
+    },
+    change_since_previous: {
+      has_previous: false, message: null, previous_as_of: null, current_as_of: null,
+      home_win_prob_previous: null, home_win_prob_current: null, home_win_prob_delta_pp: null,
+      confidence_previous: null, confidence_current: null, completeness_previous: null,
+      completeness_current: null, n_changed_features: null, changed_features: [],
+    },
+    prediction_history: [],
+    freshness: [],
+    deferred_features: {},
+    ...over,
+  };
+};
 
 export const calibrationBins: CalibrationBin[] = [
   { lower: 0.3, upper: 0.4, n: 120, mean_predicted: 0.36, observed_frequency: 0.34, wilson_low: 0.26, wilson_high: 0.43 },

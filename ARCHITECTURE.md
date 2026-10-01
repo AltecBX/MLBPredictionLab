@@ -169,6 +169,21 @@ view-model on purpose; a field the DTO grows does not reach the browser by
 default. `frontend/tests/slate.test.tsx` holds the card to it: rendered from
 the view-model, it is the same markup as rendered from the DTO.
 
+**A game page pre-renders one tab and ships the rest as a file.** The page
+carries its header and the Prediction tab, which is what a reader opens it
+for. The other nine panels used to be pre-rendered too — into the HTML and
+again into the hydration payload — and were the larger part of three hundred
+kilobytes a game, most of it never looked at. They are now rendered in the
+browser, when opened, from `/game/<id>/detail.json`: the same `GameDetail` the
+page was built from, written beside it at build time by a static route
+(`app/game/[id]/detail.json/route.ts`, the pattern `/streaks/data.json`
+already used), eight kilobytes compressed, fetched once the page has settled
+so the first tab opened is as instant as before. A panel opened once stays
+mounted. When the file cannot be loaded the panel says so and offers a retry;
+when the build could not reach the API for a game the file itself says why.
+It never renders a number it does not have. `frontend/tests/game-tabs.test.tsx`
+pins those states.
+
 ---
 
 ## 6. Job schedule
