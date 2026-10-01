@@ -177,8 +177,8 @@ jobs:
       - name: Check the export actually contains a slate
         working-directory: frontend
         run: |
-          pages=$(find out -name '*.html' | wc -l)
-          games=$(find out -path '*/game/*' -name '*.html' | wc -l)
+          pages=$(find out -name '*.html' -type f | wc -l)
+          games=$(find out -path '*/game/*' -name '*.html' -type f | wc -l)
           echo "$pages HTML files, $games of them game pages"
           if [ "$pages" -lt 5 ]; then
             echo "::error::Only $pages pages exported; something did not render."
@@ -197,7 +197,9 @@ jobs:
           # A game page carries only its Prediction tab; the other nine render
           # from the detail file built beside it. A page without its file has
           # nine tabs that can never open, and nothing else would notice.
-          details=$(find out -path '*/game/*' -name 'detail.json' | wc -l)
+          # Files only: the route's own chunk lives in a directory of the same
+          # name under _next, and counting it once refused a consistent export.
+          details=$(find out -path '*/game/*' -name 'detail.json' -type f | wc -l)
           echo "$details detail files beside $games game pages"
           if [ "$details" -ne "$games" ]; then
             echo "::error::$games game pages but $details detail files; the" \

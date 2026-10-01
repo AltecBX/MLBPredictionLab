@@ -33,11 +33,10 @@ import type { ChangeAttribution, GameDetail } from "@/lib/types";
 /**
  * A page per game in the published window.
  *
- * These ids come from the same slates the date pages are built from, so a card
- * on a built date always has a detail page behind it. `dynamicParams = false`
- * makes that a build error rather than a runtime 404 if the two ever disagree.
- * The game's detail file (`detail.json/route.ts` beside this) is built for the
- * same ids, from the same helper.
+ * The ids come from the same slates the date pages are built from, so a card
+ * on a built date always has a detail page behind it, and the game's detail
+ * file (`detail.json/route.ts` beside this) is built for the same ids by the
+ * same helper, which answers the same for both or stops the build.
  *
  * The page pre-renders the header and the Prediction tab. The other nine tabs
  * are rendered in the browser from the detail file when opened

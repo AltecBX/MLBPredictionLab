@@ -102,25 +102,30 @@ export type ApiResult<T> =
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 /**
- * Delays between attempts, totalling about four seconds.
+ * Delays between attempts. Three by default, totalling about four seconds.
  *
- * Deliberately short. This layer hides a brief blip; it does not sit out a cold
- * start. The deployment can take the better part of a minute to wake, and
- * blocking the response for that long replaces a broken page with a blank one.
- * `WakeRetry` handles the long case from the browser, so the page paints fast,
- * explains itself, and fills in when the API answers.
+ * Deliberately short at run time. This layer hides a brief blip; it does not
+ * sit out a cold start. The deployment can take the better part of a minute to
+ * wake, and blocking the response for that long replaces a broken page with a
+ * blank one. `WakeRetry` handles the long case from the browser, so the page
+ * paints fast, explains itself, and fills in when the API answers.
  *
- * `API_RETRY_ATTEMPTS` trims the list, and 0 disables retrying entirely. That is
- * for the end-to-end suite, which points at a closed port on purpose: there
- * every request fails instantly by design and retrying proves nothing. It is
- * not a production knob.
+ * `API_RETRY_ATTEMPTS` sets how many of the rungs are used, and 0 disables
+ * retrying entirely. The end-to-end suite sets 0: it points at a closed port
+ * on purpose, where every request fails instantly by design and retrying
+ * proves nothing. The publish workflow sets 6, the whole ladder, about half a
+ * minute: nobody is watching a build, and the API it builds against starts
+ * cold in the same job — a slate request that waited out the connection pool's
+ * thirty-second timeout once came back a 500 with three rungs left to climb.
+ * It is not a production knob.
  */
-const ALL_RETRY_DELAYS_MS = [500, 1_500, 2_000];
+const ALL_RETRY_DELAYS_MS = [500, 1_500, 2_000, 4_000, 8_000, 16_000];
+const DEFAULT_RETRY_ATTEMPTS = 3;
 
 const RETRY_DELAYS_MS = (() => {
   const configured = Number.parseInt(process.env.API_RETRY_ATTEMPTS ?? "", 10);
-  if (Number.isNaN(configured)) return ALL_RETRY_DELAYS_MS;
-  return ALL_RETRY_DELAYS_MS.slice(0, Math.max(0, configured));
+  const attempts = Number.isNaN(configured) ? DEFAULT_RETRY_ATTEMPTS : Math.max(0, configured);
+  return ALL_RETRY_DELAYS_MS.slice(0, attempts);
 })();
 
 /** How many retries are configured. Exported so tests assert the real budget. */

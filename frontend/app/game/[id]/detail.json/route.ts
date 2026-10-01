@@ -11,10 +11,13 @@ import { builtGameIds } from "@/lib/games";
  * of it never looked at. This is thirty-seven kilobytes, eight compressed,
  * fetched once and cached.
  *
- * It is the same `api.game` call the page makes, so the build's data cache
- * answers it from the one request. When the API cannot be reached for a game
- * the file says so rather than not existing — a fetch that 404s looks like a
- * bug; a payload that answers "unavailable, and here is why" is a state.
+ * Built for exactly the ids the page is: both ask `builtGameIds`, which
+ * answers the same for both or stops the build (a static export requires the
+ * function on the route itself; a layout's does not reach it). It is the same
+ * `api.game` call the page makes, so the build's data cache answers it from
+ * the one request. When the API cannot be reached for a game the file says so
+ * rather than not existing — a fetch that 404s looks like a bug; a payload
+ * that answers "unavailable, and here is why" is a state.
  */
 export const dynamic = "force-static";
 
