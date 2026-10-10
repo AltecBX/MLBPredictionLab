@@ -56,7 +56,14 @@ if args[:3] == ["api", "-X", "POST"]:
     sys.exit(0)
 path = args[-1]
 if "workflows/pages.yml/runs" in path:
-    print(json.dumps({{"workflow_runs": state["runs"]}}))
+    # Like the real endpoint: newest first, filtered by status when asked,
+    # and one page of per_page (default 30) at a time.
+    query = dict(p.split("=", 1) for p in path.partition("?")[2].split("&") if "=" in p)
+    runs = sorted(state["runs"], key=lambda r: r["created_at"], reverse=True)
+    if "status" in query:
+        runs = [r for r in runs if r["status"] == query["status"]]
+    size, page = int(query.get("per_page", 30)), int(query.get("page", 1))
+    print(json.dumps({{"workflow_runs": runs[(page - 1) * size : page * size]}}))
     sys.exit(0)
 m = re.search(r"actions/runs/(\\d+)$", path)
 if m:
@@ -168,6 +175,23 @@ def test_the_october_stall_is_cleared_and_the_queued_build_left_alone(h):
     assert h.dispatched() == []
     assert h.outputs()["acted"] == "true"
     assert "37438346907" in h.summary.read_text()
+
+
+def test_a_stall_buried_under_many_later_runs_is_still_found(h):
+    """The blocker can be far older than the newest page of run history.
+
+    Each trigger behind a stall adds a run that is soon replaced, so after a
+    day or two of an Actions incident the stuck run is past the first page.
+    Looking only there would report no publish in progress, dispatch a build
+    that queues behind the invisible blocker, and never cancel it.
+    """
+    later = [
+        {"id": 100 + i, "status": "completed", "created_at": _ago(60 * 48 - i * 60)}
+        for i in range(45)
+    ]
+    h.given([{"id": 7, "status": "waiting", "created_at": _ago(60 * 50)}, *later])
+    h.run("heal", AGE_HOURS="50")
+    assert h.cancelled() == ["7"]
 
 
 def test_a_build_queued_for_hours_behind_the_stall_is_never_cancelled(h):

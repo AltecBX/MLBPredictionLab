@@ -102,15 +102,24 @@ jobs:
           set -euo pipefail
           now=$(date -u +%s)
           acted=false
-          runs_url="repos/$GITHUB_REPOSITORY/actions/workflows/pages.yml/runs?per_page=30"
+          runs_url="repos/$GITHUB_REPOSITORY/actions/workflows/pages.yml/runs"
 
           # Unfinished Publish runs: id, status, minutes since created.
+          #
+          # Asked for by status, never read off the newest page of history:
+          # every trigger behind a stall adds a run that is soon replaced, so
+          # after a day of an Actions incident the stuck run is far past the
+          # first page, and a watchdog that looked only there would report
+          # nothing running and dispatch builds that queue behind it forever.
+          # Unfinished runs are few however long the history grows.
           unfinished() {
-            gh api "$runs_url" \
-              | jq -r '.workflow_runs[] | select(.status != "completed") | [.id, .status, .created_at] | @tsv' \
-              | while IFS=$'\t' read -r id status created; do
-                  echo "$id $status $(( (now - $(date -u -d "$created" +%s)) / 60 ))"
-                done
+            local st
+            for st in waiting in_progress queued requested pending; do
+              gh api "$runs_url?status=$st&per_page=100" \
+                | jq -r '.workflow_runs[] | [.id, .status, .created_at] | @tsv' || return 1
+            done | sort -u | while IFS=$'\t' read -r id status created; do
+              echo "$id $status $(( (now - $(date -u -d "$created" +%s)) / 60 ))"
+            done
           }
 
           if ! listing=$(unfinished); then
