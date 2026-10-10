@@ -41,9 +41,7 @@ export function Badge({
  * to a crest this product has, and unlike a crest it needs no asset, no licence
  * and no network request.
  *
- * The recipe is `.tag` / `.tag-em` in the stylesheet; only the emphasised
- * border colour stays inline, because the global border rule outranks any
- * class (see the cards section of globals.css).
+ * The recipe, border included, is `.tag` / `.tag-em` in the stylesheet.
  */
 export function TeamTag({
   abbreviation,
@@ -61,11 +59,6 @@ export function TeamTag({
       className={`tag t-micro inline-flex h-6 w-[2.875rem] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border font-mono${
         emphasised ? ` tag-em tone-${tone}` : ""
       }`}
-      style={
-        emphasised
-          ? { borderColor: `color-mix(in srgb, var(--${tone}) 34%, transparent)` }
-          : undefined
-      }
     >
       {abbreviation}
     </span>
