@@ -346,8 +346,24 @@ body {
   overflow-wrap: break-word;
 }
 
-* {
-  border-color: var(--border);
+/*
+ * The default border colour, in the base layer so that anything more specific
+ * than "an element" can change it.
+ *
+ * It used to sit outside any layer, and an unlayered rule beats every layered
+ * one whatever the selectors — the same trap the note below describes. Every
+ * class and utility that set a border colour lost to this one line: the active
+ * sort chip never took its accent border, the neutral badge never took its
+ * strong one, the coloured badges drew a grey hairline instead of none, and no
+ * card, pill or icon button ever changed border on hover. In the base layer it
+ * is what it was meant to be, the colour a border gets when nothing says
+ * otherwise. Tailwind's preflight is in the same layer and earlier in the file,
+ * so this still replaces its `currentColor`.
+ */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 }
 
 ::selection {
@@ -616,7 +632,11 @@ body {
     transform: scale(0.97);
   }
 
-  .pill-active {
+  /* The selected chip stays selected under the cursor. `.pill.pill-active`
+     ties `.pill:hover` on specificity and, coming later, wins it; a bare
+     `.pill-active` lost, and hovering the chip you had chosen turned it into
+     one you had not. */
+  .pill.pill-active {
     color: var(--accent);
     border-color: var(--border-accent);
     background: var(--accent-soft);
@@ -972,9 +992,7 @@ body {
    * What a slate card wears that does not vary from card to card lives here,
    * once, rather than inline fifteen times a page: 24 KB of a front page was
    * `style` attributes restating the same ten recipes. What does vary — a
-   * bar's width — stays inline. Border colours are the exception and stay
-   * inline wherever they differ from --border: the unlayered `*` rule above
-   * outranks any class in this layer, so a class here cannot set one.
+   * bar's width — stays inline.
    *
    * `--tone` is a side's colour, set by .tone-home / .tone-away on the element
    * or an ancestor; the recipes below read it.
@@ -998,6 +1016,7 @@ body {
   }
   .tag-em {
     color: var(--tone);
+    border-color: color-mix(in srgb, var(--tone) 34%, transparent);
     background: color-mix(in srgb, var(--tone) 10%, transparent);
   }
 
