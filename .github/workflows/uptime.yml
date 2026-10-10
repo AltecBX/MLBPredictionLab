@@ -1,13 +1,28 @@
 name: Uptime
 
-# Makes a real outage visible.
+# Keeps the site publishing, and says so only when it cannot.
 #
 # The site is static files on GitHub Pages, so nothing in the read path can be
-# down in the ordinary sense. What CAN happen — and did, for three days — is
-# that every job that refreshes and republishes it fails, and the site keeps
-# serving its last build with nobody the wiser, because a static page cannot
-# say it is stale. This checks the one thing that distinguishes "publishing"
-# from "frozen": the build stamp pages.yml writes into the site.
+# down in the ordinary sense. What CAN happen is that the site stops being
+# rebuilt and keeps serving its last build, because a static page cannot say
+# it is stale. It has happened twice, for two different reasons:
+#
+#   * every refresh and publish failed for three days (a hosted database
+#     expired), and nobody could tell;
+#   * on 6 October a Publish run's deploy job entered "waiting" on the
+#     github-pages environment and never left — a GitHub-side stall during a
+#     week of Actions incidents, with no reviewer and no wait timer configured.
+#     Publish runs one at a time, so every later build queued behind it and was
+#     replaced by the next, and the site froze for four days while refresh and
+#     pregame went green every time.
+#
+# So this does three things, in order. It clears a stuck publish: a healthy
+# deployment waits on its environment for about a second and a whole Publish
+# run takes about three minutes, so a run still waiting after half an hour, or
+# still running after an hour, is not coming back and is cancelled. It
+# republishes a site whose build stamp is older than a normal day's cycle. And
+# only if the site is still stale after that does it fail — which is the
+# outage worth an email, because it is the one that did not fix itself.
 #
 # Hourly rather than every ten minutes. GitHub throttles scheduled workflows
 # regardless of the cron, and a stamp that is refreshed at most hourly does not
@@ -25,35 +40,174 @@ concurrency:
   group: uptime
   cancel-in-progress: true
 
+permissions:
+  # To cancel a stuck Publish run and to dispatch a fresh one. A
+  # workflow_dispatch sent with this token does start a run; it is one of the
+  # two events GitHub exempts from its rule that the token triggers nothing.
+  actions: write
+  contents: read
+
 jobs:
   check:
     name: Is the site still publishing?
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     env:
+      GH_TOKEN: ${{ github.token }}
       SITE_URL: ${{ vars.SITE_URL || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
-      # The daily refresh publishes around 09:30 UTC and the pregame poller
-      # through the evening. A stamp older than this means at least one whole
-      # daily cycle has been missed.
+      PUBLISH_REF: ${{ github.event.repository.default_branch }}
+      # The daily refresh publishes in the afternoon and the pregame poller
+      # through the day; the longest normal gap between builds is about twelve
+      # hours. Past REPUBLISH_AFTER_HOURS this asks for a build itself; past
+      # MAX_AGE_HOURS, if that did not work, it fails.
+      REPUBLISH_AFTER_HOURS: "20"
       MAX_AGE_HOURS: "30"
+      WAITING_LIMIT_MINUTES: "30"
+      RUNNING_LIMIT_MINUTES: "60"
+      # How long to wait for a build this run asked for before judging. A
+      # Publish run takes about three minutes.
+      RECOVERY_WAIT_SECONDS: "900"
+      POLL_SECONDS: "30"
     steps:
       - name: Read the build stamp
+        id: stamp
         run: |
           set -euo pipefail
           url="${SITE_URL%/}/build.json"
           echo "Checking $url"
-          if ! body=$(curl -sS --fail --max-time 20 -H 'Cache-Control: no-cache' "$url"); then
-            echo "::error::The site did not serve build.json. Either it has never been published since the stamp was introduced, or Pages is down."
-            exit 1
+          # Recorded, not judged: whether this is a failure is decided at the
+          # end, after the pipeline has had its chance to recover. A stamp
+          # that is missing or unreadable is recorded as -1.
+          built_at=""
+          if body=$(curl -sS --fail --max-time 20 -H 'Cache-Control: no-cache' "$url"); then
+            echo "$body"
+            built_at=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin)["built_at"])') || built_at=""
           fi
-          echo "$body"
-          built_at=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin)["built_at"])')
-          age_hours=$(( ( $(date -u +%s) - $(date -u -d "$built_at" +%s) ) / 3600 ))
-          echo "Built $built_at, ${age_hours}h ago"
-          if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
-            echo "::error::The site was last built ${age_hours} hours ago (limit ${MAX_AGE_HOURS}h). The refresh or publish workflows are failing; check the Actions tab."
-            exit 1
+          if [ -n "$built_at" ] && stamp_s=$(date -u -d "$built_at" +%s 2>/dev/null); then
+            age_hours=$(( ( $(date -u +%s) - stamp_s ) / 3600 ))
+            echo "Built $built_at, ${age_hours}h ago"
+          else
+            echo "::warning::The site did not serve a readable build.json."
+            built_at=""
+            age_hours=-1
           fi
+          echo "built_at=$built_at" >> "$GITHUB_OUTPUT"
+          echo "age_hours=$age_hours" >> "$GITHUB_OUTPUT"
+
+      - name: Clear a stuck publish, and republish a stale site
+        id: heal
+        env:
+          AGE_HOURS: ${{ steps.stamp.outputs.age_hours }}
+        run: |
+          set -euo pipefail
+          now=$(date -u +%s)
+          acted=false
+          runs_url="repos/$GITHUB_REPOSITORY/actions/workflows/pages.yml/runs"
+
+          # Unfinished Publish runs: id, status, minutes since created.
+          #
+          # Asked for by status, never read off the newest page of history:
+          # every trigger behind a stall adds a run that is soon replaced, so
+          # after a day of an Actions incident the stuck run is far past the
+          # first page, and a watchdog that looked only there would report
+          # nothing running and dispatch builds that queue behind it forever.
+          # Unfinished runs are few however long the history grows.
+          unfinished() {
+            local st
+            for st in waiting in_progress queued requested pending; do
+              gh api "$runs_url?status=$st&per_page=100" \
+                | jq -r '.workflow_runs[] | [.id, .status, .created_at] | @tsv' || return 1
+            done | sort -u | while IFS=$'\t' read -r id status created; do
+              echo "$id $status $(( (now - $(date -u -d "$created" +%s)) / 60 ))"
+            done
+          }
+
+          if ! listing=$(unfinished); then
+            echo "::warning::Could not list Publish runs; skipping the self-heal this hour."
+            echo "acted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Unfinished Publish runs (id status minutes):"
+          echo "${listing:-  none}"
+
+          # A run "pending" is only queued behind the concurrency slot; it is
+          # what should run next, and is never the one to cancel.
+          while read -r id status minutes; do
+            [ -n "${id:-}" ] || continue
+            limit=""
+            case "$status" in
+              waiting) limit=$WAITING_LIMIT_MINUTES ;;
+              in_progress|queued|requested) limit=$RUNNING_LIMIT_MINUTES ;;
+            esac
+            if [ -n "$limit" ] && [ "$minutes" -ge "$limit" ]; then
+              echo "::warning::Publish run $id has been $status for ${minutes} minutes; a healthy run takes about three. Cancelling it so the queue can move."
+              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/cancel" >/dev/null || true
+              sleep "${CANCEL_SETTLE_SECONDS:-20}"
+              if [ "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" | jq -r '.status')" != "completed" ]; then
+                echo "Run $id did not cancel; forcing it."
+                gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel" >/dev/null || true
+              fi
+              acted=true
+              {
+                echo "### Cleared a stuck publish"
+                echo "Publish run $id had been \`$status\` for ${minutes} minutes and was cancelled."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done <<< "$listing"
+
+          # A build the queue will not supply: after a cancel with nothing
+          # queued behind it, or a stamp past a normal day's cycle with no
+          # build on the way. A dispatch that is not needed costs a three-minute
+          # build; one that is needed is the difference between a fresh site
+          # and an email.
+          still=$(unfinished || true)
+          if [ -z "$still" ]; then
+            if [ "$acted" = true ] || [ "$AGE_HOURS" -lt 0 ] || [ "$AGE_HOURS" -ge "$REPUBLISH_AFTER_HOURS" ]; then
+              echo "::notice::No Publish run is on its way (stamp ${AGE_HOURS}h old); dispatching one."
+              # A failed dispatch is a warning here, not the verdict: the last
+              # step judges the site, and fails if it is still stale.
+              if gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$PUBLISH_REF"; then
+                acted=true
+                echo "Dispatched a Publish run on \`$PUBLISH_REF\`." >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "::warning::Could not dispatch a Publish run."
+              fi
+            fi
+          fi
+          echo "acted=$acted" >> "$GITHUB_OUTPUT"
+
+      - name: Judge freshness
+        env:
+          AGE_HOURS: ${{ steps.stamp.outputs.age_hours }}
+          BUILT_AT: ${{ steps.stamp.outputs.built_at }}
+          ACTED: ${{ steps.heal.outputs.acted }}
+        run: |
+          set -euo pipefail
+          if [ "$AGE_HOURS" -ge 0 ] && [ "$AGE_HOURS" -le "$MAX_AGE_HOURS" ]; then
+            echo "Fresh: built ${AGE_HOURS}h ago."
+            exit 0
+          fi
+          # Stale, or no stamp at all. If this run asked the pipeline for a
+          # build, give it the time a build takes before calling it an outage.
+          if [ "$ACTED" = true ]; then
+            deadline=$(( $(date -u +%s) + RECOVERY_WAIT_SECONDS ))
+            while [ "$(date -u +%s)" -lt "$deadline" ]; do
+              sleep "$POLL_SECONDS"
+              now_built=$(curl -sS --fail --max-time 20 -H 'Cache-Control: no-cache' "${SITE_URL%/}/build.json" 2>/dev/null \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["built_at"])' 2>/dev/null || true)
+              if [ -n "$now_built" ] && [ "$now_built" != "$BUILT_AT" ]; then
+                echo "::notice::Recovered: the site was rebuilt at $now_built after the self-heal."
+                echo "Recovered: rebuilt at $now_built." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            done
+          fi
+          if [ "$AGE_HOURS" -lt 0 ]; then
+            echo "::error::The site does not serve build.json and could not be republished. Either it has never been published since the stamp was introduced, or Pages is down."
+          else
+            echo "::error::The site was last built ${AGE_HOURS} hours ago (limit ${MAX_AGE_HOURS}h) and a republish did not bring it current. The refresh or publish workflows are failing; check the Actions tab."
+          fi
+          exit 1
 
       # The page is saved to a file and the file is grepped. Piping it into
       # `grep -q` looked equivalent and was not: `grep -q` exits at its first

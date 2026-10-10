@@ -222,6 +222,10 @@ jobs:
     name: Deploy to Pages
     needs: build
     runs-on: ubuntu-latest
+    # Bounds a deploy that hangs while running; a deploy takes under a minute.
+    # It does not bound one that never starts — time spent waiting on the
+    # environment is not counted — which is the stall uptime.yml clears.
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
