@@ -246,7 +246,8 @@ on the same 6,903 games — every regular-season game from April 2024 to
 
 Δ log loss +0.00068, paired 95% interval [+0.00018, +0.00117], positive in
 every season and under every regularisation measured; on the 330 games of
-September 2026 that no measurement had seen, +0.0026 [+0.0001, +0.0053]. The
+September 2026 that no measurement had seen, +0.0026 [+0.0001, +0.0053]; and
+on the production backtest's 13,777 games back to 2021, 0.67803 → 0.67748. The
 served figure now sits inside the range the market's closing line is
 estimated to reach — a comparison across different games, so read it as an
 order of magnitude rather than a ranking. No game is a lock; the highest probability the served model gave on those three

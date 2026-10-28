@@ -2175,6 +2175,14 @@ serving drops the adjustment or applies it to the wrong side). The prediction
 records what each starter did in its blend snapshot, and the game page's
 Simulation tab says it in runs.
 
+**In production.** The first refresh after the merge ran the full backtest —
+13,777 games from May 2021 to September 2026, the served figure scored as
+serving produces it, dispersion fitted per slate. Against the backtest two
+days earlier, on the same games with an identical logistic component (log
+loss 0.679661 in both runs), the served figure moved from 0.678030 to
+**0.677484** (+0.00055), calibration error 1.26% to 1.29%. That window reaches
+back through 2021–2023, which none of the measurements above scored.
+
 What it does not do: the bullpen is still the team's, the depth is the
 starter's own average and not tonight's pitch count, and a starter making his
 first start for a new team is compared with the rotation he joined. Each is a
