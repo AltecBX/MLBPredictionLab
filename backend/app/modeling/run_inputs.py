@@ -200,6 +200,78 @@ def pitching_split(
 
 
 @dataclass(frozen=True, slots=True)
+class StarterAdjustment:
+    """The named starter's projection, as a multiplier on the opponent's runs.
+
+    The second attempt at the starter, after `pitching_split` was measured and
+    rejected (MODELING_PLAN.md § The run model's park and starting pitcher).
+    That one compared a starter's season-to-date runs allowed per nine, shrunk
+    over forty innings, with his team's — the noisiest rate a pitcher has — and
+    flipped the favourite in one game in five without being the more accurate
+    model. This one compares his multi-season projected FIP with the rotation
+    his team's projected runs allowed already assumes
+    (`Projections.starter_edge`), so it starts from the best estimate of the
+    pitcher this repository makes and changes the projection by the difference
+    between him and the average start it already contains.
+
+    Same discipline as before: exactly 1.0 when there is nothing to say, and
+    ``is_measured`` False whenever that 1.0 is an absence rather than a finding.
+    """
+
+    multiplier: float
+    is_measured: bool
+    reason: str | None = None
+    fip_delta: float | None = None
+    runs_delta: float | None = None
+    innings: float | None = None
+
+    def to_dict(self) -> dict[str, float | bool | str | None]:
+        return {
+            "multiplier": round(self.multiplier, 4),
+            "is_measured": self.is_measured,
+            "reason": self.reason,
+            "fip_delta": None if self.fip_delta is None else round(self.fip_delta, 3),
+            "runs_delta": None if self.runs_delta is None else round(self.runs_delta, 3),
+            "innings": None if self.innings is None else round(self.innings, 2),
+        }
+
+
+NO_STARTER = StarterAdjustment(1.0, False, "no starter named")
+
+
+def starter_adjustment(
+    edge,  # projections.StarterEdge | None; untyped to keep modeling off features' import path
+    runs_allowed_per_game: float | None,
+    reason: str = "no starter named",
+) -> StarterAdjustment:
+    """Turn a starter's edge over his rotation into a multiplier.
+
+    ``runs_allowed_per_game`` is the team's projected runs allowed — the rate
+    the opponent's expected runs were built from — and the starter moves it by
+    ``edge.runs_delta``: his FIP difference, scaled to a game by the innings he
+    is expected to cover and to runs by the league's runs per earned run.
+    """
+    if edge is None:
+        return StarterAdjustment(1.0, False, reason)
+    if runs_allowed_per_game is None or runs_allowed_per_game <= 0:
+        return StarterAdjustment(1.0, False, "team run prevention unavailable")
+    if edge.starter_evidence <= 0:
+        return StarterAdjustment(
+            1.0, False, "starter has no starts on record", innings=edge.innings
+        )
+    runs_delta = edge.runs_delta
+    multiplier = (runs_allowed_per_game + runs_delta) / runs_allowed_per_game
+    multiplier = min(max(multiplier, MULTIPLIER_FLOOR), MULTIPLIER_CEILING)
+    return StarterAdjustment(
+        multiplier=multiplier,
+        is_measured=True,
+        fip_delta=edge.fip_delta,
+        runs_delta=runs_delta,
+        innings=edge.innings,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class RunModel:
     """Which refinements a run model applies.
 
@@ -216,6 +288,9 @@ class RunModel:
     #: rates start every April at the league average; the projection starts
     #: where the previous seasons left off.
     projected: bool = False
+    #: Move the opponent's expected runs by the named starter's projection
+    #: against his own rotation (`StarterAdjustment`).
+    starter: bool = False
 
 
 BASE = RunModel("base")
@@ -223,10 +298,14 @@ PARK_ONLY = RunModel("park", park=True)
 PITCHING_ONLY = RunModel("pitching", pitching=True)
 PARK_AND_PITCHING = RunModel("park+pitching", park=True, pitching=True)
 PROJECTED = RunModel("projected", projected=True)
+PROJECTED_STARTER = RunModel("projected+starter", projected=True, starter=True)
 
 #: The order they are reported in. Base first, because it is the incumbent
 #: the ablation measures refinements against.
-VARIANTS = (BASE, PARK_ONLY, PITCHING_ONLY, PARK_AND_PITCHING, PROJECTED)
+VARIANTS = (BASE, PARK_ONLY, PITCHING_ONLY, PARK_AND_PITCHING, PROJECTED, PROJECTED_STARTER)
+
+#: Looked up by name, for a command line that measures a subset.
+BY_NAME = {model.name: model for model in VARIANTS}
 
 #: The run model the product serves and the blend measurement scores.
 #: Promoted from BASE on the walk-forward evidence in MODELING_PLAN.md
@@ -269,6 +348,14 @@ class RunComponents:
     #: the base means and says so through `projected_measured`.
     home_projected: float | None = None
     away_projected: float | None = None
+    #: Each team's named starter against its own rotation. Like the pitching
+    #: split, each acts on the OPPOSING side's runs.
+    home_starter: StarterAdjustment = NO_STARTER
+    away_starter: StarterAdjustment = NO_STARTER
+
+    @property
+    def starter_measured(self) -> bool:
+        return self.home_starter.is_measured and self.away_starter.is_measured
 
     @property
     def projected_measured(self) -> bool:
@@ -311,6 +398,9 @@ class RunComponents:
             # The away team's pitching decides what the home team scores.
             home *= self.away_pitching.multiplier
             away *= self.home_pitching.multiplier
+        if model.starter:
+            home *= self.away_starter.multiplier
+            away *= self.home_starter.multiplier
         if model.park:
             adjustment = self.park_adjustment
             home *= adjustment
@@ -320,20 +410,25 @@ class RunComponents:
 
 __all__ = [
     "BASE",
+    "BY_NAME",
     "K_BULLPEN_INNINGS",
     "K_SHARE_STARTS",
     "K_STARTER_INNINGS",
     "MULTIPLIER_CEILING",
     "MULTIPLIER_FLOOR",
     "NO_SPLIT",
+    "NO_STARTER",
     "PARK_AND_PITCHING",
     "PARK_ONLY",
     "PITCHING_ONLY",
     "PROJECTED",
+    "PROJECTED_STARTER",
     "SERVED",
     "VARIANTS",
     "PitchingSplit",
     "RunComponents",
     "RunModel",
+    "StarterAdjustment",
     "pitching_split",
+    "starter_adjustment",
 ]

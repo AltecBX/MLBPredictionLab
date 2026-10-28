@@ -42,7 +42,15 @@ from app.features.builder import FeatureBuilder
 from app.features.context import GameContext
 from app.features.park import ParkFactors
 from app.modeling.dataset import Dataset
-from app.modeling.run_inputs import SERVED, RunComponents, RunModel, pitching_split
+from app.modeling.run_inputs import (
+    NO_STARTER,
+    SERVED,
+    RunComponents,
+    RunModel,
+    StarterAdjustment,
+    pitching_split,
+    starter_adjustment,
+)
 from app.modeling.runs import DEFAULT_SIMULATIONS, fit_dispersion, simulate_game
 
 log = get_logger(__name__)
@@ -86,6 +94,12 @@ class RunMeans:
     league: float
     home_games: int
     away_games: int
+    #: Each team's own runs allowed per game, and the weighted games behind it.
+    #: Set by `projected_runs`; the starter adjustment is measured against them.
+    home_allowed: float | None = None
+    away_allowed: float | None = None
+    home_evidence: float = 0.0
+    away_evidence: float = 0.0
 
     @property
     def is_usable(self) -> bool:
@@ -165,7 +179,41 @@ def projected_runs(
         league=lg,
         home_games=home["proj_off_rpg"].sample_size,
         away_games=away["proj_off_rpg"].sample_size,
+        home_allowed=home_def,
+        away_allowed=away_def,
+        home_evidence=float(home["proj_ra_rpg"].sample_size),
+        away_evidence=float(away["proj_ra_rpg"].sample_size),
     )
+
+
+def starter_adjustments(
+    builder: FeatureBuilder,
+    ctx: GameContext,
+    as_of: datetime,
+    projected: RunMeans | None,
+) -> tuple[StarterAdjustment, StarterAdjustment]:
+    """(home, away) starter adjustments, each measured against its own team's
+    projected runs allowed. Unmeasured, at exactly 1.0, without a projection."""
+    if projected is None or not projected.is_usable:
+        unmeasured = StarterAdjustment(1.0, False, "team projection unavailable")
+        return unmeasured, unmeasured
+    baseline = builder.league_baseline(ctx.season, as_of)
+    numerator_now = (
+        baseline.era - baseline.fip_constant
+        if baseline.era is not None and baseline.fip_constant is not None
+        else None
+    )
+    out = []
+    for team_id, starter_id, allowed, evidence in (
+        (ctx.home_team_id, ctx.home_starter_id, projected.home_allowed, projected.home_evidence),
+        (ctx.away_team_id, ctx.away_starter_id, projected.away_allowed, projected.away_evidence),
+    ):
+        edge = builder.projections.starter_edge(
+            team_id, starter_id, ctx.season, as_of, numerator_now, evidence
+        )
+        reason = "no starter named" if starter_id is None else "league rates unavailable"
+        out.append(starter_adjustment(edge, allowed, reason))
+    return out[0], out[1]
 
 
 def run_components(
@@ -174,8 +222,12 @@ def run_components(
     ctx: GameContext,
     as_of: datetime,
     parks: ParkFactors | None = None,
+    starters: bool = False,
 ) -> RunComponents | None:
     """The base means plus every refinement, computed once for one game.
+
+    ``starters`` computes the starter adjustment, which reads two as-of slices
+    a side; a caller whose models do not use it skips the cost.
 
     The variants in an ablation must differ only in what they claim to differ in.
     Computing each one by a separate pass over the as-of store would leave that to
@@ -196,6 +248,10 @@ def run_components(
     if not base_usable and not projected_usable:
         return None
     league = means.league if means is not None else projected.league  # type: ignore[union-attr]
+    home_starter, away_starter = (
+        starter_adjustments(builder, ctx, as_of, projected) if starters
+        else (NO_STARTER, NO_STARTER)
+    )
 
     season_start = season_start_utc(ctx.season)
     park_factor, home_exposure, away_exposure, park_measured = 1.0, 1.0, 1.0, False
@@ -235,6 +291,8 @@ def run_components(
         # falls back to the base means there, so it must here.
         home_projected=projected.home if projected_usable else None,  # type: ignore[union-attr]
         away_projected=projected.away if projected_usable else None,  # type: ignore[union-attr]
+        home_starter=home_starter,
+        away_starter=away_starter,
     )
 
 
@@ -282,7 +340,9 @@ def simulate_slate(
                 | {"sim_prob": None, "dispersion_unavailable": True}
             )
             continue
-        components = run_components(store, builder, ctx, as_of, parks)
+        components = run_components(
+            store, builder, ctx, as_of, parks, starters=any(m.starter for m in models)
+        )
         if components is None:
             rows.append(row | {f"sim_{m.name}": None for m in models} | {"sim_prob": None})
             continue
@@ -305,6 +365,7 @@ def simulate_slate(
             components.home_pitching.is_measured and components.away_pitching.is_measured
         )
         row["projected_measured"] = components.projected_measured
+        row["starter_measured"] = components.starter_measured
         rows.append(row)
     return pd.DataFrame(rows)
 

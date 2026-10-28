@@ -372,22 +372,35 @@ def cmd_run_model_check(args: argparse.Namespace) -> int:
     from app.features.asof import AsOfStore
     from app.modeling.dataset import build_dataset
     from app.modeling.registry import get_active_version
+    from app.modeling.run_inputs import BASE, BY_NAME, VARIANTS
     from app.modeling.run_model_compare import compare_run_models
 
     seasons = [int(s) for s in args.seasons.split(",")] if args.seasons else None
+    try:
+        models = (
+            tuple(BY_NAME[name] for name in args.variants.split(","))
+            if args.variants else VARIANTS
+        )
+        reference = BY_NAME[args.reference] if args.reference else BASE
+    except KeyError as exc:
+        print(json.dumps({"error": f"unknown run model {exc}", "known": sorted(BY_NAME)}))
+        return 1
     with session_scope() as session:
-        try:
-            version = get_active_version(session)
-            C = float((version.hyperparameters or {}).get("C", 0.001))
-        except Exception:  # noqa: BLE001 - no active model is not fatal here
-            C = 0.001
+        C = args.C
+        if C is None:
+            try:
+                version = get_active_version(session)
+                C = float((version.hyperparameters or {}).get("C", 0.001))
+            except Exception:  # noqa: BLE001 - no active model is not fatal here
+                C = 0.001
         store = AsOfStore.load(session, seasons)
         dataset = build_dataset(session, seasons=seasons, store=store)
         steps = make_steps(
             dataset.labelled, start=args.start, end=args.end, step_days=args.step_days
         )
         comparison = compare_run_models(
-            store, dataset, steps, C=C, simulations=args.simulations
+            store, dataset, steps, C=C, simulations=args.simulations,
+            models=models, reference=reference,
         )
 
     if comparison is None:
@@ -715,6 +728,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--end", type=_parse_date, default=None)
     p.add_argument("--step-days", type=int, default=30)
     p.add_argument("--simulations", type=int, default=20000)
+    p.add_argument(
+        "--variants", default=None,
+        help="Comma-separated run models to score, e.g. projected,projected+starter",
+    )
+    p.add_argument(
+        "--reference", default=None,
+        help="The run model every variant is paired against (default: base)",
+    )
+    p.add_argument(
+        "--C", type=float, default=None,
+        help="Pin the logistic model's C for the blend (default: the active model's)",
+    )
     p.set_defaults(func=cmd_run_model_check)
 
     sub.add_parser("check-sources", help="Recompute freshness").set_defaults(
