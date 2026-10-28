@@ -362,13 +362,17 @@ def test_a_persisted_simulation_surfaces_on_the_detail(client, seeded):
             "method": "log_odds", "weight_on_simulation": 0.5,
             "is_blended": True, "simulation_unavailable": None,
             "starters": {
+                # The snapshot names the pitcher the simulation ran with (201,
+                # the seeded away starter), whatever the game row says now.
                 "home": {"multiplier": 0.9295, "is_measured": True, "reason": None,
-                         "fip_delta": -0.512, "runs_delta": -0.312, "innings": 5.71},
+                         "fip_delta": -0.512, "runs_delta": -0.312, "innings": 5.71,
+                         "pitcher_id": 201, "opponent_runs_change": -0.355},
                 # Unmeasured carries a 1.0 multiplier internally; the API must
                 # not hand that on as if it were a measured "no effect".
                 "away": {"multiplier": 1.0, "is_measured": False,
                          "reason": "starter has no starts on record", "fip_delta": None,
-                         "runs_delta": None, "innings": 5.2},
+                         "runs_delta": None, "innings": 5.2, "pitcher_id": None,
+                         "opponent_runs_change": None},
             },
         }
     }
@@ -385,11 +389,15 @@ def test_a_persisted_simulation_surfaces_on_the_detail(client, seeded):
         assert simulation["blended_with_logistic"] is True
         assert simulation["blend_weight"] == 0.5
         assert simulation["home_starter"]["measured"] is True
-        assert simulation["home_starter"]["runs_delta"] == pytest.approx(-0.312)
+        # What the opponent's simulated mean moved by, not the rate change.
+        assert simulation["home_starter"]["opponent_runs_change"] == pytest.approx(-0.355)
+        assert simulation["home_starter"]["pitcher_id"] == 201
+        assert simulation["home_starter"]["full_name"] == "Away Starter"
         assert simulation["away_starter"]["measured"] is False
         assert simulation["away_starter"]["reason"] == "starter has no starts on record"
-        assert simulation["away_starter"]["runs_delta"] is None
+        assert simulation["away_starter"]["opponent_runs_change"] is None
         assert simulation["away_starter"]["multiplier"] is None
+        assert simulation["away_starter"]["full_name"] is None
     finally:
         session.delete(row)
         prediction.feature_snapshot = original_snapshot

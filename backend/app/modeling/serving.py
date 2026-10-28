@@ -34,7 +34,7 @@ governs UNAVAILABLE everywhere else in this repository.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 import numpy as np
@@ -196,10 +196,18 @@ def serve_probability(
     # slate reproduces the same prediction, and two games never share a draw
     # sequence — a prediction that moves when nothing moved is not a prediction.
     seed = int(ctx.game_id) % (2**31)
-    # The away starter decides what the home side scores, and vice versa.
+    # The away starter decides what the home side scores, and vice versa. What
+    # each one did to the other side's simulated mean is recorded as that
+    # difference, since that and not his rate is what the game page reports.
+    home_runs = means.home * away_starter.multiplier
+    away_runs = means.away * home_starter.multiplier
+    if home_starter.is_measured:
+        home_starter = replace(home_starter, opponent_runs_change=away_runs - means.away)
+    if away_starter.is_measured:
+        away_starter = replace(away_starter, opponent_runs_change=home_runs - means.home)
     simulation = simulate_game(
-        means.home * away_starter.multiplier,
-        means.away * home_starter.multiplier,
+        home_runs,
+        away_runs,
         dispersion.size,
         simulations=simulations,
         seed=seed,

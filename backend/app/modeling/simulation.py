@@ -25,7 +25,7 @@ the null hypothesis can win.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -212,7 +212,7 @@ def starter_adjustments(
             team_id, starter_id, ctx.season, as_of, numerator_now, evidence
         )
         reason = "no starter named" if starter_id is None else "league rates unavailable"
-        out.append(starter_adjustment(edge, allowed, reason))
+        out.append(replace(starter_adjustment(edge, allowed, reason), pitcher_id=starter_id))
     return out[0], out[1]
 
 

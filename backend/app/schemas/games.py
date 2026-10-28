@@ -201,8 +201,13 @@ class StarterInSimulation(ApiModel):
 
     measured: bool
     reason: str | None = None
-    #: Runs a game added to (positive) or taken off (negative) the opponent.
-    runs_delta: float | None = None
+    #: The pitcher the simulation was run with, from the prediction's own
+    #: snapshot — not the game's current probable, which can change after.
+    pitcher_id: int | None = None
+    full_name: str | None = None
+    #: Runs a game added to (positive) or taken off (negative) the opponent's
+    #: simulated mean.
+    opponent_runs_change: float | None = None
     multiplier: float | None = None
     innings: float | None = None
 

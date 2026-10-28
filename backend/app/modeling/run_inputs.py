@@ -222,10 +222,18 @@ class StarterAdjustment:
     is_measured: bool
     reason: str | None = None
     fip_delta: float | None = None
+    #: The change to his own team's run-prevention rate, runs a game.
     runs_delta: float | None = None
     innings: float | None = None
+    #: Who this is, so a later change of probable cannot borrow his number.
+    pitcher_id: int | None = None
+    #: The change to the opponent's SIMULATED mean, which is what a reader is
+    #: told. Not `runs_delta`: the opponent's mean is the run-prevention rate
+    #: times the opponent's offense against the league, and the band can clamp
+    #: the multiplier. Set by serving, which holds the means.
+    opponent_runs_change: float | None = None
 
-    def to_dict(self) -> dict[str, float | bool | str | None]:
+    def to_dict(self) -> dict[str, float | int | bool | str | None]:
         return {
             "multiplier": round(self.multiplier, 4),
             "is_measured": self.is_measured,
@@ -233,6 +241,11 @@ class StarterAdjustment:
             "fip_delta": None if self.fip_delta is None else round(self.fip_delta, 3),
             "runs_delta": None if self.runs_delta is None else round(self.runs_delta, 3),
             "innings": None if self.innings is None else round(self.innings, 2),
+            "pitcher_id": self.pitcher_id,
+            "opponent_runs_change": (
+                None if self.opponent_runs_change is None
+                else round(self.opponent_runs_change, 3)
+            ),
         }
 
 

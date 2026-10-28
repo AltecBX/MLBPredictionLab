@@ -22,7 +22,7 @@ from app.modeling.run_inputs import (
     starter_adjustment,
 )
 from app.modeling.serving import dispersion_asof, serve_probability
-from app.modeling.simulation import run_components, simulate_slate
+from app.modeling.simulation import projected_runs, run_components, simulate_slate
 from tests.conftest import make_store
 
 HOME, AWAY = 100, 200
@@ -304,3 +304,26 @@ def test_serving_simulates_the_starter_exactly_as_the_measurement_did():
     )
     # The ace is pitching for the home side, so it is a better bet with him.
     assert served.simulation > float(slate.iloc[0]["sim_projected"])
+
+
+def test_serving_records_who_pitched_and_what_he_did_to_the_simulated_mean():
+    """The game page reports the change to the opponent's simulated mean. That
+    is the run-prevention change scaled by the opponent's offense against the
+    league, so it is not `runs_delta` unless the opponent is league average —
+    and in this world the visitors score 3.0 against a league 3.5."""
+    frames = _world(extra=[(datetime(2024, 5, 21, 23, 0, tzinfo=UTC), ACE, LINES[ACE])])
+    store = make_store(frames)
+    builder = FeatureBuilder(store)
+    ctx = GameContext.from_row(frames["games"].iloc[-1].to_dict())
+    as_of = ctx.first_pitch_utc - timedelta(hours=3)
+    served = serve_probability(
+        store, builder, ctx, as_of, 0.55,
+        dispersion=dispersion_asof(store, as_of, min_sample=10), simulations=2000,
+    )
+    means = projected_runs(builder, ctx, as_of)
+    home, away = served.home_starter, served.away_starter
+    assert (home.pitcher_id, away.pitcher_id) == (ACE, MIDDLE)
+    assert home.opponent_runs_change == pytest.approx(means.away * (home.multiplier - 1.0))
+    assert away.opponent_runs_change == pytest.approx(means.home * (away.multiplier - 1.0))
+    assert home.opponent_runs_change < 0
+    assert home.opponent_runs_change != pytest.approx(home.runs_delta, rel=1e-3)

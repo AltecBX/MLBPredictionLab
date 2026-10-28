@@ -128,8 +128,11 @@ export interface SimulationScore {
 export interface StarterInSimulation {
   measured: boolean;
   reason: string | null;
-  /** Runs a game added to (positive) or taken off (negative) the opponent. */
-  runs_delta: number | null;
+  /** The pitcher the simulation ran with, from the prediction's own snapshot. */
+  pitcher_id: number | null;
+  full_name: string | null;
+  /** Runs a game added to (positive) or taken off (negative) the opponent's simulated mean. */
+  opponent_runs_change: number | null;
   multiplier: number | null;
   innings: number | null;
 }
