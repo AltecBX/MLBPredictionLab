@@ -267,7 +267,10 @@ Constraints: `CHECK (abs(home_win_prob + away_win_prob - 1) < 1e-6)`,
 `UNIQUE(game_id, model_version_id, as_of)`.
 Rows are **never** updated except to set `superseded_by` / `is_latest = false`
 when a newer snapshot lands. Partial unique index guarantees one `is_latest`
-row per `(game_id, model_version_id)`.
+row per `game_id`, whichever model version produced it. (It was once per
+`(game_id, model_version_id)`; with the model retrained daily that left a stale
+"latest" beside each day's new one, and readers keyed by game showed whichever
+came back last. Migration `7b3e9f1c2d40` repaired the rows and the index.)
 
 ### `prediction_explanations` — P1
 `(id bigserial PK, prediction_id FK, rank int, feature_key text,

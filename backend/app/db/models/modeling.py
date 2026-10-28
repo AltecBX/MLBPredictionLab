@@ -168,11 +168,14 @@ class Prediction(Base):
     is_latest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+# One latest snapshot per GAME, whatever model produced it: every reader of
+# `is_latest` keys by game, and the model is retrained daily, so a per-version
+# latest left one stale snapshot per day beside the new one (migration
+# 7b3e9f1c2d40).
 Prediction.__table__.append_constraint(
     Index(
         "uq_prediction_latest",
         Prediction.__table__.c.game_id,
-        Prediction.__table__.c.model_version_id,
         unique=True,
         postgresql_where=Prediction.__table__.c.is_latest.is_(True),
     )
