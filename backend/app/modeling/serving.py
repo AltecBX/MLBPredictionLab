@@ -43,6 +43,7 @@ from app.core.logging import get_logger
 from app.features.asof import AsOfStore
 from app.features.builder import FeatureBuilder
 from app.features.context import GameContext
+from app.modeling.run_inputs import NO_STARTER, SERVED, StarterAdjustment
 from app.modeling.runs import (
     DEFAULT_SIMULATIONS,
     Dispersion,
@@ -50,7 +51,7 @@ from app.modeling.runs import (
     fit_dispersion,
     simulate_game,
 )
-from app.modeling.simulation import expected_runs, projected_runs
+from app.modeling.simulation import expected_runs, projected_runs, starter_adjustments
 
 log = get_logger(__name__)
 
@@ -97,6 +98,10 @@ class ServedProbability:
     seed: int | None = None
     #: Why the simulation is missing, for the diagnostics screen. None on success.
     unavailable_reason: str | None = None
+    #: What each side's named starter did to the OPPOSING side's expected runs.
+    #: Unmeasured, at exactly 1.0, when the season-to-date means were used.
+    home_starter: StarterAdjustment = NO_STARTER
+    away_starter: StarterAdjustment = NO_STARTER
 
     @property
     def is_blended(self) -> bool:
@@ -164,14 +169,20 @@ def serve_probability(
 
     # The served run model is the PROJECTED one: each side's expected runs
     # from the multi-season projections, which beat the season-to-date means
-    # in every measured season (MODELING_PLAN.md § Multi-season projections).
-    # A game whose projection cannot be formed — a team with no history at
-    # all — falls back to the season-to-date means the base model uses, and
-    # a game with neither serves the logistic model alone. Each case is
-    # named so a reader can tell which number they are looking at.
+    # in every measured season (MODELING_PLAN.md § Multi-season projections),
+    # each moved by the opposing starter's projection against his rotation
+    # (§ The named starter in the run model). A game whose projection cannot
+    # be formed — a team with no history at all — falls back to the
+    # season-to-date means the base model uses, with no starter adjustment,
+    # exactly as `RunComponents.means` scores it; a game with neither serves
+    # the logistic model alone. Each case is named so a reader can tell which
+    # number they are looking at.
+    home_starter = away_starter = NO_STARTER
     means = projected_runs(builder, ctx, as_of)
     if means is None or not means.is_usable:
         means = expected_runs(store, builder, ctx, as_of)
+    elif SERVED.starter:
+        home_starter, away_starter = starter_adjustments(builder, ctx, as_of, means)
     if means is None or not means.is_usable:
         return ServedProbability(
             probability=logistic_probability,
@@ -185,9 +196,10 @@ def serve_probability(
     # slate reproduces the same prediction, and two games never share a draw
     # sequence — a prediction that moves when nothing moved is not a prediction.
     seed = int(ctx.game_id) % (2**31)
+    # The away starter decides what the home side scores, and vice versa.
     simulation = simulate_game(
-        means.home,
-        means.away,
+        means.home * away_starter.multiplier,
+        means.away * home_starter.multiplier,
         dispersion.size,
         simulations=simulations,
         seed=seed,
@@ -200,6 +212,8 @@ def serve_probability(
         weight=weight,
         game_simulation=simulation,
         seed=seed,
+        home_starter=home_starter,
+        away_starter=away_starter,
     )
 
 

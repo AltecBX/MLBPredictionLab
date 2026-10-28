@@ -16,11 +16,13 @@ from app.modeling.run_inputs import (
     NO_STARTER,
     PROJECTED,
     PROJECTED_STARTER,
+    SERVED,
     RunComponents,
     StarterAdjustment,
     starter_adjustment,
 )
-from app.modeling.simulation import run_components
+from app.modeling.serving import dispersion_asof, serve_probability
+from app.modeling.simulation import run_components, simulate_slate
 from tests.conftest import make_store
 
 HOME, AWAY = 100, 200
@@ -272,3 +274,33 @@ def test_a_caller_without_the_variant_does_not_pay_for_it():
     components = _components_for(ACE, starters=False)
     assert components.home_starter is NO_STARTER
     assert components.away_starter is NO_STARTER
+
+
+def test_serving_simulates_the_starter_exactly_as_the_measurement_did():
+    """`serve_probability` reaches the run means by its own path. Where the
+    starters are measured — the case the one-season serving fixture cannot
+    reach — it must still land on the measured variant's number, and that
+    number must differ from the projection without them."""
+    frames = _world(extra=[(datetime(2024, 5, 21, 23, 0, tzinfo=UTC), ACE, LINES[ACE])])
+    store = make_store(frames)
+    builder = FeatureBuilder(store)
+    ctx = GameContext.from_row(frames["games"].iloc[-1].to_dict())
+    as_of = ctx.first_pitch_utc - timedelta(hours=3)
+    dispersion = dispersion_asof(store, as_of, min_sample=10)
+    assert dispersion is not None
+
+    slate = simulate_slate(
+        store, builder, pd.DataFrame([{"game_id": ctx.game_id, "as_of": as_of}]),
+        dispersion.size, 4000, models=(PROJECTED, SERVED),
+    )
+    served = serve_probability(
+        store, builder, ctx, as_of, 0.55, dispersion=dispersion, simulations=4000
+    )
+    assert SERVED is PROJECTED_STARTER
+    assert served.home_starter.is_measured and served.away_starter.is_measured
+    assert served.simulation == pytest.approx(float(slate.iloc[0]["sim_prob"]), abs=1e-12)
+    assert served.simulation == pytest.approx(
+        float(slate.iloc[0][f"sim_{SERVED.name}"]), abs=1e-12
+    )
+    # The ace is pitching for the home side, so it is a better bet with him.
+    assert served.simulation > float(slate.iloc[0]["sim_projected"])

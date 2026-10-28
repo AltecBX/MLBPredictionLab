@@ -144,6 +144,13 @@ def generate_prediction(
         "is_blended": served.is_blended,
         "simulation_unavailable": served.unavailable_reason,
     }
+    if served.is_blended:
+        # What each named starter did to the opposing side's expected runs, so
+        # the game page can say why the simulation moved with the probables.
+        blend_detail["starters"] = {
+            "home": served.home_starter.to_dict(),
+            "away": served.away_starter.to_dict(),
+        }
 
     existing = session.scalar(
         select(Prediction).where(

@@ -308,6 +308,14 @@ decaying weights) with the season in progress, every season measured against
 its own league rate, and regresses the pool toward the league. The constants
 are published persistence rates, not values fitted on the win outcome.
 
+The same machinery feeds the **run model**, which is not a feature set and is
+judged by `run-model-check` rather than `run_ablation`: the served simulation
+takes each side's projected scoring and runs allowed, and moves the opponent's
+expected runs by the named starter's pooled FIP against the rotation his
+team's projection assumes (`Projections.starter_edge`). Adopted on the
+evidence in [MODELING_PLAN](MODELING_PLAN.md) § The named starter in the run
+model; it adds no column to `fs_v9`.
+
 `fs_v1`, the Phase 1 set the projections sit on top of, consumes these, all as
 home-minus-away differences unless marked absolute:
 

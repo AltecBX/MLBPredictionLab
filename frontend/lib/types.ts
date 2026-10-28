@@ -121,6 +121,19 @@ export interface SimulationScore {
  * `Unavailable` — a game that was not simulated is never a SimulationDetail
  * with zeros in it.
  */
+/**
+ * What one named starter did to the OPPOSING side's expected runs. `measured`
+ * false is an absence with a reason; a measured zero is a finding.
+ */
+export interface StarterInSimulation {
+  measured: boolean;
+  reason: string | null;
+  /** Runs a game added to (positive) or taken off (negative) the opponent. */
+  runs_delta: number | null;
+  multiplier: number | null;
+  innings: number | null;
+}
+
 export interface SimulationDetail {
   available: true;
   n_simulations: number;
@@ -140,6 +153,9 @@ export interface SimulationDetail {
   seed: number | null;
   blend_weight: number | null;
   blended_with_logistic: boolean;
+  /** Absent on a prediction issued before the run model knew who was pitching. */
+  home_starter?: StarterInSimulation | null;
+  away_starter?: StarterInSimulation | null;
 }
 
 export interface DriverSummary {

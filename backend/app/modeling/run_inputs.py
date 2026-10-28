@@ -312,8 +312,11 @@ BY_NAME = {model.name: model for model in VARIANTS}
 #: § Multi-season projections: the projected means beat the base run model
 #: in every season and the served blend with them improves with the paired
 #: interval excluding zero. A game whose projection cannot be formed falls
-#: back to the base means, and says so.
-SERVED = PROJECTED
+#: back to the base means, and says so. Then from PROJECTED to
+#: PROJECTED_STARTER on § The named starter in the run model: the served
+#: blend improves on 6,903 games with the interval excluding zero under
+#: every logistic configuration measured, and in every season.
+SERVED = PROJECTED_STARTER
 
 
 @dataclass(frozen=True, slots=True)

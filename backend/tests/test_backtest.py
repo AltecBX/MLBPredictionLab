@@ -400,7 +400,7 @@ def test_served_probability_blends_where_a_simulation_exists_and_falls_back_wher
             assert row["served_blended"]
     assert evaluation.metrics.n == evaluation.n_games
     assert evaluation.weight == 0.5
-    assert evaluation.run_model == "projected"
+    assert evaluation.run_model == "projected+starter"
 
 
 def test_served_slices_are_the_same_dimensions_under_a_prefix(monkeypatch):
@@ -424,7 +424,7 @@ def test_served_config_records_what_was_blended(monkeypatch):
     config = evaluation.to_config()
     assert config["available"] is True
     assert config["blend_weight"] == 0.5
-    assert config["run_model"] == "projected"
+    assert config["run_model"] == "projected+starter"
     assert config["simulations"] == 777
     assert config["n_blended"] + config["n_logistic_only"] == config["n_games"]
     assert config["dispersion"]["training_side_team_games"] == 6
