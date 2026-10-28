@@ -152,15 +152,9 @@ def generate_prediction(
             "away": served.away_starter.to_dict(),
         }
 
-    existing = session.scalar(
-        select(Prediction).where(
-            Prediction.game_id == ctx.game_id,
-            Prediction.model_version_id == version.id,
-            Prediction.is_latest.is_(True),
-        )
-    )
+    existing = current_latest(session, ctx.game_id)
     signature = _snapshot_signature(vector, probability)
-    if existing is not None and not force:
+    if existing is not None and existing.model_version_id == version.id and not force:
         previous = existing.feature_snapshot or {}
         if previous.get("signature") == signature:
             return None  # nothing material changed; do not create a duplicate
@@ -417,15 +411,33 @@ def generate_predictions_for_date(
     return created
 
 
+def current_latest(session: Session, game_id: int) -> Prediction | None:
+    """The game's latest snapshot, whichever model version produced it.
+
+    The model is retrained daily, so a lookup restricted to the version about to
+    predict would miss yesterday's snapshot and leave it marked latest beside the
+    new one — which is how 381 games came to have several (migration
+    7b3e9f1c2d40). The unique index on ``game_id`` now refuses that outright.
+    """
+    return session.scalar(
+        select(Prediction)
+        .where(Prediction.game_id == game_id, Prediction.is_latest.is_(True))
+        .order_by(Prediction.created_at.desc(), Prediction.id.desc())
+        .limit(1)
+    )
+
+
 def latest_predictions_for_games(
     session: Session, game_ids: list[int]
 ) -> dict[int, Prediction]:
     if not game_ids:
         return {}
+    # Oldest first, so if two rows were ever both latest the newer one is the
+    # one the dict keeps. The unique index makes that a guard, not a path.
     rows = session.scalars(
-        select(Prediction).where(
-            Prediction.game_id.in_(game_ids), Prediction.is_latest.is_(True)
-        )
+        select(Prediction)
+        .where(Prediction.game_id.in_(game_ids), Prediction.is_latest.is_(True))
+        .order_by(Prediction.created_at, Prediction.id)
     ).all()
     return {row.game_id: row for row in rows}
 
