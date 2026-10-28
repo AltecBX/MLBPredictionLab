@@ -114,8 +114,17 @@ def compare_run_models(
     simulations: int = DEFAULT_SIMULATIONS,
     min_train_rows: int | None = None,
     models: tuple[RunModel, ...] = VARIANTS,
+    reference: RunModel = BASE,
 ) -> RunModelComparison | None:
-    """Score every run-model variant on the same out-of-sample games."""
+    """Score every run-model variant on the same out-of-sample games.
+
+    ``reference`` is the incumbent each variant is paired against. It is the
+    base run model by default, which every refinement so far was measured
+    against; a refinement of the served model is measured against the served
+    model, which is what it would replace.
+    """
+    if reference not in models:
+        models = (reference, *models)
     predictions = collect_predictions(
         run_walk_forward(dataset, steps, C=C, min_train_rows=min_train_rows)
     )
@@ -146,7 +155,7 @@ def compare_run_models(
         models=models, parks=parks,
     )
     merged = predictions.merge(sims, on="game_id", how="inner", validate="one_to_one")
-    base_column = f"sim_{BASE.name}"
+    base_column = f"sim_{reference.name}"
     merged = merged[merged[base_column].notna()]
     if merged.empty:
         log.warning("run_model.no_simulated_games")
@@ -163,7 +172,7 @@ def compare_run_models(
         probs = merged[f"sim_{model.name}"].to_numpy(dtype=float)
         vs_base = (
             None
-            if model is BASE
+            if model is reference
             else _paired_bootstrap(base_loss - _per_game_log_loss(actual, probs))
         )
         blended = _blend(logistic, probs, PREREGISTERED_WEIGHT)
@@ -176,7 +185,7 @@ def compare_run_models(
                 blend_vs_logistic=_paired_bootstrap(
                     logistic_loss - _per_game_log_loss(actual, blended)
                 ),
-                verdict=_variant_verdict(model, vs_base),
+                verdict=_variant_verdict(model, vs_base, reference),
             )
         )
 
@@ -184,6 +193,7 @@ def compare_run_models(
         "park_measured": _share(merged, "park_measured"),
         "pitching_measured": _share(merged, "pitching_measured"),
         "projected_measured": _share(merged, "projected_measured"),
+        "starter_measured": _share(merged, "starter_measured"),
     }
     verdict, reading = _judge_variants(results, coverage)
     return RunModelComparison(
@@ -207,8 +217,10 @@ def _share(frame: pd.DataFrame, column: str) -> float | None:
     return round(float(frame[column].fillna(False).astype(bool).mean()), 4)
 
 
-def _variant_verdict(model: RunModel, vs_base: PairedDelta | None) -> str:
-    if model is BASE:
+def _variant_verdict(
+    model: RunModel, vs_base: PairedDelta | None, reference: RunModel = BASE
+) -> str:
+    if model is reference:
         return "INCUMBENT"
     if vs_base is None:
         return "INCONCLUSIVE"

@@ -56,6 +56,7 @@ from app.schemas.games import (
     SideDetail,
     SimulationDetail,
     SimulationScore,
+    StarterInSimulation,
 )
 from app.services.freshness import freshness_report
 from app.services.matchup_summary import build_matchup_summary
@@ -550,6 +551,32 @@ def _simulation(
         seed=row.seed,
         blend_weight=blend.get("weight_on_simulation"),
         blended_with_logistic=bool(blend.get("is_blended")),
+        home_starter=_starter_in_simulation(
+            session, (blend.get("starters") or {}).get("home")
+        ),
+        away_starter=_starter_in_simulation(
+            session, (blend.get("starters") or {}).get("away")
+        ),
+    )
+
+
+def _starter_in_simulation(
+    session: Session, raw: dict[str, Any] | None
+) -> StarterInSimulation | None:
+    """One starter as the simulation used him, named from the snapshot's id."""
+    if not raw:
+        return None
+    measured = bool(raw.get("is_measured"))
+    pitcher_id = _i(raw.get("pitcher_id"))
+    player = session.get(Player, pitcher_id) if pitcher_id else None
+    return StarterInSimulation(
+        measured=measured,
+        reason=raw.get("reason"),
+        pitcher_id=pitcher_id,
+        full_name=player.full_name if player is not None else None,
+        opponent_runs_change=_f(raw.get("opponent_runs_change")) if measured else None,
+        multiplier=_f(raw.get("multiplier")) if measured else None,
+        innings=_f(raw.get("innings")),
     )
 
 

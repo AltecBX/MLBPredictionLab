@@ -880,6 +880,10 @@ which sharpens the earlier diagnosis rather than repeating it. The ceiling is no
 where the *columns* run out. Adding structure to the run model reaches it just as
 quickly as adding columns to the feature set did.
 
+*(Revisited: with the multi-season projection in place of the season-to-date
+rate, the starter was measured again and adopted — § The named starter in the
+run model.)*
+
 The run model stays crude. Not because refining it was never tried, but because
 the refined versions were measured against it and were not better.
 
@@ -1713,7 +1717,8 @@ kept the first time: a weight chosen by scoring a grid on the games it is then
 evaluated on is fitted on the evaluation set, and the gap — 0.0005 — is small.
 It is now the most consistent unmeasured lead in the document, and the right
 way to act on it is a pre-registered move to 0.6 scored on a season none of
-this has seen.
+this has seen. (Done, on September 2026's last three weeks, and it did not
+hold: § The blend weight, on games none of this had seen.)
 
 **Against the ceiling.** The market baseline section puts the achievable floor
 at 0.679–0.681. The served number on these three seasons was 0.68334 and is
@@ -1985,6 +1990,222 @@ and the model the refresh trains each morning sees all of it.
 
 ---
 
+## The named starter in the run model: measured, and adopted
+
+The eleventh candidate, the second aimed at the run model, and the second
+change to the served probability since the simulation was promoted.
+
+### Why the starter was worth a second attempt
+
+The simulation is half of what is served, and until now it did not know who
+was pitching. Each side's expected runs were the team's projected scoring
+against the opponent's projected runs allowed — a rate that averages over the
+whole rotation, so an ace and a fifth starter got the same game. The logistic
+half knows the starter, but the log-odds average with a starter-blind
+simulation halves whatever it knows.
+
+The first attempt (§ The run model's park and starting pitcher, the
+`pitching` variant) was rejected, and its failure says what to change. It
+measured the starter by his **season-to-date runs allowed per nine, shrunk
+over forty innings** — the noisiest rate a pitcher has, read over a sample
+that is a handful of starts for most of April and May. It disagreed with the
+base model about the favourite in 17.8% of games and was not the more accurate
+of the two. That section bounded the effect rather than ruling it out: an
+interval of ±0.004 "cannot see one worth +0.001".
+
+Since then the projections (§ Multi-season projections) have given this
+repository a much better estimate of the same pitcher: his FIP pooled over
+three prior seasons and the current one, each against its own league,
+regressed by 200 innings. That is the input this tries.
+
+### What was built
+
+`Projections.starter_edge` and `run_inputs.StarterAdjustment`; variant
+`projected+starter`. For each side:
+
+* **The rotation the team's projection assumes.** The team's starts — every
+  start, by anyone — pooled with the team weights (0.6, 0.3) and the season
+  in progress, as a FIP deviation from each season's league. Then regressed
+  by the share the team projection regresses its own runs allowed,
+  `evidence / (evidence + 80)`, because that, and not a better-measured
+  rotation, is what the projected runs allowed already contains.
+* **Tonight's starter against it.** His starts pooled with the pitcher
+  weights (0.6, 0.35, 0.2), regressed toward that rotation by the same
+  `K_PITCHER_INNINGS = 200` his projected FIP uses. A pitcher with no record is
+  the rotation's average start and moves nothing.
+* **Into runs.** The FIP gap times his expected depth — pooled innings per
+  start, regressed toward the league's by the eight starts the run model's
+  starter share already used — over nine, times the last completed season's
+  runs per earned run (1.09 in 2024). The opponent's expected runs are
+  multiplied by `(RA + Δ) / RA`, inside the existing 0.70–1.40 band.
+
+**No constant is new and none was fitted on outcomes**: the weights, the two
+regressions, the eight starts and the band were all in the repository before
+this was measured. A starter not named is unmeasured, not average, and the
+game page says which (`StarterInSimulation.measured`).
+
+Sanity before scoring, on a 2025 sample: the multiplier's middle 90% is
+0.92–1.05, the strongest projected starters (Skubal, Skenes, Sale) take about
+0.6 runs a game off the opponent, and 2.2% of starts are unmeasured because the
+pitcher had none on record.
+
+### Measured
+
+Same protocol as the projections: every regular-season game from 2024-04-01
+to 2026-09-02 in 30-day walk-forward steps, trained from 2021, the active
+model's C (0.003), 5,000 draws on identical seeds, dispersion fitted on the
+training side (size 3.58, variance/mean 2.25 over 14,656 team-games). Both
+starters measured in 95.8% of the 6,903 games. Δ is against the run model
+that was served, `projected`, not the base: a refinement of the served model
+has to beat the served model.
+
+Reproduce:
+
+```
+python -m app.cli run-model-check --seasons 2021,2022,2023,2024,2025,2026 \
+    --start 2024-04-01 --end 2026-09-02 --variants projected,projected+starter \
+    --reference projected --simulations 5000
+```
+
+| 6,903 games | Log loss | Brier | Calibration error | Accuracy | AUC |
+|---|---|---|---|---|---|
+| Logistic alone | 0.68353 | 0.24523 | 1.52% | 55.21% | 0.5712 |
+| Simulation, projected (served until now) | 0.68228 | 0.24464 | 1.47% | 56.05% | 0.5749 |
+| Simulation, projected + starter | **0.68031** | **0.24368** | 1.48% | 55.80% | **0.5828** |
+| **Served blend, before** | 0.68115 | 0.24409 | **0.51%** | 55.93% | 0.5780 |
+| **Served blend, after** | **0.68047** | **0.24377** | 0.55% | **56.18%** | **0.5806** |
+
+| Paired, positive favours the starter | Δ log loss | 95% CI | Δ Brier |
+|---|---|---|---|
+| Simulation alone, all | **+0.001972** | **[+0.00100, +0.00295]** | +0.000962 |
+| — 2024 (2,374) | +0.002627 | [+0.00087, +0.00429] | +0.001289 |
+| — 2025 (2,430) | +0.002174 | [+0.00035, +0.00388] | +0.001055 |
+| — 2026 (2,099) | +0.000997 | [−0.00085, +0.00294] | +0.000483 |
+| Served blend, all | **+0.000675** | **[+0.00018, +0.00117]** | +0.000324 |
+| — 2024 | +0.000881 | [+0.00000, +0.00171] | +0.000437 |
+| — 2025 | +0.000794 | [−0.00013, +0.00163] | +0.000372 |
+| — 2026 | +0.000305 | [−0.00062, +0.00127] | +0.000142 |
+
+**The sign holds in every season**, alone and blended. One season of the three
+reaches its own interval for the blend, two for the simulation; the pooled
+interval excludes zero for both.
+
+**Every logistic configuration agrees.** The simulation does not depend on the
+logistic model, so the served blend was re-scored with the logistic fitted
+the other ways the projections were held to:
+
+| Logistic | Served before | Served after | Δ log loss | 95% CI | By season (2024 / 25 / 26) |
+|---|---|---|---|---|---|
+| C=0.003, from 2021 (served) | 0.68115 | 0.68047 | +0.000675 | [+0.00018, +0.00117] | +0.00088 / +0.00079 / +0.00031 |
+| C=0.03, from 2021 | 0.68133 | 0.68062 | +0.000703 | [+0.00021, +0.00120] | +0.00093 / +0.00083 / +0.00030 |
+| C=0.01, from 2021 | 0.68123 | 0.68054 | +0.000690 | [+0.00020, +0.00119] | +0.00091 / +0.00081 / +0.00030 |
+| C=0.003, from 2023 | 0.68156 | 0.68087 | +0.000697 | [+0.00021, +0.00119] | +0.00091 / +0.00081 / +0.00033 |
+
+**Where in the season.** Served blend by month: March (opening days, 143
+games) +0.0039, April −0.0001, May −0.0002, June +0.0010, July +0.0009,
+August +0.0014, September +0.0008. The simulation alone is positive in every
+month. The gain is mid-season rather than early, which is the opposite of the
+projections' shape and fits the mechanism: in April the rotation reference and
+the starter are both mostly last season, so the gap between them is last
+season's gap.
+
+**How much it changes its mind.** Per game, against the served model's own
+probability on the same seed:
+
+| | median \|Δp\| | 95th percentile | games moved > 1 point | favourite flipped |
+|---|---|---|---|---|
+| `pitching` (rejected; 2025, vs base) | 0.0298 | — (max 0.188) | 83.0% | **17.8%** |
+| `projected+starter`, simulation alone | 0.0134 | 0.0446 (max 0.085) | 61.4% | 10.3% |
+| `projected+starter`, served blend | 0.0066 | 0.0222 | — | 4.3% |
+
+Half the movement of the rejected version, and this time the movement is the
+more accurate side. Two things changed at once — the estimator (season-to-date
+RA9 over forty innings → pooled FIP over three seasons, regressed by two
+hundred) and the reference (the team's season staff → the rotation the
+projection assumes) — and this measurement cannot say how the credit divides
+between them. It was one pre-registered variant, not a search over the
+combinations.
+
+**Calibration.** The served figure's calibration error moves 0.51% → 0.55%,
+within noise. By the favourite's band:
+
+| Band (favourite) | Games | Said | Won | Gap |
+|---|---|---|---|---|
+| 50–55% | 3,523 | 52.4% | 52.7% | +0.3 |
+| 55–60% | 2,200 | 57.2% | 56.9% | −0.3 |
+| 60–65% | 844 | 62.1% | 62.8% | +0.7 |
+| 65–70% | 283 | 67.1% | 70.7% | +3.6 |
+| 70%+ | 53 | 72.6% | 75.5% | +2.9 |
+
+The 65–70% band, which ran 4.6 points under (said 66.9%, won 71.5%) before,
+closes to 3.6, and holds more games. The share of predictions past the
+market's forty-two-year maximum of 73.7% rises from 0.13% to 0.19% — 9 games
+to 13 — and the games above 70% won more often than they were given credit
+for, not less.
+
+### On games none of this had seen
+
+The window above ends on 2026-09-02, where every earlier section in this
+document stopped. The rest of the 2026 regular season — 330 usable games,
+3 to 27 September — had been scored by nothing in this repository, and was
+held out of this measurement and run afterwards as a confirmation, trained on
+everything before 3 September:
+
+| 330 games | Simulation alone | Served blend |
+|---|---|---|
+| projected (before) | 0.66906 | 0.66379 |
+| projected + starter | **0.66259** | **0.66115** |
+| Δ, paired 95% CI | **+0.00647 [+0.00138, +0.01180]** | **+0.00264 [+0.00012, +0.00526]** |
+
+Both intervals exclude zero on the hold-out alone. Three weeks of September is
+a small sample and its effect sizes are larger than the main window's, which
+is what a small sample does; the direction is the finding.
+
+### Verdict
+
+**ADOPT.** The served blend improves with the paired interval excluding zero
+under every logistic configuration measured, Brier agrees, the sign holds in
+every season, the simulation alone improves by three times as much, and the
+held-out September confirms it. `run_inputs.SERVED = PROJECTED_STARTER`;
+`serve_probability` applies the starter adjustment exactly where the measured
+path does — only with the projected means, never on the season-to-date
+fallback — and `test_serving_simulates_the_starter_exactly_as_the_measurement_did`
+pins the two together on a world where the starters are measured (it fails if
+serving drops the adjustment or applies it to the wrong side). The prediction
+records what each starter did in its blend snapshot, and the game page's
+Simulation tab says it in runs.
+
+What it does not do: the bullpen is still the team's, the depth is the
+starter's own average and not tonight's pitch count, and a starter making his
+first start for a new team is compared with the rotation he joined. Each is a
+candidate, not a claim.
+
+---
+
+## The blend weight, on games none of this had seen
+
+§ Multi-season projections closed on this: every measured season preferred a
+blend weight above 0.5, "the most consistent unmeasured lead in the
+document", and the right test was a pre-registered move to 0.6 scored on a
+season nothing had seen. The 330 held-out September games above are that
+season's first slice.
+
+| 330 games, 3–27 Sep 2026 | Blend 0.5 | Blend 0.6 | 0.6 vs 0.5, paired 95% |
+|---|---|---|---|
+| Served then (projected) | 0.66379 | 0.66460 | −0.000803 [−0.00193, +0.00028] |
+| Served now (projected + starter) | 0.66115 | 0.66128 | −0.000135 [−0.00102, +0.00073] |
+
+**Not adopted: the weight stays at 0.5.** On the first games none of this had
+seen, the weight every earlier season preferred did worse, by both run
+models, with the intervals spanning zero. (On the main window, with the new
+run model, the grid again leans higher — 0.68047 at 0.5, 0.68020 at 0.6,
+0.68005 at 0.7 — and again that is scoring a grid on the games it is
+evaluated on, the reason the weight was fixed in the first place.) A lead
+that reverses on its first out-of-sample look is the case for pre-registration
+made by example.
+
+---
+
 ## Phase 2A: what changes, and what does not
 
 The calibrated logistic regression **remains the baseline and remains what is
@@ -2014,7 +2235,7 @@ training window, validation slice and test window at every step:
 | Calibrated logistic | Baseline; served as half of the blend — on `fs_v9` since the projections were **adopted** (above) |
 | Gradient boosting | **Measured twice and rejected** — HistGradientBoosting at a fixed configuration, then XGBoost and LightGBM with per-fold search; see above |
 | Negative-binomial run model | Built; serves as the simulation half of the blend, on the **projected** means since they were measured and adopted |
-| Starter + bullpen innings allocation | Built into the simulation; refinements measured and rejected |
+| Starter + bullpen innings allocation | Built into the simulation; the season-to-date split measured and rejected; the named starter's **projection** against his rotation measured and **adopted** (above) |
 | Monte Carlo simulation | Built; **promoted** as half of the served blend |
 | Elo with starter adjustment | Elo **measured as a calibrated component** — matches the baseline, not promotable; its constants **fitted and left alone** (above); the starter adjustment is still not built |
 | Stacked ensemble | Built; **measured and rejected** — see above |

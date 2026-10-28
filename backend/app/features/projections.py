@@ -71,6 +71,11 @@ K_TEAM_RUNS_PER_GAME = 80.0
 K_PITCHER_BATTERS_FACED = 300.0
 K_PITCHER_INNINGS = 200.0
 
+# Starts at which a pitcher's own depth is trusted halfway against the league's.
+# The same eight starts the run model's starter share uses
+# (`run_inputs.K_SHARE_STARTS`), not a new constant.
+K_STARTER_DEPTH_STARTS = 8.0
+
 # Below these, the season in progress alone would say little and the
 # projection is flagged estimated — the same discipline every other feature
 # follows, with the same consequence: shown, with its sample size beside it.
@@ -93,6 +98,37 @@ class SeasonRates:
     k_pct: float | None
     bb_pct: float | None
     fip_numerator_per_inning: float | None
+    #: How deep the league's starters went, and how many runs each earned run
+    #: stood for. Two ways of turning a FIP difference into runs in a game;
+    #: neither moves by more than a few hundredths a season.
+    starter_innings_per_start: float | None = None
+    runs_per_earned_run: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StarterEdge:
+    """A named starter against the rotation his team's projection assumes.
+
+    ``fip_delta`` is in FIP points — earned runs per nine — and negative when
+    the starter is the better pitcher. It is regressed toward the rotation, not
+    toward the league, so a starter with no record differs from his rotation
+    by exactly nothing: the team's projection already assumes an average start
+    from it, and a pitcher nobody has seen is that assumption.
+    """
+
+    fip_delta: float
+    #: The innings this start is expected to last.
+    innings: float
+    #: Weighted innings behind the starter's rate, and behind the rotation's.
+    starter_evidence: float
+    rotation_evidence: float
+    #: Runs per earned run, from the last completed season.
+    runs_per_earned_run: float
+
+    @property
+    def runs_delta(self) -> float:
+        """The change in the opponent's expected runs this start implies."""
+        return self.runs_per_earned_run * self.fip_delta * self.innings / 9.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,11 +203,20 @@ class Projections:
         cut = min(as_of, end)
         team = self.store.league_team_games_asof(cut, start)
         pitch = self.store.league_pitcher_games_asof(cut, start)
+        starts = (
+            pitch[pitch["is_starter"].fillna(False).astype(bool)]
+            if not pitch.empty and "is_starter" in pitch.columns
+            else pitch.iloc[:0]
+        )
         rates = SeasonRates(
             runs_per_game=(_sum(team, "runs") / len(team)) if len(team) else None,
             k_pct=_rate(pitch, "so_pitched", "batters_faced"),
             bb_pct=_rate(pitch, "bb_allowed", "batters_faced"),
             fip_numerator_per_inning=_fip_numerator_rate(pitch),
+            starter_innings_per_start=(
+                _sum(starts, "outs_pitched") / 3.0 / len(starts) if len(starts) else None
+            ),
+            runs_per_earned_run=_rate(pitch, "runs_allowed", "earned_runs"),
         )
         if as_of >= end:
             self._season_cache[season] = rates
@@ -300,6 +345,98 @@ class Projections:
             ),
         }
 
+    # -- the named starter against his own rotation --------------------------
+    def starter_edge(
+        self,
+        team_id: int,
+        starter_id: int | None,
+        season: int,
+        as_of: datetime,
+        league_fip_numerator_now: float | None,
+        team_evidence_games: float,
+    ) -> StarterEdge | None:
+        """How much better or worse tonight's starter is than his rotation.
+
+        A team's projected runs allowed averages over every start its rotation
+        made in the window the projection reads, so it already contains an
+        average starter. What it does not know is which one is pitching. This
+        compares the named starter with that average, both pooled the way the
+        projections pool: the starter over his own starts with the pitcher
+        weights, the rotation over the team's starts with the team weights,
+        each season against its own league. The rotation's deviation is then
+        regressed by the share the team projection regresses its runs allowed,
+        so the reference is the rotation that projection actually assumes and
+        not a better-measured one it never saw.
+
+        The starter is regressed toward that reference with the same
+        ``K_PITCHER_INNINGS`` his projected FIP uses. None when there is
+        nothing to compare: no starter named, no league rate, or no completed
+        season to convert a FIP difference into runs.
+        """
+        if starter_id is None or league_fip_numerator_now is None:
+            return None
+        last = self.season_rates(season - 1, as_of)
+        if last.starter_innings_per_start is None or not last.runs_per_earned_run:
+            return None
+
+        staff = self.store.team_pitcher_games_asof(
+            team_id, as_of, season_start_utc(season - len(TEAM_SEASON_WEIGHTS))
+        )
+        rotation = (
+            staff[staff["is_starter"].fillna(False).astype(bool)] if not staff.empty else staff
+        )
+        rot = self._fip_pool(rotation, season, as_of, TEAM_SEASON_WEIGHTS,
+                             league_fip_numerator_now)
+        share = (
+            team_evidence_games / (team_evidence_games + K_TEAM_RUNS_PER_GAME)
+            if team_evidence_games > 0
+            else 0.0
+        )
+        reference = share * rot.deviation
+
+        starts = self.store.pitcher_games_asof(
+            int(starter_id), as_of, season_start_utc(season - len(PITCHER_SEASON_WEIGHTS)),
+            starters_only=True,
+        )
+        sp = self._fip_pool(starts, season, as_of, PITCHER_SEASON_WEIGHTS,
+                            league_fip_numerator_now)
+        weight = sp.evidence / (sp.evidence + K_PITCHER_INNINGS)
+        delta = weight * (sp.deviation - reference) if sp.evidence > 0 else 0.0
+
+        return StarterEdge(
+            fip_delta=delta,
+            innings=_innings_per_start(starts, season, last.starter_innings_per_start),
+            starter_evidence=sp.evidence,
+            rotation_evidence=rot.evidence,
+            runs_per_earned_run=float(last.runs_per_earned_run),
+        )
+
+    def _fip_pool(
+        self,
+        frame: pd.DataFrame,
+        season: int,
+        as_of: datetime,
+        weights: tuple[float, ...],
+        league_now: float,
+    ) -> Pooled:
+        """A raw pooled FIP deviation per inning, unregressed (k = 0)."""
+        by_season = _by_season(frame, season)
+        priors = []
+        for offset, weight in enumerate(weights, start=1):
+            rows = by_season.get(season - offset)
+            league = self.season_rates(season - offset, as_of).fip_numerator_per_inning
+            if rows is None or rows.empty or league is None:
+                continue
+            priors.append((weight, _fip_numerator(rows), _sum(rows, "outs_pitched") / 3.0,
+                           league))
+        now = by_season.get(season)
+        current = (
+            (_fip_numerator(now), _sum(now, "outs_pitched") / 3.0, league_now)
+            if now is not None and not now.empty
+            else (0.0, 0.0, league_now)
+        )
+        return pool(priors, current, 0.0)
+
 
 # -- helpers -------------------------------------------------------------------
 def _by_season(frame: pd.DataFrame, current_season: int) -> dict[int, pd.DataFrame]:
@@ -316,6 +453,21 @@ def _by_season(frame: pd.DataFrame, current_season: int) -> dict[int, pd.DataFra
     else:
         seasons = pd.DatetimeIndex(frame["game_date_utc"]).tz_convert(UTC).year
     return {int(s): rows for s, rows in frame.groupby(seasons.to_numpy())}
+
+
+def _innings_per_start(starts: pd.DataFrame, season: int, league: float) -> float:
+    """A starter's expected depth: his pooled innings per start, regressed
+    toward the league's by ``K_STARTER_DEPTH_STARTS`` starts."""
+    by_season = _by_season(starts, season)
+    innings = count = 0.0
+    weighted = [(season - o, w) for o, w in enumerate(PITCHER_SEASON_WEIGHTS, start=1)]
+    for year, weight in [*weighted, (season, CURRENT_SEASON_WEIGHT)]:
+        rows = by_season.get(year)
+        if rows is None or rows.empty:
+            continue
+        innings += weight * _sum(rows, "outs_pitched") / 3.0
+        count += weight * len(rows)
+    return (innings + K_STARTER_DEPTH_STARTS * league) / (count + K_STARTER_DEPTH_STARTS)
 
 
 def _rate(frame: pd.DataFrame, events: str, denominator: str) -> float | None:
@@ -342,11 +494,13 @@ __all__ = [
     "FEATURE_KEYS",
     "K_PITCHER_BATTERS_FACED",
     "K_PITCHER_INNINGS",
+    "K_STARTER_DEPTH_STARTS",
     "K_TEAM_RUNS_PER_GAME",
     "PITCHER_SEASON_WEIGHTS",
     "TEAM_SEASON_WEIGHTS",
     "Pooled",
     "Projections",
     "SeasonRates",
+    "StarterEdge",
     "pool",
 ]

@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 import app.modeling.simulation as simulation
-from app.modeling.run_inputs import BASE, PROJECTED, SERVED, RunComponents
+from app.modeling.run_inputs import BASE, NO_STARTER, PROJECTED, SERVED, RunComponents
 from app.modeling.simulation import RunMeans, run_components, simulate_slate
 
 
@@ -37,6 +37,9 @@ def _stub(monkeypatch, base, projection):
     monkeypatch.setattr(simulation, "expected_runs", lambda *a, **k: base)
     monkeypatch.setattr(simulation, "projected_runs", lambda *a, **k: projection)
     monkeypatch.setattr(simulation, "pitching_split", lambda *a, **k: simulation.RunComponents.__dataclass_fields__["home_pitching"].default)
+    monkeypatch.setattr(
+        simulation, "starter_adjustments", lambda *a, **k: (NO_STARTER, NO_STARTER)
+    )
 
 
 def test_a_projection_alone_is_enough_to_simulate_the_served_model(monkeypatch):
@@ -142,10 +145,12 @@ def test_simulate_slate_scores_the_served_variant_and_leaves_the_base_null(store
     frame = pd.DataFrame(
         {"game_id": [int(game["id"])], "as_of": [pd.Timestamp(game["game_date_utc"]) - pd.Timedelta(hours=3)]}
     )
-    sims = simulate_slate(store, object(), frame, 3.5, 500, models=(BASE, PROJECTED))
+    sims = simulate_slate(store, object(), frame, 3.5, 500, models=(BASE, PROJECTED, SERVED))
     row = sims.iloc[0]
     assert row["sim_base"] is None or row["sim_base"] != row["sim_base"]
     assert 0.0 < float(row["sim_projected"]) < 1.0
+    assert row["sim_prob"] == pytest.approx(float(row[f"sim_{SERVED.name}"]))
+    # No starter measured, so the served model is the projection exactly.
     assert row["sim_prob"] == pytest.approx(float(row["sim_projected"]))
     assert bool(row["projected_measured"]) is True
     assert bool(row["base_measured"]) is False

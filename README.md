@@ -231,22 +231,28 @@ outright, and a test asserts it.
 **What is served now.** The probability on the screen is a log-odds blend of
 the calibrated logistic model and a run simulation. Both halves were changed
 on the evidence in [MODELING_PLAN.md](MODELING_PLAN.md) § Multi-season
-projections, and the change is measured paired, per game, on the same 6,900
-games — every regular-season game from April 2024 to September 2026, trained
-from 2021, regularisation pinned:
+projections — Δ log loss +0.00198, paired 95% interval [+0.00078, +0.00322],
+positive in every season — and in October 2026 the simulation learned who is
+pitching (§ The named starter in the run model). Measured paired, per game,
+on the same 6,903 games — every regular-season game from April 2024 to
+2 September 2026, trained from 2021 at the served model's regularisation:
 
 | | Log loss | Brier | Calibration error | Accuracy | AUC |
 |---|---|---|---|---|---|
-| Previous served combination | 0.68334 | 0.24516 | 1.20% | 55.0% | 0.568 |
-| **Served now** | **0.68135** | **0.24418** | **0.93%** | **55.8%** | **0.578** |
+| Served until October 2026 | 0.68115 | 0.24409 | 0.51% | 55.9% | 0.578 |
+| **Served now** | **0.68047** | **0.24377** | 0.55% | **56.2%** | **0.581** |
 | Always 50% | 0.69315 | 0.25000 | | 50.0% | 0.500 |
 | Market closing line, achievable floor | 0.679–0.681 | 0.243–0.244 | | 56.4–57.0% | |
 
-Δ log loss +0.00198, paired 95% interval [+0.00078, +0.00322], positive in
-every season. The gap to the market's floor was roughly halved. No game is a
-lock; the highest probability the served model has emitted on those three
-seasons is 87.6%, and it went past the market's forty-two-year maximum of
-73.7% on 0.06% of games.
+Δ log loss +0.00068, paired 95% interval [+0.00018, +0.00117], positive in
+every season and under every regularisation measured; on the 330 games of
+September 2026 that no measurement had seen, +0.0026 [+0.0001, +0.0053]. The
+served figure now sits inside the range the market's closing line is
+estimated to reach — a comparison across different games, so read it as an
+order of magnitude rather than a ranking. No game is a lock; the highest probability the served model gave on those three
+seasons is 83.7%, and it went past the market's forty-two-year maximum of
+73.7% on 0.19% of games — and those games won more often than they were given
+credit for, not less.
 
 Those rates were, until September 2026, computed with spring-training games
 inside them, and the walk-forward could fit a calibrator on a single opening
@@ -257,15 +263,15 @@ halved its calibration error, 0.96% to 0.52%. It is adopted as a correction,
 and recorded as the null result it is on the scoring rule.
 
 Reliability of the served figure by probability band — the honest answer to
-"how often does a 62% pick actually win?" — on those same 6,900 games:
+"how often does a 62% pick actually win?" — on those same 6,903 games:
 
 | Band (favorite) | Games | Served said | Actually won | Gap |
 |---|---|---|---|---|
-| 50–55% | 3,651 | 52.4% | 52.7% | +0.3 |
-| 55–60% | 2,252 | 57.1% | 56.4% | −0.7 |
-| 60–65% | 750 | 62.1% | 63.9% | +1.8 |
-| 65–70% | 216 | 66.8% | 72.2% | +5.4 |
-| 70%+ | 31 | 72.6% | 71.0% | −1.6 |
+| 50–55% | 3,523 | 52.4% | 52.7% | +0.3 |
+| 55–60% | 2,200 | 57.2% | 56.9% | −0.3 |
+| 60–65% | 844 | 62.1% | 62.8% | +0.7 |
+| 65–70% | 283 | 67.1% | 70.7% | +3.6 |
+| 70%+ | 53 | 72.6% | 75.5% | +2.9 |
 
 **The logistic component alone** runs the other way. On the first production
 backtest of `fs_v9` — 13,461 games from May 2021 to September 2026, trained
@@ -277,7 +283,7 @@ toward .500 and errs the other way, and the blend lands between the two. That
 is why the backtest scores the served figure on the same games and reports it
 first, with the component shown beside it rather than instead of it
 ([BACKTEST_PLAN.md](BACKTEST_PLAN.md) §10). The strongest served picks are
-few — 31 games in three seasons above 70% — and are reported with their
+few — 53 games in three seasons above 70% — and are reported with their
 counts, not smoothed over; the game detail page links each prediction to the
 band it falls in.
 

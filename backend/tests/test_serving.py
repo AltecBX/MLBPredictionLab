@@ -155,7 +155,7 @@ def test_the_served_simulation_is_the_backtests_simulation(store, builder, targe
     """
     import pandas as pd
 
-    from app.modeling.run_inputs import BASE, PROJECTED, SERVED
+    from app.modeling.run_inputs import BASE, PROJECTED_STARTER, SERVED
     from app.modeling.simulation import simulate_slate
 
     dispersion = _dispersion(store, target_game)
@@ -163,15 +163,17 @@ def test_the_served_simulation_is_the_backtests_simulation(store, builder, targe
         [{"game_id": target_game.game_id, "as_of": target_game.first_pitch_utc}]
     )
     slate = simulate_slate(
-        store, builder, frame, dispersion.size, 4000, models=(BASE, PROJECTED), parks=None
+        store, builder, frame, dispersion.size, 4000, models=(BASE, SERVED), parks=None
     )
     served = serve_probability(
         store, builder, target_game, target_game.first_pitch_utc, 0.55,
         dispersion=dispersion, simulations=4000,
     )
-    # The served variant is the projected one, and `sim_prob` — what the
-    # blend measurement scores — is that same column.
-    assert SERVED is PROJECTED
+    # The served variant is the projected one with the starters, and
+    # `sim_prob` — what the blend measurement scores — is that same column.
+    # (This fixture has one season, so the starters are unmeasured here; the
+    # case where they move the game is pinned in test_starter_projection.py.)
+    assert SERVED is PROJECTED_STARTER
     assert served.simulation == pytest.approx(
         float(slate.iloc[0][f"sim_{SERVED.name}"]), abs=1e-12
     )

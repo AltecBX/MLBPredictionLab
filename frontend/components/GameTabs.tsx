@@ -11,7 +11,7 @@ import { Section, StatBlock } from "@/components/StatBlock";
 import { TrendLine } from "@/components/TrendLine";
 import { UnavailableNotice } from "@/components/UnavailableNotice";
 import { RECOMMENDATION_LABEL, moneyline, num, pct, timestamp } from "@/lib/format";
-import type { GameDetail } from "@/lib/types";
+import type { GameDetail, StarterInSimulation } from "@/lib/types";
 
 /**
  * The nine game-page panels that are rendered in the reader's browser.
@@ -606,6 +606,36 @@ function RunDistribution({
   );
 }
 
+/** Below this many runs a game a measured starter is reported as level. */
+const LEVEL_RUNS = 0.005;
+
+/**
+ * One starter's line in the simulation: what he did to the other side's
+ * simulated runs. The pitcher is the one the simulation ran with, named from
+ * the prediction's snapshot — not the game's current probable, which can
+ * change after. An unmeasured starter says why; a measured one that moved
+ * nothing says he is level with his rotation, which is a finding.
+ */
+export function starterLine(
+  starter: StarterInSimulation,
+  team: string,
+  opponent: string,
+): string {
+  const name = starter.full_name ?? `${team}'s starter`;
+  if (!starter.measured || starter.opponent_runs_change === null) {
+    return `${name}: not adjusted — ${starter.reason ?? "no projection on record"}.`;
+  }
+  const runs = Math.abs(starter.opponent_runs_change);
+  if (runs < LEVEL_RUNS) {
+    return `${name}: level with his rotation's average start, so ${opponent}'s expected runs are unchanged.`;
+  }
+  const over =
+    starter.innings !== null ? ` over the ${num(starter.innings, 1)} innings he is expected to cover` : "";
+  return starter.opponent_runs_change < 0
+    ? `${name} takes ${num(runs, 2)} runs off ${opponent}'s expected total${over}.`
+    : `${name} adds ${num(runs, 2)} runs to ${opponent}'s expected total${over}.`;
+}
+
 function SimulationTab({ detail }: { detail: GameDetail }) {
   const simulation = detail.simulation;
   if (!simulation.available) {
@@ -653,6 +683,18 @@ function SimulationTab({ detail }: { detail: GameDetail }) {
           </dl>
         ) : null}
       </Section>
+
+      {simulation.home_starter && simulation.away_starter ? (
+        <Section
+          title="Who is pitching"
+          description="Each side's expected runs start from its opponent's projected run prevention, which already assumes an average start from that rotation. Tonight's starter moves it by the gap between his projected FIP and his rotation's."
+        >
+          <ul className="t-small flex flex-col gap-2">
+            <li>{starterLine(simulation.away_starter, awayName, homeName)}</li>
+            <li>{starterLine(simulation.home_starter, homeName, awayName)}</li>
+          </ul>
+        </Section>
+      ) : null}
 
       <Section
         title="How the game goes"

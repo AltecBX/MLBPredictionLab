@@ -191,6 +191,27 @@ class SimulationScore(ApiModel):
     probability: float
 
 
+class StarterInSimulation(ApiModel):
+    """What one named starter did to the opposing side's expected runs.
+
+    ``measured`` False is an absence — no starter named, or none of his starts
+    on record — and carries the reason. A measured zero is a finding: he is
+    level with the rotation his team's projection already assumes.
+    """
+
+    measured: bool
+    reason: str | None = None
+    #: The pitcher the simulation was run with, from the prediction's own
+    #: snapshot — not the game's current probable, which can change after.
+    pitcher_id: int | None = None
+    full_name: str | None = None
+    #: Runs a game added to (positive) or taken off (negative) the opponent's
+    #: simulated mean.
+    opponent_runs_change: float | None = None
+    multiplier: float | None = None
+    innings: float | None = None
+
+
 class SimulationDetail(ApiModel):
     """A real Monte Carlo result. Only ever built from a persisted simulation.
 
@@ -219,6 +240,10 @@ class SimulationDetail(ApiModel):
     #: How the served probability was formed from this simulation.
     blend_weight: float | None = None
     blended_with_logistic: bool = False
+    #: Each side's named starter, acting on the OTHER side's runs. None for a
+    #: prediction issued before the run model knew who was pitching.
+    home_starter: StarterInSimulation | None = None
+    away_starter: StarterInSimulation | None = None
 
 
 class GameDetail(ApiModel):
