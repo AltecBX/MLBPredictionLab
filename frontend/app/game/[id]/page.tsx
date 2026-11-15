@@ -27,7 +27,7 @@ import {
   signedPp,
   timestamp,
 } from "@/lib/format";
-import { builtGameIds } from "@/lib/games";
+import { NO_GAMES_ID, builtGameIds } from "@/lib/games";
 import type { ChangeAttribution, GameDetail } from "@/lib/types";
 
 /**
@@ -83,6 +83,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  if (id === NO_GAMES_ID) return { title: "No games" };
   const result = await api.game(id);
   if (!result.ok) return { title: "Game" };
   const { away, home } = result.data.card;
@@ -95,6 +96,18 @@ export default async function GameDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // The off-season placeholder (lib/games.ts): built only because a static
+  // export refuses a dynamic route with no ids, linked from nowhere, and
+  // removed by the publish workflow. It says what it is without the API.
+  if (id === NO_GAMES_ID) {
+    return (
+      <UnavailableNotice
+        title="No games in this window"
+        reason="No games are scheduled in the days this site was built for."
+      />
+    );
+  }
 
   const result = await api.game(id);
   if (!result.ok) {

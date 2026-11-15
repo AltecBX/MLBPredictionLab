@@ -17,8 +17,18 @@ import { buildDates } from "./window";
  * detail files — which the publish workflow refused. So a slate that fails
  * while others succeed now fails the build, with the dates named. A build
  * where no slate can be read still answers with no ids: the end-to-end suite
- * builds with no API on purpose, and the publish workflow already refuses an
- * export with no game pages.
+ * builds with no API on purpose. An export is held to more (below).
+ *
+ * **An export always has an id.** Next's static export refuses a dynamic
+ * route whose `generateStaticParams` returns nothing — a page and a route
+ * handler alike — so once the World Series was over and the window held no
+ * games, the whole site stopped publishing (November 2026). In an export,
+ * then: a window whose every slate answered and held no game builds the one
+ * placeholder `NO_GAMES_ID`, which the page and its file render as the
+ * absence it is without asking the API, which nothing links to, and which the
+ * publish workflow deletes before deploying. A window where no slate could be
+ * read stops the export instead: that is a broken API, not an off-season, and
+ * publishing it would put up a site with no games on it.
  *
  * The slates are asked for a few at a time rather than all at once, which is
  * what keeps the burst inside the API's connection pool, and within an export
@@ -26,10 +36,18 @@ import { buildDates } from "./window";
  */
 const SLATES_AT_A_TIME = 4;
 
+/**
+ * The game id an export builds when the window holds no games at all. Not a
+ * game: the publish workflow removes `out/game/<this>` before deploying.
+ */
+export const NO_GAMES_ID = "no-games";
+
+const exporting = () => process.env.NEXT_STATIC_EXPORT === "1";
+
 let decidedForExport: Promise<{ id: string }[]> | null = null;
 
 export function builtGameIds(): Promise<{ id: string }[]> {
-  if (process.env.NEXT_STATIC_EXPORT === "1") {
+  if (exporting()) {
     decidedForExport ??= decide();
     return decidedForExport;
   }
@@ -61,5 +79,14 @@ async function decide(): Promise<{ id: string }[]> {
         "detail file, so it stops instead.",
     );
   }
-  return [...ids].map((id) => ({ id: String(id) }));
+  const built = [...ids].map((id) => ({ id: String(id) }));
+  if (!exporting()) return built;
+  if (answered === 0) {
+    throw new Error(
+      `None of the ${dates.length} slates in the window could be read: ` +
+        `${failed.join("; ")}. An export that cannot see any date's games ` +
+        "would publish a site with no games on it, so it stops instead.",
+    );
+  }
+  return built.length > 0 ? built : [{ id: NO_GAMES_ID }];
 }

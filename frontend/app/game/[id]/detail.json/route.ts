@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import { builtGameIds } from "@/lib/games";
+import { NO_GAMES_ID, builtGameIds } from "@/lib/games";
 
 /**
  * A game's full detail as a static file beside its page.
@@ -21,12 +21,18 @@ import { builtGameIds } from "@/lib/games";
  */
 export const dynamic = "force-static";
 
+/** The off-season placeholder's file (lib/games.ts). Nothing links to it. */
+const NO_GAMES_REASON = "No games are scheduled in the days this site was built for.";
+
 export function generateStaticParams() {
   return builtGameIds();
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (id === NO_GAMES_ID) {
+    return Response.json({ available: false, reason: NO_GAMES_REASON });
+  }
   const result = await api.game(id);
   const body = result.ok ? result.data : { available: false, reason: result.message };
   return Response.json(body);

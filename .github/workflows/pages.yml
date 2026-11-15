@@ -165,6 +165,10 @@ jobs:
           # Retries are generous here and nowhere else: nobody is watching a
           # build, and a slow first query is not a reason to publish nothing.
           API_RETRY_ATTEMPTS=6 npm run build
+          # The off-season placeholder (NO_GAMES_ID in lib/games.ts): a static
+          # export refuses a dynamic route with no ids, so a window with no
+          # games builds this one, which nothing links to. Not a game.
+          rm -rf out/game/no-games
           # Next writes _next/, and Jekyll drops any path beginning with an
           # underscore. Without this the site deploys with no CSS or JS.
           touch out/.nojekyll
@@ -186,13 +190,30 @@ jobs:
           fi
           # The failure this catches is specific and quiet. Game pages come from
           # generateStaticParams, which asks the API for each date's slate; if
-          # that comes back empty the export still succeeds, and publishes a
-          # site whose every "Full breakdown" link is a 404. A slate with games
-          # and no game pages is never correct.
-          if [ "$games" -eq 0 ]; then
-            echo "::error::No game pages were built. The API returned no slates," \
-                 "so every game link would 404. Refusing to publish."
+          # it saw fewer games than the date pages show, the export still
+          # succeeds and publishes cards whose "Full breakdown" link is a 404.
+          # So every game any page links to must have been built.
+          linked=$( { grep -rhoE '/game/[0-9]+' out --include='*.html' || true; } \
+                    | sed 's#.*/##' | sort -u )
+          broken=0
+          for id in $linked; do
+            if [ ! -f "out/game/$id/index.html" ]; then
+              echo "::error::A page links to game $id, but no page was built for it."
+              broken=$((broken + 1))
+            fi
+          done
+          if [ "$broken" -gt 0 ]; then
+            echo "::error::$broken linked games have no page. Refusing to publish."
             exit 1
+          fi
+          # No games at all is the off-season, not a fault: the export builds
+          # only the days around today, and between the World Series and
+          # spring training they hold none. Refusing to publish then froze the
+          # site for five days in November 2026. An API that cannot answer
+          # stops the build before this (lib/games.ts), so here it is a
+          # window with no games in it.
+          if [ "$games" -eq 0 ]; then
+            echo "::notice::No games in the build window; publishing without game pages."
           fi
           # A game page carries only its Prediction tab; the other nine render
           # from the detail file built beside it. A page without its file has
