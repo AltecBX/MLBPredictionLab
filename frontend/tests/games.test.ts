@@ -93,10 +93,37 @@ describe("builtGameIds", () => {
     await expect(decide()).rejects.toThrow(new RegExp(`1 of ${DATES.length} slates.*${bad}`));
   });
 
-  it("answers with no games when no slate can be read, which the publish check catches", async () => {
+  it("outside an export, answers with no games when no slate can be read", async () => {
+    // The end-to-end suite builds with no API on purpose and must still build.
     const { fetchMock } = answering(() => 503);
     vi.stubGlobal("fetch", fetchMock);
     const decide = await builtGameIds();
+    await expect(decide()).resolves.toEqual([]);
+  });
+
+  it("in an export, stops when no slate can be read: a broken API is not an off-season", async () => {
+    const { fetchMock } = answering(() => 503);
+    vi.stubGlobal("fetch", fetchMock);
+    const decide = await builtGameIds(true);
+    await expect(decide()).rejects.toThrow(
+      new RegExp(`None of the ${DATES.length} slates in the window could be read`),
+    );
+  });
+
+  it("in an export, builds the one placeholder when every slate answered with no games", async () => {
+    // Next refuses a dynamic route with no ids in a static export, which is
+    // what froze the site after the World Series (November 2026).
+    const { fetchMock } = answering(() => []);
+    vi.stubGlobal("fetch", fetchMock);
+    const decide = await builtGameIds(true);
+    const { NO_GAMES_ID } = await import("@/lib/games");
+    await expect(decide()).resolves.toEqual([{ id: NO_GAMES_ID }]);
+  });
+
+  it("outside an export, an empty window is simply empty", async () => {
+    const { fetchMock } = answering(() => []);
+    vi.stubGlobal("fetch", fetchMock);
+    const decide = await builtGameIds(false);
     await expect(decide()).resolves.toEqual([]);
   });
 
@@ -112,5 +139,33 @@ describe("builtGameIds", () => {
     await fresh();
     await fresh();
     expect(fetchMock).toHaveBeenCalledTimes(DATES.length * 3);
+  });
+});
+
+describe("the off-season placeholder", () => {
+  it("is deleted by the publish workflow before deploying, by the same id", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const { NO_GAMES_ID } = await import("@/lib/games");
+    const workflow = readFileSync(
+      path.join(process.cwd(), "..", ".github", "workflows", "pages.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain(`rm -rf out/game/${NO_GAMES_ID}`);
+  });
+
+  it("renders its file without asking the API", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { NO_GAMES_ID } = await import("@/lib/games");
+    const { GET } = await import("@/app/game/[id]/detail.json/route");
+    const response = await GET(new Request("http://x"), {
+      params: Promise.resolve({ id: NO_GAMES_ID }),
+    });
+    expect(await response.json()).toEqual({
+      available: false,
+      reason: "No games are scheduled in the days this site was built for.",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
